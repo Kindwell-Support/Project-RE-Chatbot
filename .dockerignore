@@ -1,0 +1,9 @@
+node_modules
+dist
+public
+spec
+tests
+tools
+*.xlsx
+.env
+.DS_Store

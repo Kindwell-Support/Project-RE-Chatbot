@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: james-dainard-ai-mentor
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      # Must stay text-embedding-3-small — the documents table was embedded with
+      # it. The app refuses to boot on anything else (assertRuntimeConfig).
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: ALLOWED_ORIGINS
+        value: https://preacademy.app.clientclub.net
+      # Set these in the Render dashboard — never commit them.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

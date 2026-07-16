@@ -1,0 +1,35 @@
+{
+  "name": "james-dainard-ai-mentor",
+  "version": "1.0.0",
+  "description": "James Dainard AI Mentor — RAG chatbot + deal calculators for ProjectRE Academy",
+  "main": "dist/server/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "start": "node dist/server/index.js",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/data && cp src/data/*.json dist/data/ && npm run build:widget",
+    "build:widget": "esbuild widget/widget.js --bundle --minify --format=iife --outfile=public/widget.js",
+    "test": "vitest run",
+    "test:live": "RUN_LIVE_TESTS=1 vitest run tests/live.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.6",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.10.0",
+    "openai": "^6.47.0"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^26.1.1",
+    "esbuild": "^0.28.1",
+    "jsdom": "^29.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "xlsx": "^0.18.5"
+  }
+}
