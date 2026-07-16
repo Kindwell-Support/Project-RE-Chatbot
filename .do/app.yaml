@@ -1,0 +1,56 @@
+# DigitalOcean App Platform spec — James Dainard AI Mentor
+#
+# Use: dashboard "Create App" flow reads the repo directly (click-by-click in
+# DEPLOY.md), or apply this spec verbatim via Settings -> App Spec -> Edit,
+# or `doctl apps create --spec .do/app.yaml`.
+#
+# Secrets (OPENAI_API_KEY, SUPABASE_SERVICE_ROLE_KEY) are declared here as
+# type SECRET with no value — set the values in the DO dashboard, never in
+# this file.
+name: james-mentor
+region: nyc
+services:
+  - name: api
+    github:
+      repo: Kindwell-Support/Project-RE-Chatbot
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 30
+      timeout_seconds: 5
+      failure_threshold: 3
+    envs:
+      - key: OPENAI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: SUPABASE_URL
+        scope: RUN_TIME
+        value: https://fcaabusbifitsovlpjdy.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: ALLOWED_ORIGINS
+        scope: RUN_TIME
+        value: https://preacademy.app.clientclub.net
+      - key: PORT
+        scope: RUN_TIME
+        value: "3000"
+      - key: OPENAI_MODEL
+        scope: RUN_TIME
+        value: gpt-4o
+      # Must stay text-embedding-3-small — the documents table was embedded
+      # with it, and the app REFUSES TO BOOT on any other value
+      # (assertRuntimeConfig): ada-002 is also 1536-dim and would return
+      # silently wrong retrieval results.
+      - key: EMBEDDING_MODEL
+        scope: RUN_TIME
+        value: text-embedding-3-small
+      - key: NODE_ENV
+        scope: RUN_TIME
+        value: production

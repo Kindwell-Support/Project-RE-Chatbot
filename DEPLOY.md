@@ -65,6 +65,27 @@ Push the repo to GitHub, then in Render: **New > Blueprint**, point it at this r
 `render.yaml` declares the service; fill the four secrets marked `sync: false` in the
 dashboard.
 
+## Option D — DigitalOcean App Platform (chosen target)
+
+Spec: `.do/app.yaml` (Dockerfile deploy from `Kindwell-Support/Project-RE-Chatbot@main`,
+auto-deploy on push, health check on `/health`, port 3000).
+
+Dashboard flow: **Create App → GitHub → select the repo → branch `main`** (DO detects the
+Dockerfile automatically) → set HTTP port to **3000** → add the env vars below (encrypt
+the two secrets) → create. Full click-by-click and the post-deploy verification curls are
+in the RUN instructions; the curls in §1 of this file are the acceptance gate either way.
+
+| Env var | Value | Encrypt |
+|---|---|---|
+| `OPENAI_API_KEY` | your key (**rotate first — the old one was exposed**) | ✅ |
+| `SUPABASE_SERVICE_ROLE_KEY` | the service_role key (NOT anon) | ✅ |
+| `SUPABASE_URL` | `https://fcaabusbifitsovlpjdy.supabase.co` | — |
+| `ALLOWED_ORIGINS` | `https://preacademy.app.clientclub.net` | — |
+| `PORT` | `3000` | — |
+| `OPENAI_MODEL` | `gpt-4o` | — |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` (anything else refuses to boot) | — |
+| `NODE_ENV` | `production` | — |
+
 ---
 
 ## 1. Verify the deployment (required — do not skip)
