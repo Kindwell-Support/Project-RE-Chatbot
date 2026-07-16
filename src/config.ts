@@ -10,6 +10,7 @@ export interface AppConfig {
   port: number;
   matchCount: number;
   matchThreshold: number;
+  enableDemoPage: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -28,6 +29,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: Number(env.PORT ?? 3000),
     matchCount: Number(env.MATCH_COUNT ?? 5),
     matchThreshold: Number(env.MATCH_THRESHOLD ?? 0),
+    // /demo hosts the widget on the API's own origin (no GHL needed). On by
+    // default outside production; in production set ENABLE_DEMO_PAGE=true.
+    enableDemoPage: env.ENABLE_DEMO_PAGE === 'true' || env.NODE_ENV !== 'production',
   };
 }
 

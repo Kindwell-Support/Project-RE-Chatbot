@@ -85,6 +85,7 @@ in the RUN instructions; the curls in §1 of this file are the acceptance gate e
 | `OPENAI_MODEL` | `gpt-4o` | — |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` (anything else refuses to boot) | — |
 | `NODE_ENV` | `production` | — |
+| `ENABLE_DEMO_PAGE` | `true` to expose `GET /demo` — the widget hosted on the API origin, so you can see/test the bot without GHL. Off by default in production. | — |
 
 ---
 

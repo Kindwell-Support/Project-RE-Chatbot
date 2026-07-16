@@ -134,6 +134,46 @@ describe('I4: Supabase down — the user still gets their answer', () => {
   });
 });
 
+describe('/demo — the widget hosted on the API origin (no GHL needed)', () => {
+  it('serves an HTML page that mounts the widget when enabled', async () => {
+    const res = await app.inject({ method: 'GET', url: '/demo' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.body).toContain('id="james-bot"');
+    expect(res.body).toContain('/widget.js');
+    expect(res.body).toContain('createJamesBot');
+    // Same-origin by construction: the widget posts to '' + '/chat'.
+    expect(res.body).toContain("apiUrl: ''");
+  });
+
+  it('is OFF in production unless ENABLE_DEMO_PAGE=true', async () => {
+    const prodConfig = loadConfig({
+      ALLOWED_ORIGINS: ALLOWED,
+      OPENAI_API_KEY: 'test',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'test',
+      NODE_ENV: 'production',
+    } as NodeJS.ProcessEnv);
+    const prodApp = buildApp(prodConfig);
+    const res = await prodApp.inject({ method: 'GET', url: '/demo' });
+    expect(res.statusCode).toBe(404);
+    await prodApp.close();
+
+    const demoOn = loadConfig({
+      ALLOWED_ORIGINS: ALLOWED,
+      OPENAI_API_KEY: 'test',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'test',
+      NODE_ENV: 'production',
+      ENABLE_DEMO_PAGE: 'true',
+    } as NodeJS.ProcessEnv);
+    const demoApp = buildApp(demoOn);
+    const res2 = await demoApp.inject({ method: 'GET', url: '/demo' });
+    expect(res2.statusCode).toBe(200);
+    await demoApp.close();
+  });
+});
+
 describe('I7: GET /health returns 200', () => {
   it('health check', async () => {
     const res = await app.inject({

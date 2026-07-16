@@ -54,3 +54,9 @@ services:
       - key: NODE_ENV
         scope: RUN_TIME
         value: production
+      # /demo — the widget hosted on the API origin for testing without GHL.
+      # Flip to "false" (or remove) once the GHL embed is live if you don't
+      # want a public demo page.
+      - key: ENABLE_DEMO_PAGE
+        scope: RUN_TIME
+        value: "true"

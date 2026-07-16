@@ -83,6 +83,43 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     }
   });
 
+  // /demo — the widget hosted on the API's own origin, so the bot can be seen
+  // and exercised without a GHL page. Same-origin fetches need no CORS, so the
+  // allow-list stays untouched. Gated: on outside production, or via
+  // ENABLE_DEMO_PAGE=true (note /chat itself is already publicly callable —
+  // CORS only constrains browsers — so this page adds no new exposure).
+  if (config.enableDemoPage) {
+    app.get('/demo', async (_request, reply) => {
+      reply.header('Content-Type', 'text/html; charset=utf-8');
+      return reply.send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>James Dainard AI Mentor — Demo</title>
+  <style>
+    body { margin: 0; background: #060f1d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 40px; }
+    h1 { color: #eaf0f7; font-size: 18px; font-weight: 700; }
+    p { color: #9fb0c6; font-size: 13px; }
+    #james-bot { height: 640px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>James Dainard AI Mentor — demo page</h1>
+    <p>This is the same widget that embeds in the GHL lesson page, hosted here for testing. Not a member-facing URL.</p>
+    <div id="james-bot"></div>
+  </div>
+  <script src="/widget.js"></script>
+  <script>
+    window.createJamesBot({ apiUrl: '', target: '#james-bot', memberEmail: 'demo@internal' });
+  </script>
+</body>
+</html>`);
+    });
+  }
+
   app.post<{ Body: ChatBody }>('/chat', async (request, reply) => {
     const { message, session_id, member_email } = request.body ?? {};
     if (!message || typeof message !== 'string' || !message.trim()) {
