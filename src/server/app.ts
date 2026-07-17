@@ -15,6 +15,10 @@ interface ChatBody {
   member_email?: string;
 }
 
+interface HistoryQuery {
+  session_id?: string;
+}
+
 export interface AppDeps {
   openai?: OpenAI;
   supabase?: SupabaseClient;
@@ -119,6 +123,23 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
 </html>`);
     });
   }
+
+  // Conversation history for a session, so the widget can repaint the chat
+  // after a reload or a GHL lesson swap (memory is server-side; without this
+  // the bot remembers what the member can no longer see).
+  //
+  // Exposure note: this reads out what /chat already grants anyone holding the
+  // session id — that id is a random UUID in the member's own localStorage and
+  // is the existing bearer of that conversation. Same class, not a new one.
+  app.get<{ Querystring: HistoryQuery }>('/history', async (request, reply) => {
+    const sessionId = request.query?.session_id;
+    if (!sessionId || typeof sessionId !== 'string') {
+      reply.code(400);
+      return { error: 'session_id is required' };
+    }
+    const history = await getHistory(getSupabase(), sessionId, request.log);
+    return { messages: history };
+  });
 
   app.post<{ Body: ChatBody }>('/chat', async (request, reply) => {
     const { message, session_id, member_email } = request.body ?? {};

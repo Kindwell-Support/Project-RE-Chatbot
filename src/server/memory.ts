@@ -15,11 +15,20 @@ export async function getHistory(
   logger: Logger = consoleLogger,
 ): Promise<ChatHistoryMessage[]> {
   try {
+    // `id` is the tiebreaker, and it is load-bearing. appendExchange writes the
+    // user and assistant rows in ONE insert, so they share a created_at to the
+    // microsecond: ordering on that column alone leaves the pair's order
+    // undefined, and Postgres is free to hand back the reply before the
+    // question. Observed live — a restored transcript showed James answering
+    // above the member's message, and the same inversion reaches the MODEL,
+    // which reads this history as context. id is a monotonic identity, so it
+    // preserves insertion order exactly.
     const { data, error } = await supabase
       .from('chat_messages')
       .select('role, content')
       .eq('session_id', sessionId)
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(MAX_TURNS * 2);
     if (error) throw error;
     return (data ?? [])

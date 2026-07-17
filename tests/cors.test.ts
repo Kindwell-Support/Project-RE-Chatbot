@@ -134,6 +134,53 @@ describe('I4: Supabase down — the user still gets their answer', () => {
   });
 });
 
+describe('GET /history — repaints the transcript the server already remembers', () => {
+  it('returns the session\'s messages in order', async () => {
+    const supabase = makeFakeSupabase({
+      history: [
+        { role: 'user', content: 'Flip: 350k purchase' },
+        { role: 'assistant', content: 'Net profit is $101,916.' },
+      ],
+    });
+    const withDb = buildApp(config, { supabase: supabase.client });
+    const res = await withDb.inject({
+      method: 'GET',
+      url: '/history?session_id=s1',
+      headers: { origin: ALLOWED },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().messages).toEqual([
+      { role: 'user', content: 'Flip: 350k purchase' },
+      { role: 'assistant', content: 'Net profit is $101,916.' },
+    ]);
+    expect(res.headers['access-control-allow-origin']).toBe(ALLOWED);
+    await withDb.close();
+  });
+
+  it('requires session_id', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/history',
+      headers: { origin: ALLOWED },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/session_id/i);
+  });
+
+  it('an unknown session is an empty transcript, not an error', async () => {
+    const supabase = makeFakeSupabase({ history: [] });
+    const withDb = buildApp(config, { supabase: supabase.client });
+    const res = await withDb.inject({
+      method: 'GET',
+      url: '/history?session_id=never-seen',
+      headers: { origin: ALLOWED },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().messages).toEqual([]);
+    await withDb.close();
+  });
+});
+
 describe('/demo — the widget hosted on the API origin (no GHL needed)', () => {
   it('serves an HTML page that mounts the widget when enabled', async () => {
     const res = await app.inject({ method: 'GET', url: '/demo' });

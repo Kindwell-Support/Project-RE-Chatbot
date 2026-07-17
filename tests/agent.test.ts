@@ -618,6 +618,38 @@ describe('3.5 memory plumbing: prior turns reach the model', () => {
     await app.close();
   });
 
+  it('REGRESSION: history is ordered deterministically, not by an ambiguous timestamp', async () => {
+    // appendExchange writes the user + assistant rows in ONE insert, so they
+    // share a created_at. Ordering on that column alone leaves the pair's order
+    // UNDEFINED — observed live as a restored transcript with James's answer
+    // sitting above the member's question. The same rows are what the model
+    // reads as context, so an inverted turn is a correctness bug, not cosmetics.
+    // `id` is a monotonic identity and breaks the tie by true insertion order.
+    const openai = makeFakeOpenAI([{ content: 'hi' }]);
+    const supabase = makeFakeSupabase({
+      history: [
+        { role: 'user', content: 'flip in Seattle, 400k purchase' },
+        { role: 'assistant', content: 'Got it — what is the rehab budget?' },
+      ],
+    });
+    const app = buildApp(config, { openai: openai.client, supabase: supabase.client });
+    await app.inject({
+      method: 'POST',
+      url: '/chat',
+      headers: { origin: ALLOWED, 'content-type': 'application/json' },
+      payload: { message: 'what ARV do I need?', session_id: 's-order' },
+    });
+    await app.close();
+
+    const historyOrders = supabase.orderCalls.filter((c) => c.table === 'chat_messages');
+    expect(historyOrders.map((c) => c.column), 'no id tiebreak — turn order is undefined').toEqual([
+      'created_at',
+      'id',
+    ]);
+    // Both descending, because getHistory reverses the page afterwards.
+    expect(historyOrders.every((c) => c.opts?.ascending === false)).toBe(true);
+  });
+
   it('the exchange is appended to chat_messages for the next turn', async () => {
     const openai = makeFakeOpenAI([{ content: 'Around $520k ARV.' }]);
     const supabase = makeFakeSupabase();

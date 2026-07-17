@@ -96,10 +96,13 @@ export interface FakeSupabase {
   client: SupabaseClient;
   /** Every insert payload, keyed by table. */
   inserts: Array<{ table: string; payload: any }>;
+  /** Every .order(column, opts) call, in order — lets tests pin sort determinism. */
+  orderCalls: Array<{ table: string; column: string; opts: any }>;
 }
 
 export function makeFakeSupabase(options: FakeSupabaseOptions = {}): FakeSupabase {
   const inserts: Array<{ table: string; payload: any }> = [];
+  const orderCalls: Array<{ table: string; column: string; opts: any }> = [];
   const history = options.history ?? [];
 
   const client = {
@@ -109,7 +112,10 @@ export function makeFakeSupabase(options: FakeSupabaseOptions = {}): FakeSupabas
       const chain: any = {
         select: () => chain,
         eq: () => chain,
-        order: () => chain,
+        order: (column: string, opts: any) => {
+          orderCalls.push({ table, column, opts });
+          return chain;
+        },
         limit: () => chain,
         // Thenable: `await supabase.from(t).select()...` resolves here.
         then: (resolve: (v: any) => unknown) => resolve({ data: rows, error: null }),
@@ -128,7 +134,7 @@ export function makeFakeSupabase(options: FakeSupabaseOptions = {}): FakeSupabas
     }),
   };
 
-  return { client: client as unknown as SupabaseClient, inserts };
+  return { client: client as unknown as SupabaseClient, inserts, orderCalls };
 }
 
 /** Let detached (fire-and-forget) promises settle and any unhandled rejection surface. */
