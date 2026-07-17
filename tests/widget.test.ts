@@ -131,19 +131,32 @@ describe('I5: the input box renders without waiting on any network call', () => 
     // contributed anything here because it never resolves.)
     expect(fetchMock.mock.results.every((r) => r.type === 'return')).toBe(true);
 
-    // The greeting + full numbered menu + disclaimer is STATIC widget copy
-    // (client's spec) — deterministic by construction, no model involved.
-    // This replaced the flaky model-side A1: a model at temp 0.3 sometimes
-    // paraphrased the menu away; static copy cannot.
+    // The greeting and the disclaimer are STATIC widget copy — deterministic by
+    // construction, no model involved. The numbered menu was deliberately
+    // removed (it duplicated the chip row and read like a phone tree); what
+    // must survive is the greeting, a hint that the calculators exist, and the
+    // disclaimer landing BEFORE anyone types deal numbers.
     const text = document.querySelector('#james-bot')!.textContent ?? '';
     expect(text).toContain("I'm James");
-    expect(text).toContain('1. BRRRR');
-    expect(text).toContain('2. Flip');
-    expect(text).toContain('3. Land Acquisition');
-    expect(text).toContain('4. Partnership Agreements (coming soon)');
-    expect(text).toContain('5. Construction');
-    expect(text).toContain('6. Material Allowance');
+    expect(text.toLowerCase()).toContain('flip');
+    expect(text.toLowerCase()).toContain('brrrr');
+    expect(text.toLowerCase()).toContain('land');
     expect(text).toMatch(/education and estimates only, not financial or investment advice/);
+  });
+
+  it('the opening screen is plain: no numbered menu, no chip row', () => {
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+    loadWidget();
+    mountTarget();
+    (window as any).createJamesBot({ apiUrl: 'https://api.example.com', target: '#james-bot' });
+
+    const text = document.querySelector('#james-bot')!.textContent ?? '';
+    expect(text, 'the numbered menu is back').not.toMatch(/^\s*1\.\s/m);
+    expect(text).not.toContain('2. Flip');
+    expect(document.querySelectorAll('#james-bot .jb-chip'), 'chip row is back').toHaveLength(0);
+    // Exactly one bubble on first load, and one input row. Nothing else.
+    expect(document.querySelectorAll('#james-bot .jb-bubble')).toHaveLength(1);
+    expect(document.querySelectorAll('#james-bot button')).toHaveLength(1); // Send only
   });
 
   it('the input accepts typed text while the network is down', () => {
@@ -323,46 +336,6 @@ describe('markdown rendering (the model replies in markdown)', () => {
   });
 });
 
-describe('menu quick-reply chips', () => {
-  function mountWidget() {
-    const fetchMock = vi.fn(() => new Promise(() => {}));
-    vi.stubGlobal('fetch', fetchMock);
-    loadWidget();
-    mountTarget();
-    (window as any).createJamesBot({ apiUrl: 'https://api.example.com', target: '#james-bot' });
-    return fetchMock;
-  }
-
-  it('renders one chip per menu item, 1-6', () => {
-    mountWidget();
-    const chips = document.querySelectorAll<HTMLButtonElement>('#james-bot .jb-chip');
-    expect(chips).toHaveLength(6);
-    expect(chips[0].textContent).toBe('1. BRRRR');
-    expect(chips[1].textContent).toBe('2. Flip');
-    expect(chips[5].textContent).toBe('6. Material Allowance');
-  });
-
-  it('clicking a chip sends that number', async () => {
-    const fetchMock = mountWidget();
-    document.querySelectorAll<HTMLButtonElement>('#james-bot .jb-chip')[1].click();
-    await new Promise((r) => setTimeout(r, 10));
-
-    const chatCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/chat'));
-    expect(chatCall, '/chat was never called').toBeDefined();
-    expect(JSON.parse((chatCall![1] as any).body).message).toBe('2');
-    // It shows in the transcript as the member's turn.
-    expect(document.querySelector('#james-bot .jb-user .jb-bubble')?.textContent).toBe('2');
-  });
-
-  it('chips disappear once the conversation starts', async () => {
-    mountWidget();
-    expect(document.querySelectorAll('#james-bot .jb-chip').length).toBe(6);
-    document.querySelectorAll<HTMLButtonElement>('#james-bot .jb-chip')[0].click();
-    await new Promise((r) => setTimeout(r, 10));
-    expect(document.querySelectorAll('#james-bot .jb-chip').length).toBe(0);
-  });
-});
-
 describe('history restore (memory is server-side; repaint what the bot remembers)', () => {
   function mountWithHistory(messages: Array<{ role: string; content: string }>) {
     const fetchMock = vi.fn((url: string) => {
@@ -399,15 +372,13 @@ describe('history restore (memory is server-side; repaint what the bot remembers
     expect(document.querySelector('#james-bot .jb-user .jb-bubble')?.textContent).toBe(
       'Flip: 350k purchase, 75k rehab, 600k ARV, 4 months',
     );
-    // A returning member has already picked from the menu.
-    expect(document.querySelectorAll('#james-bot .jb-chip').length).toBe(0);
   });
 
-  it('an empty history leaves the opening message and chips alone', async () => {
+  it('an empty history leaves the opening message alone', async () => {
     mountWithHistory([]);
     await new Promise((r) => setTimeout(r, 20));
-    expect(document.querySelector('#james-bot')!.textContent).toContain('1. BRRRR');
-    expect(document.querySelectorAll('#james-bot .jb-chip').length).toBe(6);
+    expect(document.querySelector('#james-bot')!.textContent).toContain("I'm James");
+    expect(document.querySelectorAll('#james-bot .jb-bubble')).toHaveLength(1);
   });
 
   it('a FAILING history fetch is silent — no error shown, input still works', async () => {

@@ -115,7 +115,9 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     <p>This is the same widget that embeds in the GHL lesson page, hosted here for testing. Not a member-facing URL.</p>
     <div id="james-bot"></div>
   </div>
-  <script src="/widget.js"></script>
+  <!-- Cache-busted: /widget.js is cached for 5 minutes, which is right for
+       members but wrong for a page whose whole job is showing current code. -->
+  <script src="/widget.js?v=${Date.now()}"></script>
   <script>
     window.createJamesBot({ apiUrl: '', target: '#james-bot', memberEmail: 'demo@internal' });
   </script>

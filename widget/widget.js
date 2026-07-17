@@ -29,26 +29,15 @@
     textMuted: '#9fb0c6',
   };
 
-  var MENU_ITEMS = [
-    { value: '1', label: 'BRRRR' },
-    { value: '2', label: 'Flip' },
-    { value: '3', label: 'Land Acquisition' },
-    { value: '4', label: 'Partnerships' },
-    { value: '5', label: 'Construction' },
-    { value: '6', label: 'Material Allowance' },
-  ];
-
+  // Kept deliberately plain: a greeting, one line so members know the
+  // calculators exist, and the disclaimer. No numbered menu and no chip row —
+  // they duplicated each other and made the first screen look like a phone tree.
+  // The disclaimer stays: it must land before anyone enters deal numbers, and
+  // static copy is the only way to guarantee that.
   var OPENING_MESSAGE = [
     "Hi! I'm James. I'm excited to support you on your real estate investing journey. Ask me anything about REI and I'll give you my best answer based on 20 years of experience.",
     '',
-    "Want me to run some numbers with you? Just tell me which one you'd like:",
-    '',
-    '1. BRRRR',
-    '2. Flip',
-    '3. Land Acquisition',
-    '4. Partnership Agreements (coming soon)',
-    '5. Construction',
-    '6. Material Allowance',
+    'I can run the numbers on a flip, BRRRR, or land deal too — just tell me about the deal.',
     '',
     'Quick note before we start: everything here is education and estimates only, not financial or investment advice. Always verify your own numbers before acting on a deal.',
   ].join('\n');
@@ -73,10 +62,6 @@
     '.jb-bubble li::marker{color:' + BRAND.orange + ';}',
     '.jb-bubble code{background:' + BRAND.navyDeep + ';padding:1px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;}',
     '.jb-bubble strong{font-weight:700;color:#fff;}',
-    '.jb-chips{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 4px;flex:0 0 auto;}',
-    '.jb-chip{background:transparent;color:' + BRAND.textMuted + ';border:1px solid #24406b;border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;transition:background .15s,color .15s,border-color .15s;font-family:inherit;}',
-    '.jb-chip:hover{background:' + BRAND.navyLight + ';color:' + BRAND.text + ';border-color:' + BRAND.orange + ';}',
-    '.jb-chip:focus-visible{outline:2px solid ' + BRAND.orange + ';outline-offset:2px;}',
     '.jb-form{display:flex;gap:8px;padding:12px;background:' + BRAND.navyLight + ';flex:0 0 auto;}',
     /* 16px keeps iOS Safari from zooming the page on focus. */
     '.jb-input{flex:1 1 auto;min-width:0;padding:12px 14px;border-radius:8px;border:1px solid ' + BRAND.navy + ';background:' + BRAND.navy + ';color:' + BRAND.text + ';font-size:16px;font-family:inherit;outline:none;}',
@@ -89,8 +74,8 @@
     '.jb-typing{color:' + BRAND.textMuted + ';font-style:italic;}',
     '.jb-retry{margin-top:8px;background:transparent;border:1px solid ' + BRAND.orange + ';color:' + BRAND.orange + ';border-radius:6px;padding:5px 12px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;}',
     '.jb-retry:hover{background:' + BRAND.orange + ';color:#fff;}',
-    '@media (max-width:520px){.jb-bubble{max-width:92%;font-size:13.5px;}.jb-list{padding:12px;}.jb-form{padding:10px;}.jb-send{padding:12px 16px;}.jb-chips{padding:0 12px 4px;}}',
-    '@media (prefers-reduced-motion:reduce){.jb-chip,.jb-send{transition:none;}}',
+    '@media (max-width:520px){.jb-bubble{max-width:92%;font-size:13.5px;}.jb-list{padding:12px;}.jb-form{padding:10px;}.jb-send{padding:12px 16px;}}',
+    '@media (prefers-reduced-motion:reduce){.jb-send{transition:none;}}',
   ].join('');
 
   function injectStyles() {
@@ -229,12 +214,10 @@
         'aria-label': 'Conversation with James',
       });
 
-      var chips = el('div', 'jb-chips');
-
       var form = el('form', 'jb-form');
       var input = el('input', 'jb-input', {
         type: 'text',
-        placeholder: 'Ask about a deal, or type 1-6…',
+        placeholder: 'Ask James anything…',
         'aria-label': 'Message James',
         autocomplete: 'off',
       });
@@ -245,7 +228,6 @@
 
       root.appendChild(header);
       root.appendChild(list);
-      root.appendChild(chips);
       root.appendChild(form);
       target.appendChild(root);
 
@@ -290,19 +272,6 @@
       // static text cannot.
       addBubble(OPENING_MESSAGE, 'bot');
 
-      MENU_ITEMS.forEach(function (item) {
-        var chip = el('button', 'jb-chip', { type: 'button' });
-        chip.textContent = item.value + '. ' + item.label;
-        chip.addEventListener('click', function () {
-          submitMessage(item.value);
-        });
-        chips.appendChild(chip);
-      });
-
-      function hideChips() {
-        if (chips.parentNode) chips.parentNode.removeChild(chips);
-      }
-
       var busy = false;
       var started = false;
 
@@ -330,7 +299,6 @@
         if (!text || busy) return;
         if (typeof override !== 'string') input.value = '';
         started = true;
-        hideChips();
         if (!skipEcho) addBubble(text, 'user');
         setBusy(true);
         var removeTyping = addTyping();
@@ -393,7 +361,6 @@
         .then(function (data) {
           if (!data || !data.messages || !data.messages.length) return;
           if (started) return; // member got there first; don't reorder their chat
-          hideChips();
           data.messages.forEach(function (m) {
             addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
           });
