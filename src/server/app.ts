@@ -71,6 +71,28 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   });
 
   // --- Routes ---------------------------------------------------------------
+
+  // The bare domain is the first thing anyone opens after a deploy. Without
+  // this it answered `Route GET:/ not found`, which reads like a broken app
+  // when the service is in fact healthy. Say what this is and where to look.
+  app.get('/', async (_request, reply) => {
+    reply.header('Content-Type', 'application/json; charset=utf-8');
+    return {
+      service: 'James Dainard AI Mentor API',
+      status: 'ok',
+      note: 'This is the API, not a member-facing page. The chat UI is the widget embedded in the ProjectRE Academy lesson (GHL).',
+      endpoints: {
+        health: 'GET /health',
+        chat: 'POST /chat  { message, session_id, member_email? }',
+        history: 'GET /history?session_id=...',
+        widget: 'GET /widget.js',
+        demo: config.enableDemoPage
+          ? 'GET /demo — the widget hosted here for testing'
+          : 'GET /demo — disabled; set ENABLE_DEMO_PAGE=true to enable',
+      },
+    };
+  });
+
   app.get('/health', async () => ({ status: 'ok' }));
 
   // Serve the widget bundle so no separate CDN is strictly required.

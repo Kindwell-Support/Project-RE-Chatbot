@@ -221,6 +221,33 @@ describe('/demo — the widget hosted on the API origin (no GHL needed)', () => 
   });
 });
 
+describe('GET / — the bare domain is not a scary 404', () => {
+  it('describes the service instead of "Route GET:/ not found"', async () => {
+    const res = await app.inject({ method: 'GET', url: '/' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.status).toBe('ok');
+    expect(body.service).toMatch(/James Dainard/i);
+    // Points at the real endpoints rather than leaving you guessing.
+    expect(body.endpoints.health).toMatch(/\/health/);
+    expect(body.endpoints.chat).toMatch(/\/chat/);
+  });
+
+  it('says how to turn the demo page on when it is disabled', async () => {
+    const prodConfig = loadConfig({
+      ALLOWED_ORIGINS: ALLOWED,
+      OPENAI_API_KEY: 'test',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'test',
+      NODE_ENV: 'production',
+    } as NodeJS.ProcessEnv);
+    const prodApp = buildApp(prodConfig);
+    const res = await prodApp.inject({ method: 'GET', url: '/' });
+    expect(res.json().endpoints.demo).toMatch(/ENABLE_DEMO_PAGE=true/);
+    await prodApp.close();
+  });
+});
+
 describe('I7: GET /health returns 200', () => {
   it('health check', async () => {
     const res = await app.inject({
