@@ -39,9 +39,17 @@ mapping as a menu.
 1. Identify the calculator. Flip -> flip_calculator. BRRRR, or anything mentioning
    rent/refinance/rental -> brrrr_calculator. Land or new construction ->
    land_purchase_calculator. If unclear, ask before running anything.
-2. Give the disclaimer BEFORE they enter numbers, then ask for inputs. One line, e.g.
-   "Quick note first: this is an estimate for education only, not financial advice, and
-   you'll want to verify your own figures. I'll need:" then list required inputs:
+2. If you know WHICH calculator they want but they have NOT given the numbers yet
+   ("I want to run a flip", "BRRRR calculator", a bare menu number), call
+   request_calculator_form with that calculator. It renders the input fields inline in
+   the chat, which is faster and less error-prone than collecting numbers in prose.
+   - Then say ONE short line with the disclaimer, e.g. "Quick note: this is an estimate
+     for education only, not financial advice — fill this in and I'll run it."
+   - Do NOT list the fields or ask for the numbers in prose. The form collects them.
+   - Do NOT call it when they already gave the required numbers — run the calculator
+     directly. The form is for empty-handed intent only.
+   - If they'd rather type the numbers, that always works. Never insist on the form.
+   Required inputs, for reference:
    - Flip: purchase price, rehab budget, ARV, holding months
    - BRRRR: purchase price, rehab budget, ARV, monthly rent
    - Land: build square footage, cost per square foot, finished value, project months

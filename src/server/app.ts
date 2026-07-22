@@ -5,14 +5,27 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { AppConfig } from '../config.js';
-import { runAgent } from '../agent/agent.js';
+import { runAgent, type SeedToolCall } from '../agent/agent.js';
+import { isCalculatorKey } from '../agent/formSchema.js';
+import {
+  buildFormSubmission,
+  describeSubmission,
+  FormValidationError,
+} from '../agent/formSubmission.js';
 import { getHistory, appendExchange } from './memory.js';
 import { logExchange } from './logging.js';
+
+interface FormSubmissionBody {
+  calculator?: string;
+  values?: Record<string, unknown>;
+}
 
 interface ChatBody {
   message?: string;
   session_id?: string;
   member_email?: string;
+  /** Inline calculator form submission — an alternative to typing the numbers. */
+  form_submission?: FormSubmissionBody;
 }
 
 interface HistoryQuery {
@@ -78,6 +91,9 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   app.get('/', async (_request, reply) => {
     reply.header('Content-Type', 'application/json; charset=utf-8');
     return {
+      // Internal API root (explicitly not member-facing, see the note below), so
+      // it keeps the legacy service name — the "Ask James" rename covers the
+      // member-facing surfaces (widget header, /demo title + heading + meta).
       service: 'James Dainard AI Mentor API',
       status: 'ok',
       note: 'This is the API, not a member-facing page. The chat UI is the widget embedded in the ProjectRE Academy lesson (GHL).',
@@ -122,19 +138,33 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>James Dainard AI Mentor — Demo</title>
+  <title>Ask James — Demo</title>
+  <meta name="description" content="Ask James — deal-underwriting mentor for real estate investors. Internal demo of the ProjectRE Academy chat widget.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0A0A0B">
+  <meta property="og:title" content="Ask James">
+  <meta property="og:description" content="Deal-underwriting mentor for real estate investors.">
   <style>
-    body { margin: 0; background: #060f1d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 40px; }
-    h1 { color: #eaf0f7; font-size: 18px; font-weight: 700; }
-    p { color: #9fb0c6; font-size: 13px; }
-    #james-bot { height: 640px; }
+    html, body { height: 100%; }
+    body { margin: 0; background: #0A0A0B; color: #F5F5F7;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 40px; box-sizing: border-box;
+      display: flex; flex-direction: column; min-height: 100%; }
+    .eyebrow { color: rgba(245,245,247,0.38); font-size: 11px; letter-spacing: 0.06em;
+      text-transform: uppercase; margin: 0 0 6px; }
+    h1 { color: #F5F5F7; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4px; }
+    p { color: rgba(245,245,247,0.62); font-size: 13px; margin: 0 0 18px; }
+    #james-bot { height: 680px; flex: 0 0 auto; }
+    @media (max-width: 520px) { #james-bot { height: 78vh; } }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>James Dainard AI Mentor — demo page</h1>
-    <p>This is the same widget that embeds in the GHL lesson page, hosted here for testing. Not a member-facing URL.</p>
+    <p class="eyebrow">Internal demo · not a member-facing URL</p>
+    <h1>Ask James</h1>
+    <p>The same widget that embeds in the GHL lesson page, hosted here for testing.</p>
     <div id="james-bot"></div>
   </div>
   <!-- Cache-busted: /widget.js is cached for 5 minutes, which is right for
@@ -166,14 +196,44 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   });
 
   app.post<{ Body: ChatBody }>('/chat', async (request, reply) => {
-    const { message, session_id, member_email } = request.body ?? {};
-    if (!message || typeof message !== 'string' || !message.trim()) {
-      reply.code(400);
-      return { error: 'message is required' };
-    }
+    const { message, session_id, member_email, form_submission } = request.body ?? {};
+
     if (!session_id || typeof session_id !== 'string') {
       reply.code(400);
       return { error: 'session_id is required' };
+    }
+
+    // A form submission carries the numbers instead of a typed message, so it
+    // supplies its own transcript line. Everything downstream — agent, memory,
+    // qa_logs — is identical to the typed path from here on.
+    let seedToolCall: SeedToolCall | undefined;
+    let userMessage: string;
+
+    if (form_submission) {
+      const { calculator, values } = form_submission;
+      if (!isCalculatorKey(calculator)) {
+        reply.code(400);
+        return {
+          error: `Unknown calculator "${String(calculator)}". Valid: flip, brrrr, land_purchase.`,
+        };
+      }
+      try {
+        const built = buildFormSubmission(calculator, values ?? {});
+        seedToolCall = { name: built.tool, args: built.args };
+        userMessage = describeSubmission(built.form, built.args);
+      } catch (err) {
+        if (err instanceof FormValidationError) {
+          reply.code(400);
+          return { error: err.message, fields: err.fields };
+        }
+        throw err;
+      }
+    } else {
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        reply.code(400);
+        return { error: 'message is required' };
+      }
+      userMessage = message.trim();
     }
 
     const oa = getOpenAI();
@@ -183,7 +243,7 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
 
     let result;
     try {
-      result = await runAgent(oa, sb, config, history, message.trim());
+      result = await runAgent(oa, sb, config, history, userMessage, { seedToolCall });
     } catch (err) {
       // request.log is silenced under NODE_ENV=test, which made live-test 502s
       // undiagnosable — the reason was swallowed entirely. Always surface the
@@ -206,7 +266,7 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     // (Observed: a restart-and-continue lost the deal the member had just given.)
     // appendExchange swallows its own errors, so awaiting cannot fail the reply;
     // it only costs one insert round-trip.
-    await appendExchange(sb, session_id, message.trim(), result.output, request.log);
+    await appendExchange(sb, session_id, userMessage, result.output, request.log);
 
     // qa_logs is observability, not correctness — nothing reads it back, so it
     // stays detached. The .catch() is the call-site guarantee that an unhandled
@@ -215,7 +275,7 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       sb,
       {
         userId: member_email && member_email !== 'unknown' ? member_email : session_id,
-        question: message.trim(),
+        question: userMessage,
         answer: result.output,
         retrievedChunkIds: result.retrievedChunkIds,
         similarityScores: result.similarityScores,
@@ -229,9 +289,15 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     // `tool_calls` is trace evidence: which tools actually fired, in order.
     // Proves a BRRRR answer came from brrrr_calculator rather than being
     // replayed from a prior flip — the old build's memory-replay bug.
+    // `render_form` is the transport for the model's request_calculator_form
+    // decision — the model chooses, the response carries it, the widget renders.
     return {
       output: result.output,
       tool_calls: result.toolCalls.map((t) => t.name),
+      ...(result.renderForm ? { render_form: result.renderForm } : {}),
+      // Form submissions have no typed message, so the widget echoes this —
+      // the same line stored in memory, so a later /history replay matches.
+      ...(form_submission ? { user_message: userMessage } : {}),
     };
   });
 

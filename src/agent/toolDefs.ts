@@ -109,6 +109,28 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'request_calculator_form',
+      description:
+        'Render the inline input form for a calculator in the chat. Call this when the member signals which calculator they want but has NOT given the numbers yet (e.g. "I want to run a flip", "BRRRR calculator", or a bare menu number). Do NOT call it when they already supplied the required inputs — run that calculator directly instead. The form collects the inputs and submits them to the same calculator tool.',
+      parameters: {
+        type: 'object',
+        properties: {
+          calculator: {
+            type: 'string',
+            // Kept in step with CALCULATOR_KEYS by a test — importing it here
+            // would make toolDefs <-> formSchema circular.
+            enum: ['flip', 'brrrr', 'land_purchase'],
+            description: 'Which calculator form to show.',
+          },
+        },
+        required: ['calculator'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'search_knowledge_base',
       description:
         "Semantic search over James Dainard's course material (transcripts, book, podcasts, YouTube). Use for his teaching, frameworks, rules of thumb, and renovation references. Returns the top matching passages.",

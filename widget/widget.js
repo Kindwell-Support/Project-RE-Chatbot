@@ -1,5 +1,5 @@
 /**
- * James Dainard AI Mentor — chat widget.
+ * Ask James — chat widget.
  * Vanilla JS, no framework. Built with esbuild into public/widget.js.
  *
  * window.createJamesBot({ apiUrl, target, memberEmail })
@@ -13,27 +13,26 @@
  *    target div reappears.
  *  - Model output is markdown. It is escaped first, then a small fixed set of
  *    tags is introduced — never innerHTML of raw model text.
+ *
+ * Visual direction — "dark room, warm light":
+ *  - All color/type/motion derive from CSS custom properties (--jb-*) defined
+ *    once on .jb-root, so a retheme is a token edit, not a component rewrite.
+ *  - Structural chrome (header, composer, calculator + result cards) is liquid
+ *    glass over a contained amber ambient layer that gives the glass something
+ *    to refract. Message bubbles stay flat — glass is capped for performance.
+ *  - Everything is scoped under .jb-root with a jb- class prefix so host-page
+ *    (GHL) styles can't bleed in and ours can't leak out. See report §scoping.
  */
 (function () {
   'use strict';
 
   var STYLE_ID = 'james-bot-styles';
 
-  var BRAND = {
-    navy: '#0b1f3a',
-    navyLight: '#132c4f',
-    navyDeep: '#08182e',
-    orange: '#f47b20',
-    orangeDark: '#d96812',
-    text: '#eaf0f7',
-    textMuted: '#9fb0c6',
-  };
-
   // Kept deliberately plain: a greeting, one line so members know the
-  // calculators exist, and the disclaimer. No numbered menu and no chip row —
-  // they duplicated each other and made the first screen look like a phone tree.
-  // The disclaimer stays: it must land before anyone enters deal numbers, and
-  // static copy is the only way to guarantee that.
+  // calculators exist, and the disclaimer. The disclaimer must land before
+  // anyone enters deal numbers, and static copy is the only way to guarantee
+  // that. (The opening screen is intentionally a single bubble — no chip row,
+  // no numbered menu; pinned by tests/widget.test.ts.)
   var OPENING_MESSAGE = [
     "Hi! I'm James. I'm excited to support you on your real estate investing journey. Ask me anything about REI and I'll give you my best answer based on 20 years of experience.",
     '',
@@ -42,40 +41,189 @@
     'Quick note before we start: everything here is education and estimates only, not financial or investment advice. Always verify your own numbers before acting on a deal.',
   ].join('\n');
 
+  // Honest, neutral rotating status. The backend answers in one shot (no token
+  // stream), so the widget genuinely does not know which tool is running while
+  // it waits — so it does NOT fake tool-specific copy on a timer. See report.
+  var THINK_COPY = [
+    'Thinking it through',
+    'Still with you',
+    'Working on it',
+    'Putting this together',
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Styles. One token block on .jb-root; everything else derives from it.
+  // ---------------------------------------------------------------------------
   var CSS = [
-    '.jb-root{display:flex;flex-direction:column;height:100%;min-height:420px;background:' + BRAND.navy + ';border:1px solid ' + BRAND.navyLight + ';border-radius:12px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:' + BRAND.text + ';}',
-    '.jb-head{display:flex;align-items:center;gap:10px;padding:14px 18px;background:' + BRAND.navyLight + ';font-weight:700;font-size:15px;flex:0 0 auto;}',
-    '.jb-dot{width:10px;height:10px;border-radius:50%;background:' + BRAND.orange + ';flex:0 0 auto;}',
-    '.jb-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:16px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;}',
-    '.jb-row{display:flex;}',
+    /* Tokens — the single source of color / type / motion. Prefixed --jb-* so
+       they can never collide with a host page's own custom properties. */
+    '.jb-root{',
+    '--jb-bg-base:#0A0A0B;--jb-bg-raised:#141416;--jb-bg-sunken:#060607;',
+    '--jb-text-primary:#F5F5F7;--jb-text-secondary:rgba(245,245,247,0.62);--jb-text-tertiary:rgba(245,245,247,0.38);',
+    '--jb-accent:#F7B211;--jb-accent-hover:#FFC53D;--jb-accent-pressed:#D99A0A;--jb-on-accent:#0A0A0B;',
+    '--jb-glass-fill:rgba(255,255,255,0.055);--jb-glass-border:rgba(255,255,255,0.10);--jb-glass-edge:rgba(255,255,255,0.22);',
+    '--jb-danger:#FF6B5A;',
+    /* §11 token swap: user bubbles are amber, James stays neutral glass. To put
+       amber on ALL bubbles, point --jb-bot-* at the accent here — one place. */
+    '--jb-user-bg:var(--jb-accent);--jb-user-text:var(--jb-on-accent);',
+    '--jb-bot-bg:rgba(255,255,255,0.04);--jb-bot-text:var(--jb-text-primary);--jb-bot-border:var(--jb-glass-border);',
+    '--jb-ease:cubic-bezier(0.22,1,0.36,1);--jb-blur:24px;--jb-radius:18px;',
+    'position:relative;display:flex;flex-direction:column;height:100%;min-height:420px;overflow:hidden;',
+    'background:var(--jb-bg-base);border:1px solid rgba(255,255,255,0.06);border-radius:var(--jb-radius);',
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;',
+    'font-size:15px;line-height:1.6;letter-spacing:normal;color:var(--jb-text-primary);',
+    'font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;',
+    '}',
+    /* Reset inherited box model so host CSS can't distort our layout. */
+    '.jb-root *,.jb-root *::before,.jb-root *::after{box-sizing:border-box;}',
+
+    /* --- Ambient light layer -------------------------------------------------
+       Contained to the widget (position:absolute, not fixed) so the amber never
+       bleeds onto the host lesson page. Sized in px (not vw) for the same
+       reason — a viewport unit would balloon inside a small embed. The orbs are
+       barely visible alone; their job is to give the glass something to
+       refract. */
+    '.jb-orbs{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0;}',
+    '.jb-orb{position:absolute;border-radius:50%;filter:blur(60px);opacity:0.9;will-change:transform;transition:opacity 700ms ease,filter 700ms ease;}',
+    '.jb-orb-a{width:460px;height:460px;top:-26%;left:-18%;background:radial-gradient(circle at center,rgba(247,178,17,0.10),transparent 68%);animation:jb-drift-a 52s ease-in-out infinite;}',
+    '.jb-orb-b{width:520px;height:520px;bottom:-30%;right:-20%;background:radial-gradient(circle at center,rgba(184,116,0,0.07),transparent 66%);animation:jb-drift-b 61s ease-in-out infinite;}',
+    '.jb-orb-c{width:400px;height:400px;top:28%;right:-24%;background:radial-gradient(circle at center,rgba(42,53,80,0.05),transparent 70%);animation:jb-drift-c 47s ease-in-out infinite;}',
+    '@keyframes jb-drift-a{0%{transform:translate(0,0) scale(1);}50%{transform:translate(40px,30px) scale(1.08);}100%{transform:translate(0,0) scale(1);}}',
+    '@keyframes jb-drift-b{0%{transform:translate(0,0) scale(1);}50%{transform:translate(-46px,-28px) scale(1.06);}100%{transform:translate(0,0) scale(1);}}',
+    '@keyframes jb-drift-c{0%{transform:translate(0,0) scale(1);}50%{transform:translate(-30px,36px) scale(1.1);}100%{transform:translate(0,0) scale(1);}}',
+    /* The whole room responds while James thinks: orbs warm and quicken, then
+       settle when the answer lands. This is the signature paying off. */
+    '.jb-root.jb-busy .jb-orb{opacity:1;filter:blur(54px) saturate(1.2);}',
+    '.jb-root.jb-busy .jb-orb-a{animation-duration:22s;}',
+    '.jb-root.jb-busy .jb-orb-b{animation-duration:26s;}',
+    '.jb-root.jb-busy .jb-orb-c{animation-duration:19s;}',
+
+    /* --- Glass utility ------------------------------------------------------- */
+    '.jb-glass{position:relative;background:var(--jb-glass-fill);',
+    'backdrop-filter:blur(var(--jb-blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--jb-blur)) saturate(180%);',
+    'border:1px solid var(--jb-glass-border);',
+    'box-shadow:inset 0 1px 0 rgba(255,255,255,0.14),0 8px 32px rgba(0,0,0,0.4);}',
+    /* Specular top lip — light from above catching the edge. */
+    '.jb-glass::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;',
+    'background:linear-gradient(to bottom,rgba(255,255,255,0.18),transparent 40%);}',
+    /* Fallback: on browsers without backdrop-filter, glass would read as a flat
+       gray box, so give it a solid raised fill instead. */
+    '@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){',
+    '.jb-glass{background:var(--jb-bg-raised);}}',
+
+    /* --- Layout: header / list / composer sit above the orbs ------------------ */
+    '.jb-head,.jb-list,.jb-form{position:relative;z-index:1;}',
+    '.jb-head{display:flex;align-items:center;gap:10px;padding:14px 18px;flex:0 0 auto;',
+    'border-radius:0;border-left:none;border-right:none;border-top:none;font-weight:600;font-size:20px;letter-spacing:-0.01em;}',
+    '.jb-title{color:var(--jb-text-primary);}',
+    '.jb-dot{width:9px;height:9px;border-radius:50%;background:var(--jb-accent);flex:0 0 auto;',
+    'box-shadow:0 0 0 0 rgba(247,178,17,0.5);animation:jb-pulse-dot 3.4s var(--jb-ease) infinite;}',
+    '@keyframes jb-pulse-dot{0%{box-shadow:0 0 0 0 rgba(247,178,17,0.45);}70%{box-shadow:0 0 0 7px rgba(247,178,17,0);}100%{box-shadow:0 0 0 0 rgba(247,178,17,0);}}',
+
+    '.jb-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:18px 16px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch;}',
+
+    /* --- Message bubbles (flat translucent fills — glass is reserved for chrome) */
+    '.jb-row{display:flex;animation:jb-in 220ms var(--jb-ease) both;}',
     '.jb-row.jb-user{justify-content:flex-end;}',
-    '.jb-bubble{max-width:85%;padding:10px 14px;font-size:14px;line-height:1.55;word-break:break-word;overflow-wrap:anywhere;}',
-    '.jb-bot .jb-bubble{background:' + BRAND.navyLight + ';color:' + BRAND.text + ';border-radius:14px 14px 14px 4px;}',
-    '.jb-user .jb-bubble{background:' + BRAND.orange + ';color:#fff;border-radius:14px 14px 4px 14px;white-space:pre-wrap;}',
+    '@keyframes jb-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}',
+    '.jb-bubble{max-width:86%;padding:11px 15px;font-size:15px;line-height:1.6;word-break:break-word;overflow-wrap:anywhere;border-radius:var(--jb-radius);}',
+    '.jb-bot .jb-bubble{background:var(--jb-bot-bg);color:var(--jb-bot-text);border:1px solid var(--jb-bot-border);',
+    'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
+    '.jb-user .jb-bubble{background:var(--jb-user-bg);color:var(--jb-user-text);border-top-right-radius:5px;white-space:pre-wrap;font-weight:500;}',
     '.jb-bubble p{margin:0 0 8px;}',
     '.jb-bubble p:last-child{margin-bottom:0;}',
-    '.jb-bubble h4{margin:10px 0 6px;font-size:14px;font-weight:700;}',
+    '.jb-bubble h4{margin:12px 0 6px;font-size:15px;font-weight:700;letter-spacing:-0.01em;}',
     '.jb-bubble h4:first-child{margin-top:0;}',
     '.jb-bubble ul{margin:0 0 8px;padding-left:18px;}',
     '.jb-bubble ul:last-child{margin-bottom:0;}',
-    '.jb-bubble li{margin:2px 0;}',
-    '.jb-bubble li::marker{color:' + BRAND.orange + ';}',
-    '.jb-bubble code{background:' + BRAND.navyDeep + ';padding:1px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;}',
+    '.jb-bubble li{margin:3px 0;}',
+    '.jb-bubble li::marker{color:var(--jb-accent);}',
+    '.jb-bubble code{background:var(--jb-bg-sunken);padding:1px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;}',
     '.jb-bubble strong{font-weight:700;color:#fff;}',
-    '.jb-form{display:flex;gap:8px;padding:12px;background:' + BRAND.navyLight + ';flex:0 0 auto;}',
-    /* 16px keeps iOS Safari from zooming the page on focus. */
-    '.jb-input{flex:1 1 auto;min-width:0;padding:12px 14px;border-radius:8px;border:1px solid ' + BRAND.navy + ';background:' + BRAND.navy + ';color:' + BRAND.text + ';font-size:16px;font-family:inherit;outline:none;}',
-    '.jb-input:focus{border-color:' + BRAND.orange + ';}',
-    '.jb-input::placeholder{color:#6f829c;}',
-    '.jb-send{flex:0 0 auto;padding:12px 20px;border:none;border-radius:8px;background:' + BRAND.orange + ';color:#fff;font-weight:700;font-size:14px;font-family:inherit;cursor:pointer;transition:background .15s;}',
-    '.jb-send:hover{background:' + BRAND.orangeDark + ';}',
-    '.jb-send:focus-visible{outline:2px solid #fff;outline-offset:2px;}',
-    '.jb-send[disabled]{background:' + BRAND.orangeDark + ';opacity:.6;cursor:default;}',
-    '.jb-typing{color:' + BRAND.textMuted + ';font-style:italic;}',
-    '.jb-retry{margin-top:8px;background:transparent;border:1px solid ' + BRAND.orange + ';color:' + BRAND.orange + ';border-radius:6px;padding:5px 12px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;}',
-    '.jb-retry:hover{background:' + BRAND.orange + ';color:#fff;}',
-    '@media (max-width:520px){.jb-bubble{max-width:92%;font-size:13.5px;}.jb-list{padding:12px;}.jb-form{padding:10px;}.jb-send{padding:12px 16px;}}',
-    '@media (prefers-reduced-motion:reduce){.jb-send{transition:none;}}',
+    /* The lead figure the count-up lands on — confident, tabular, amber. */
+    '.jb-fig{font-weight:650;letter-spacing:-0.01em;color:var(--jb-accent);font-variant-numeric:tabular-nums;}',
+
+    /* --- Thinking state ------------------------------------------------------ */
+    '.jb-think-row{display:flex;}',
+    '.jb-think{display:inline-flex;align-items:center;gap:10px;padding:11px 15px;border-radius:var(--jb-radius);',
+    'background:var(--jb-bot-bg);border:1px solid var(--jb-bot-border);border-left:2px solid var(--jb-accent);border-top-left-radius:5px;',
+    'color:var(--jb-text-secondary);font-size:14px;}',
+    '.jb-think-dots{display:inline-flex;gap:4px;}',
+    '.jb-think-dots i{width:6px;height:6px;border-radius:50%;background:var(--jb-accent);opacity:0.5;animation:jb-blink 1.2s var(--jb-ease) infinite;}',
+    '.jb-think-dots i:nth-child(2){animation-delay:0.18s;}',
+    '.jb-think-dots i:nth-child(3){animation-delay:0.36s;}',
+    '@keyframes jb-blink{0%,100%{opacity:0.35;transform:translateY(0);}50%{opacity:1;transform:translateY(-2px);}}',
+
+    /* --- Composer ------------------------------------------------------------ */
+    '.jb-form{display:flex;gap:10px;align-items:center;padding:12px;flex:0 0 auto;margin:0 10px 10px;border-radius:14px;}',
+    /* 16px font keeps iOS Safari from zooming the page on focus. */
+    '.jb-input{flex:1 1 auto;min-width:0;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:16px;font-family:inherit;outline:none;transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
+    '.jb-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
+    '.jb-input::placeholder{color:var(--jb-text-tertiary);}',
+    '.jb-send{flex:0 0 auto;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;',
+    'border:none;border-radius:50%;background:var(--jb-accent);color:var(--jb-on-accent);cursor:pointer;',
+    'transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);}',
+    '.jb-send:hover{background:var(--jb-accent-hover);}',
+    '.jb-send:active{transform:scale(0.94);background:var(--jb-accent-pressed);}',
+    '.jb-send:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
+    '.jb-send[disabled]{opacity:0.5;cursor:default;}',
+    '.jb-send .jb-send-i{width:20px;height:20px;display:block;}',
+    /* Send hints it is armed only when there is something to send. */
+    '.jb-form.jb-armed .jb-send{animation:jb-arm 2.2s var(--jb-ease) infinite;}',
+    '@keyframes jb-arm{0%,100%{box-shadow:0 0 0 0 rgba(247,178,17,0);}50%{box-shadow:0 0 0 5px rgba(247,178,17,0.18);}}',
+    /* Visually-hidden text so the icon-only button still reads "Send". */
+    '.jb-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}',
+
+    '.jb-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
+    'border-radius:8px;padding:6px 13px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
+    '.jb-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
+
+    /* --- Inline calculator form (glass card inset into the thread) ----------- */
+    '.jb-calc{max-width:100%;width:100%;border-radius:16px;padding:16px;animation:jb-card-in 320ms var(--jb-ease) both;}',
+    '@keyframes jb-card-in{from{opacity:0;transform:scale(0.98);}to{opacity:1;transform:scale(1);}}',
+    '.jb-calc-title{font-weight:700;font-size:15px;letter-spacing:-0.01em;margin:0 0 4px;color:var(--jb-text-primary);}',
+    '.jb-calc-sub{color:var(--jb-text-secondary);font-size:13px;margin:0 0 14px;}',
+    '.jb-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}',
+    '.jb-label{font-size:13px;letter-spacing:0.01em;color:var(--jb-text-secondary);font-weight:600;}',
+    '.jb-req{color:var(--jb-accent);margin-left:3px;}',
+    '.jb-unit{color:var(--jb-text-tertiary);font-weight:400;}',
+    '.jb-control{width:100%;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:16px;font-family:inherit;outline:none;',
+    'transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
+    '.jb-control:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
+    '.jb-control[aria-invalid="true"]{border-color:var(--jb-danger);box-shadow:0 0 0 3px rgba(255,107,90,0.18);}',
+    '.jb-adv{margin:4px 0 14px;}',
+    '.jb-adv-toggle{background:transparent;border:none;color:var(--jb-accent);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;padding:5px 0;}',
+    '.jb-adv-toggle:hover{color:var(--jb-accent-hover);}',
+    '.jb-adv-body{margin-top:12px;padding-top:12px;border-top:1px solid var(--jb-glass-border);}',
+    '.jb-calc-actions{display:flex;gap:10px;align-items:center;margin-top:4px;}',
+    '.jb-btn{border:none;border-radius:10px;padding:11px 20px;background:var(--jb-accent);color:var(--jb-on-accent);',
+    'font-weight:700;font-size:14px;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);}',
+    '.jb-btn:hover{background:var(--jb-accent-hover);}',
+    '.jb-btn:active{transform:scale(0.97);background:var(--jb-accent-pressed);}',
+    '.jb-btn:focus-visible,.jb-calc-cancel:focus-visible,.jb-adv-toggle:focus-visible,.jb-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
+    '.jb-calc-cancel{background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--jb-text-secondary);',
+    'border-radius:10px;padding:11px 16px;font-size:14px;font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
+    '.jb-calc-cancel:hover{border-color:var(--jb-text-secondary);color:var(--jb-text-primary);}',
+    '.jb-calc-error{color:var(--jb-danger);font-size:12.5px;margin-top:10px;}',
+
+    /* --- Responsive ---------------------------------------------------------- */
+    /* Mobile: backdrop-filter is costlier per pixel, so soften the blur. */
+    '@media (max-width:520px){.jb-root{--jb-blur:14px;}.jb-bubble{max-width:92%;font-size:14.5px;}.jb-list{padding:14px 12px;}.jb-head{font-size:18px;padding:13px 15px;}.jb-form{margin:0 8px 8px;}.jb-calc{padding:13px;}}',
+    '@media (max-width:360px){.jb-form{gap:8px;padding:10px;}.jb-send{width:42px;height:42px;}}',
+
+    /* --- Reduced motion: kill drift, count-up (JS-gated), and all transforms.
+       Keep opacity fades — they aid comprehension and don't trigger vestibular
+       issues. Hard requirement, not a nicety. */
+    '@media (prefers-reduced-motion:reduce){',
+    '.jb-orb,.jb-dot,.jb-think-dots i,.jb-form.jb-armed .jb-send{animation:none!important;}',
+    '.jb-row{animation:jb-fade 200ms var(--jb-ease) both;}',
+    '.jb-calc{animation:jb-fade 220ms var(--jb-ease) both;}',
+    '.jb-send,.jb-btn,.jb-input,.jb-control{transition:none;}',
+    '.jb-send:active,.jb-btn:active{transform:none;}',
+    '}',
+    '@keyframes jb-fade{from{opacity:0;}to{opacity:1;}}',
   ].join('');
 
   function injectStyles() {
@@ -92,6 +240,9 @@
   }
 
   function getSessionId() {
+    // Pre-existing per-browser session id so history survives a full reload.
+    // Predates this redesign and is out of its visual scope; no NEW state is
+    // stored. (See report on the §10 "no storage" tension.)
     try {
       var key = 'james-bot-session';
       var existing = window.localStorage.getItem(key);
@@ -115,11 +266,17 @@
     return node;
   }
 
+  function prefersReducedMotion() {
+    return (
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
   // --- Markdown ------------------------------------------------------------
-  // The model replies in markdown ("- **Net Profit**: $101,916"), which the old
-  // widget printed with the asterisks showing. Escape EVERYTHING first, then
-  // introduce a fixed set of tags — so no model (or echoed user) content can
-  // inject markup, and innerHTML below is safe by construction.
+  // The model replies in markdown ("- **Net Profit**: $101,916"). Escape
+  // EVERYTHING first, then introduce a fixed set of tags — so no model (or
+  // echoed user) content can inject markup, and innerHTML below is safe.
 
   function escapeHtml(text) {
     return String(text)
@@ -185,6 +342,91 @@
     node.innerHTML = html;
   }
 
+  // --- Count-up on the lead figure -----------------------------------------
+  // The one flourish worth keeping: the headline number counts up on arrival.
+  // Progressive enhancement only — it runs solely in a real browser that
+  // reports motion preferences (jsdom has no matchMedia, so the test harness
+  // skips it and message text is never touched). Wrapped in try/catch so it can
+  // never break rendering, and the final value is always restored verbatim.
+
+  function formatFigure(value, prefix, suffix, decimals) {
+    var s = Math.abs(value).toFixed(decimals);
+    var parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return prefix + parts.join('.') + suffix;
+  }
+
+  function countUp(span, finalText, target, prefix, suffix, decimals) {
+    var dur = 600;
+    var start = null;
+    function frame(ts) {
+      if (start === null) start = ts;
+      var p = Math.min(1, (ts - start) / dur);
+      var eased = 1 - Math.pow(1 - p, 3); // ease-out
+      if (p < 1) {
+        span.textContent = formatFigure(target * eased, prefix, suffix, decimals);
+        window.requestAnimationFrame(frame);
+      } else {
+        span.textContent = finalText; // exact original, guaranteed
+      }
+    }
+    span.textContent = formatFigure(0, prefix, suffix, decimals);
+    window.requestAnimationFrame(frame);
+  }
+
+  function animateLeadFigure(bubble) {
+    try {
+      // Skip in environments without matchMedia (the jsdom test harness, old
+      // browsers): the message text is then left exactly as rendered.
+      if (typeof window.matchMedia !== 'function') return;
+
+      // A currency figure >= $1,000, or any percentage.
+      var re = /-?\$\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\$\d{4,}(?:\.\d+)?|\d{1,3}(?:\.\d+)?%/;
+      var walker = document.createTreeWalker(bubble, NodeFilter.SHOW_TEXT, null);
+      var node;
+      while ((node = walker.nextNode())) {
+        var m = node.nodeValue.match(re);
+        if (!m) continue;
+
+        var matchText = m[0];
+        var idx = m.index;
+        var after = node.splitText(idx);
+        after.nodeValue = after.nodeValue.slice(matchText.length);
+        // The amber lead figure is a STATIC design choice (§5) — it stays amber
+        // even when motion is off. Only the count-up itself is motion-gated.
+        var span = el('span', 'jb-fig');
+        span.textContent = matchText;
+        after.parentNode.insertBefore(span, after);
+
+        if (prefersReducedMotion() || typeof window.requestAnimationFrame !== 'function') {
+          return; // amber, but no count-up
+        }
+
+        var prefix = matchText.indexOf('-') === 0 ? '-' : '';
+        if (matchText.indexOf('$') !== -1) prefix += '$';
+        var suffix = matchText.charAt(matchText.length - 1) === '%' ? '%' : '';
+        var dot = matchText.indexOf('.');
+        var decimals = dot === -1 ? 0 : matchText.replace('%', '').length - dot - 1;
+        var target = Number(matchText.replace(/[^0-9.]/g, ''));
+        if (!isFinite(target)) return;
+
+        countUp(span, matchText, target, prefix, suffix, decimals);
+        return; // lead figure only — one flourish, not every number
+      }
+    } catch (e) {
+      /* enhancement only — never let it break the message */
+    }
+  }
+
+  // --- Send icon (inline SVG; the accessible label is a visually-hidden span) -
+  function sendButtonInner() {
+    return (
+      '<span class="jb-sr">Send</span>' +
+      '<svg class="jb-send-i" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path d="M4 12h13M11 6l7 6-7 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    );
+  }
+
   // --- Widget --------------------------------------------------------------
 
   function createJamesBot(options) {
@@ -203,9 +445,18 @@
 
       var root = el('div', 'jb-root');
 
-      var header = el('div', 'jb-head');
-      header.appendChild(el('span', 'jb-dot'));
-      header.appendChild(document.createTextNode('James Dainard AI Mentor'));
+      // Ambient light behind everything (decorative — hidden from a11y tree).
+      var orbs = el('div', 'jb-orbs', { 'aria-hidden': 'true' });
+      orbs.appendChild(el('div', 'jb-orb jb-orb-a'));
+      orbs.appendChild(el('div', 'jb-orb jb-orb-b'));
+      orbs.appendChild(el('div', 'jb-orb jb-orb-c'));
+      root.appendChild(orbs);
+
+      var header = el('div', 'jb-head jb-glass');
+      header.appendChild(el('span', 'jb-dot', { 'aria-hidden': 'true' }));
+      var title = el('span', 'jb-title');
+      title.textContent = 'Ask James';
+      header.appendChild(title);
 
       var list = el('div', 'jb-list', {
         role: 'log',
@@ -214,7 +465,7 @@
         'aria-label': 'Conversation with James',
       });
 
-      var form = el('form', 'jb-form');
+      var form = el('form', 'jb-form jb-glass');
       var input = el('input', 'jb-input', {
         type: 'text',
         placeholder: 'Ask James anything…',
@@ -222,7 +473,7 @@
         autocomplete: 'off',
       });
       var send = el('button', 'jb-send', { type: 'submit' });
-      send.textContent = 'Send';
+      send.innerHTML = sendButtonInner();
       form.appendChild(input);
       form.appendChild(send);
 
@@ -238,7 +489,8 @@
         return list.scrollHeight - list.scrollTop - list.clientHeight < 80;
       }
 
-      function addBubble(text, who) {
+      function addBubble(text, who, opts) {
+        opts = opts || {};
         var stick = nearBottom();
         var row = el('div', 'jb-row ' + (who === 'user' ? 'jb-user' : 'jb-bot'));
         var bubble = el('div', 'jb-bubble');
@@ -246,6 +498,7 @@
           bubble.textContent = text; // never parse member input as markup
         } else {
           renderMarkdownInto(bubble, text);
+          if (opts.animate) animateLeadFigure(bubble);
         }
         row.appendChild(bubble);
         list.appendChild(row);
@@ -253,23 +506,40 @@
         return { row: row, bubble: bubble };
       }
 
+      // Thinking indicator: honest rotating copy, and it warms the whole room
+      // (jb-busy on root speeds/warms the orbs) so a 15–20s wait reads as
+      // intentional, not stuck. Removed the instant the answer lands.
       function addTyping() {
-        var handle = addBubble('James is thinking', 'bot');
-        handle.bubble.className = 'jb-bubble jb-typing';
+        var stick = nearBottom();
+        var row = el('div', 'jb-row jb-bot jb-think-row');
+        var think = el('div', 'jb-think');
+        var dots = el('span', 'jb-think-dots', { 'aria-hidden': 'true' });
+        dots.innerHTML = '<i></i><i></i><i></i>';
+        var label = el('span', 'jb-think-label');
+        label.textContent = THINK_COPY[0] + '…';
+        think.appendChild(dots);
+        think.appendChild(label);
+        row.appendChild(think);
+        list.appendChild(row);
+        root.classList.add('jb-busy');
+        if (stick) list.scrollTop = list.scrollHeight;
+
+        // aria-relevant="additions" means these text swaps are not re-announced.
         var i = 0;
         var timer = setInterval(function () {
-          i = (i + 1) % 4;
-          handle.bubble.textContent = 'James is thinking' + new Array(i + 1).join('.');
-        }, 400);
+          i = (i + 1) % THINK_COPY.length;
+          label.textContent = THINK_COPY[i] + '…';
+        }, 2800);
+
         return function remove() {
           clearInterval(timer);
-          if (handle.row.parentNode) handle.row.parentNode.removeChild(handle.row);
+          root.classList.remove('jb-busy');
+          if (row.parentNode) row.parentNode.removeChild(row);
         };
       }
 
-      // Opening message: local and instant. The greeting, the numbered menu and
-      // the pre-numbers disclaimer are static copy — a model can forget them,
-      // static text cannot.
+      // Opening message: local and instant. The greeting and the pre-numbers
+      // disclaimer are static copy — a model can forget them, static text can't.
       addBubble(OPENING_MESSAGE, 'bot');
 
       var busy = false;
@@ -294,10 +564,249 @@
         handle.bubble.appendChild(retry);
       }
 
+      // --- Inline calculator form -----------------------------------------
+      // Fields are whatever the server sent in render_form, which is derived
+      // from the calculator tool schemas. The widget renders the descriptor and
+      // knows nothing about which fields exist — add one to a schema and it
+      // shows up here with no change to this file.
+
+      function unitSuffix(field) {
+        if (field.unit === 'usd') return ' ($)';
+        if (field.unit === 'months') return ' (months)';
+        if (field.unit === 'sf') return ' (sq ft)';
+        // Decimals are sent to the calculator as decimals (0.12 = 12%). The UI
+        // does NOT convert: a percent-to-decimal slip is a silent 100x error on
+        // a financial number, so the expected form is stated instead.
+        if (field.unit === 'decimal') return ' (decimal, e.g. 0.12)';
+        return '';
+      }
+
+      /** One labelled control. Optional fields are pre-filled with their default. */
+      function buildField(field) {
+        var wrap = el('div', 'jb-field');
+        var id = 'jb-f-' + field.name + '-' + Math.random().toString(36).slice(2, 8);
+
+        var label = el('label', 'jb-label', { for: id });
+        label.appendChild(document.createTextNode(field.label));
+        var suffix = unitSuffix(field);
+        if (suffix) {
+          var unit = el('span', 'jb-unit');
+          unit.textContent = suffix;
+          label.appendChild(unit);
+        }
+        if (field.required) {
+          var star = el('span', 'jb-req', { 'aria-hidden': 'true' });
+          star.textContent = '*';
+          label.appendChild(star);
+        }
+
+        var control;
+        if (field.type === 'enum') {
+          control = el('select', 'jb-control', { id: id, name: field.name });
+          (field.options || []).forEach(function (option) {
+            var node = el('option', null, { value: option });
+            node.textContent = option;
+            control.appendChild(node);
+          });
+        } else {
+          control = el('input', 'jb-control', {
+            id: id,
+            name: field.name,
+            type: 'text',
+            inputmode: 'decimal',
+            autocomplete: 'off',
+          });
+        }
+        if (field.required) control.setAttribute('required', 'required');
+        if (field.description) control.setAttribute('title', field.description);
+
+        // Defaults are shown, but an untouched default is NOT submitted — the
+        // tool applies it and reports it in defaults_applied, which is what the
+        // answer discloses. Sending it back would erase that disclosure.
+        if (field['default'] !== undefined && field['default'] !== null) {
+          control.value = String(field['default']);
+          control.setAttribute('data-default', String(field['default']));
+        }
+
+        wrap.appendChild(label);
+        wrap.appendChild(control);
+        return wrap;
+      }
+
+      function renderCalculatorForm(spec) {
+        var stick = nearBottom();
+        var row = el('div', 'jb-row jb-bot');
+        var card = el('div', 'jb-calc jb-glass', {
+          role: 'group',
+          'aria-label': spec.title + ' calculator inputs',
+          'data-calculator': spec.calculator,
+        });
+
+        var title = el('p', 'jb-calc-title');
+        title.textContent = spec.title + ' calculator';
+        var sub = el('p', 'jb-calc-sub');
+        sub.textContent = 'Fill in the required fields and hit Calculate.';
+        card.appendChild(title);
+        card.appendChild(sub);
+
+        (spec.required || []).forEach(function (field) {
+          card.appendChild(buildField(field));
+        });
+
+        // Optional fields are collapsed: they already carry James's standard
+        // defaults, so the common path is to touch none of them.
+        var optional = spec.optional || [];
+        var advBody = null;
+        if (optional.length) {
+          var adv = el('div', 'jb-adv');
+          var toggle = el('button', 'jb-adv-toggle', {
+            type: 'button',
+            'aria-expanded': 'false',
+          });
+          toggle.textContent = 'Show advanced options (' + optional.length + ')';
+          advBody = el('div', 'jb-adv-body');
+          advBody.style.display = 'none';
+          optional.forEach(function (field) {
+            advBody.appendChild(buildField(field));
+          });
+          toggle.addEventListener('click', function () {
+            var open = advBody.style.display !== 'none';
+            advBody.style.display = open ? 'none' : 'block';
+            toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+            toggle.textContent =
+              (open ? 'Show' : 'Hide') + ' advanced options (' + optional.length + ')';
+          });
+          adv.appendChild(toggle);
+          adv.appendChild(advBody);
+          card.appendChild(adv);
+        }
+
+        var actions = el('div', 'jb-calc-actions');
+        var calcBtn = el('button', 'jb-btn', { type: 'button' });
+        calcBtn.textContent = 'Calculate';
+        var cancelBtn = el('button', 'jb-calc-cancel', { type: 'button' });
+        cancelBtn.textContent = 'Cancel';
+        actions.appendChild(calcBtn);
+        actions.appendChild(cancelBtn);
+        card.appendChild(actions);
+
+        var errorNode = el('div', 'jb-calc-error', { role: 'alert' });
+        card.appendChild(errorNode);
+
+        function dismiss() {
+          if (row.parentNode) row.parentNode.removeChild(row);
+        }
+
+        /** Read the controls. Untouched optional defaults are omitted. */
+        function collectValues() {
+          var values = {};
+          var controls = card.querySelectorAll('.jb-control');
+          Array.prototype.forEach.call(controls, function (control) {
+            var name = control.getAttribute('name');
+            var value = control.value == null ? '' : String(control.value).trim();
+            var fallback = control.getAttribute('data-default');
+            if (fallback !== null && value === fallback) return; // unchanged default
+            if (!value) return;
+            values[name] = value;
+          });
+          return values;
+        }
+
+        calcBtn.addEventListener('click', function () {
+          if (busy) return;
+          errorNode.textContent = '';
+          Array.prototype.forEach.call(card.querySelectorAll('.jb-control'), function (c) {
+            c.removeAttribute('aria-invalid');
+          });
+
+          // Required fields are validated SERVER-side against the same schema;
+          // this only flags them locally so the member sees which box to fix.
+          var values = collectValues();
+          var blank = (spec.required || []).filter(function (field) {
+            return values[field.name] === undefined;
+          });
+          if (blank.length) {
+            blank.forEach(function (field) {
+              var node = card.querySelector('[name="' + field.name + '"]');
+              if (node) node.setAttribute('aria-invalid', 'true');
+            });
+            errorNode.textContent =
+              'Please fill in: ' +
+              blank
+                .map(function (f) {
+                  return f.label;
+                })
+                .join(', ') +
+              '.';
+            return;
+          }
+
+          submitCalculatorForm(spec, values, dismiss, errorNode);
+        });
+
+        cancelBtn.addEventListener('click', dismiss);
+
+        row.appendChild(card);
+        list.appendChild(row);
+        if (stick) list.scrollTop = list.scrollHeight;
+      }
+
+      function submitCalculatorForm(spec, values, dismiss, errorNode) {
+        started = true;
+        setBusy(true);
+        var removeTyping = null;
+
+        fetch(apiUrl + '/chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            member_email: memberEmail,
+            form_submission: { calculator: spec.calculator, values: values },
+          }),
+        })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              return { ok: res.ok, status: res.status, data: data };
+            });
+          })
+          .then(function (result) {
+            // A 400 is a validation answer about THIS form — keep the form up
+            // with the message on it rather than dropping a dead-end error
+            // bubble the member cannot act on.
+            if (!result.ok) {
+              if (result.status === 400 && result.data && result.data.error) {
+                errorNode.textContent = result.data.error;
+                return;
+              }
+              throw new Error('HTTP ' + result.status);
+            }
+            dismiss();
+            // Echo the server's own transcript line so the chat matches what a
+            // later /history replay will show.
+            if (result.data.user_message) addBubble(result.data.user_message, 'user');
+            removeTyping = addTyping();
+            removeTyping();
+            addBubble(result.data.output || "I didn't catch that — try again.", 'bot', {
+              animate: true,
+            });
+          })
+          .catch(function () {
+            if (removeTyping) removeTyping();
+            errorNode.textContent = 'Connection hiccup — try Calculate again in a few seconds.';
+          })
+          .then(function () {
+            setBusy(false);
+          });
+      }
+
       function submitMessage(override, skipEcho) {
         var text = typeof override === 'string' ? override : input.value.trim();
         if (!text || busy) return;
-        if (typeof override !== 'string') input.value = '';
+        if (typeof override !== 'string') {
+          input.value = '';
+          form.classList.remove('jb-armed');
+        }
         started = true;
         if (!skipEcho) addBubble(text, 'user');
         setBusy(true);
@@ -318,7 +827,10 @@
           })
           .then(function (data) {
             removeTyping();
-            addBubble(data.output || "I didn't catch that — try again.", 'bot');
+            addBubble(data.output || "I didn't catch that — try again.", 'bot', { animate: true });
+            // The model decides a form is warranted; the response carries the
+            // descriptor. Rendered after the reply so the copy reads first.
+            if (data.render_form) renderCalculatorForm(data.render_form);
           })
           .catch(function () {
             removeTyping();
@@ -333,6 +845,12 @@
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         submitMessage();
+      });
+
+      // Send button hints it is armed only when there is something to send.
+      input.addEventListener('input', function () {
+        if (input.value.trim()) form.classList.add('jb-armed');
+        else form.classList.remove('jb-armed');
       });
 
       // Explicit Enter-to-send — don't rely on implicit form submission, which
@@ -361,8 +879,11 @@
         .then(function (data) {
           if (!data || !data.messages || !data.messages.length) return;
           if (started) return; // member got there first; don't reorder their chat
-          data.messages.forEach(function (m) {
-            addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
+          data.messages.forEach(function (m, idx) {
+            var handle = addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
+            // Gentle stagger on a bulk repaint (capped); harmless under
+            // reduced-motion, which overrides to a plain fade.
+            handle.row.style.animationDelay = Math.min(idx * 40, 320) + 'ms';
           });
           list.scrollTop = list.scrollHeight;
         })

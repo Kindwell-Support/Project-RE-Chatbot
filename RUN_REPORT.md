@@ -1,335 +1,244 @@
-# RUN REPORT — Architecture Context + Remaining Work
+# RUN REPORT — "Ask James" UI redesign (dark room, warm light)
 
-Date: 2026-07-15 (evening run). All output pasted verbatim from the runners.
-Previous run's report archived at `reports/RUN_REPORT_2026-07-15_verify-deploy-prove.md`.
+Date: 2026-07-22. Visual-layer redesign of the chat widget and the `/demo` page.
+Previous run's report archived at `reports/RUN_REPORT_2026-07-22_inline-calculator-forms.md`.
 
-Architecture boundary respected throughout: **nothing was written to `documents`,
-`match_documents` was not modified, no ingestion was built.** The one database change is
-an **additive** RPC (`match_documents_distinct`), applied as a named migration.
+**No change to calculator math, tool schemas, agent logic, retrieval, or logging.** The
+only files touched are `widget/widget.js` (the whole visual layer), `src/server/app.ts`
+(the `/demo` HTML shell + name), and the rebuilt `public/widget.js`. The 65 agent/
+calculator/form tests that guard the money path were not touched and stay green.
 
 ---
 
-## 1. Job status
+## 1. The token file, verbatim
 
-| Job | Status | One line |
+All color / type / motion derives from one block on `.jb-root` (widget/widget.js). Not
+`:root` — scoping to the widget means these can't leak to the GHL host page and the host's
+own custom properties can't collide with ours (every token is `--jb-*`).
+
+```css
+--jb-bg-base:#0A0A0B;--jb-bg-raised:#141416;--jb-bg-sunken:#060607;
+--jb-text-primary:#F5F5F7;--jb-text-secondary:rgba(245,245,247,0.62);--jb-text-tertiary:rgba(245,245,247,0.38);
+--jb-accent:#F7B211;--jb-accent-hover:#FFC53D;--jb-accent-pressed:#D99A0A;--jb-on-accent:#0A0A0B;
+--jb-glass-fill:rgba(255,255,255,0.055);--jb-glass-border:rgba(255,255,255,0.10);--jb-glass-edge:rgba(255,255,255,0.22);
+--jb-danger:#FF6B5A;
+/* §11 token swap: user bubbles are amber, James stays neutral glass. To put
+   amber on ALL bubbles, point --jb-bot-* at the accent here — one place. */
+--jb-user-bg:var(--jb-accent);--jb-user-text:var(--jb-on-accent);
+--jb-bot-bg:rgba(255,255,255,0.04);--jb-bot-text:var(--jb-text-primary);--jb-bot-border:var(--jb-glass-border);
+--jb-ease:cubic-bezier(0.22,1,0.36,1);--jb-blur:24px;--jb-radius:18px;
+```
+
+Every §3 token is present with the exact values specified, including near-black `#0A0A0B`
+over `#F5F5F7` (not pure `#000`/`#FFF`). Amber `#F7B211` on `#0A0A0B` is ~10.8:1 (AAA),
+used freely for text and the lead metric.
+
+**Type scale** (§5) is applied via these sizes: header/card titles 20px (-0.01em), body 15px
+/1.6, labels 13px (+0.01em), the demo eyebrow 11px (+0.06em, uppercase), lead metric ~17px
+650-weight amber. `font-variant-numeric: tabular-nums` is set on `.jb-root` so every figure
+in the thread aligns and never shifts width as the count-up runs. Fonts are the **system
+grotesk stack** — chosen over a web font so a blocked font request can never leave the UI
+unstyled and the bundle stays lean (§10). "Confident numerals" come from weight + negative
+tracking + tabular figures, not a second downloaded family.
+
+---
+
+## 2. §11 decision — built the recommended interpretation, as a one-line swap
+
+Built the §7 reading: **amber for user bubbles + primary actions, neutral glass for James's
+messages.** Amber behind long paragraphs is fatiguing and would flatten the hierarchy that
+lets result numbers stand out. James's bubble is marked instead with a quiet amber
+left-edge rule (no avatar circle).
+
+To flip to "amber on every bubble," change the three `--jb-bot-*` tokens to the accent — the
+comment in the token block marks the exact spot. Nothing else moves.
+
+---
+
+## 3. Liquid glass — the ambient layer is contained, not fixed
+
+The §4 recipe is implemented as one `.jb-glass` utility (blur 24px / saturate 180%, top
+specular `::before`, inset top highlight, outer lift shadow) with a
+`@supports not (backdrop-filter)` fallback to solid `--bg-raised`. Glass is on **chrome
+only** — header, composer, calculator + result cards. Message bubbles are flat translucent
+fills, per the performance guardrail.
+
+**One deliberate deviation from §4, for embedding safety:** the ambient orbs are
+`position: absolute` inside `.jb-root`, not `position: fixed`. A viewport-fixed layer would
+paint amber orbs across the **entire GHL lesson page**, not just the widget. For the same
+reason the orbs are sized in px, not vw (a viewport unit balloons inside a small embed).
+Three orbs (warm `#F7B211`, deep `#B87400`, cool `#2A3550` counterweight) drift on
+independent 47/52/61s ease-in-out loops. The screenshots confirm the header/composer glass
+picks up the warm light behind it.
+
+---
+
+## 4. CSS scoping for the embed — prefixed classes (not shadow DOM), and why
+
+**Chosen: scoped `.jb-` prefixed classes**, everything under `.jb-root`, with `--jb-*`
+tokens and a `.jb-root *{box-sizing:border-box}` reset so host box-model rules can't distort
+us. Reasons shadow DOM was rejected:
+
+1. **It would break the test suite wholesale.** ~50 assertions across `tests/widget.test.ts`
+   and `tests/calculatorForm.widget.test.ts` query the light DOM (`#james-bot input`,
+   `.jb-calc`, `.jb-list`, …). Shadow DOM hides all of that behind a shadow root, failing
+   them — and the rules forbid weakening tests.
+2. **The a11y live region and label associations** are simplest and most robust in the light
+   DOM.
+3. Prefix + token namespacing already gives practical isolation both directions.
+
+Trade-off flagged honestly: prefixed scoping is not the hard guarantee shadow DOM gives. If
+GHL ever ships CSS that targets bare tags aggressively (e.g. `div{}`), our reset covers box
+model but not everything. If that happens, shadow DOM is the escalation — but it's a larger
+change that requires rewriting the test queries, so it should be a deliberate, approved step.
+
+---
+
+## 5. Thinking state — honest neutral rotation (tool-event plumbing does not exist)
+
+**Could NOT tie it to real tool events, and did not fake it.** The `/chat` endpoint returns
+the whole answer in one response after 15–20s — there is no token stream or progress
+channel, so the widget genuinely cannot know mid-wait whether retrieval or a calculator is
+running. Per §8, it therefore uses **honest neutral copy that rotates on a slow (2.8s)
+interval** — "Thinking it through" → "Still with you" → "Working on it" → "Putting this
+together" — rather than inventing "Reading James's material…" on a timer.
+
+What it does do (§8): the whole room responds. While thinking, `.jb-busy` on the root warms
+the orbs and speeds their drift (52s→22s), settling when the answer lands — visible in the
+thinking screenshot as the intensified amber glow behind the header. No percentage, no
+progress bar.
+
+To get real staged status ("Reading James's material…" during retrieval) the server would
+need to stream tool events (SSE / chunked). That's an agent/transport change, out of this
+visual-only scope — flagged as the upgrade path.
+
+---
+
+## 6. Every location the product name changed
+
+Renamed to **"Ask James"** on the member-facing surfaces:
+
+| File | What | From → To |
 |---|---|---|
-| 1 — adaptive retrieval + alarm | **done** | New additive SQL-dedupe RPC applied to the live DB + adaptive scan window + `logger.error` alarm. Mutation-verified ×3. |
-| 2 — material allowance test | **done** | **Verdict: partially there — real rates are retrievable NOW; menu 5/6 can ship on RAG.** Routing rewired; live canary test passes. |
-| 3 — menu out of the model | **done** | Widget opening bubble = client's exact static copy; A1 rewritten to the mid-conversation path. |
-| 4 — deploy prep | **partial/blocked** | Configs + docs ready; **`docker build` NOT verified — no Docker daemon on this machine.** Still need platform choice + token from you. |
+| `widget/widget.js` | in-app header text | "James Dainard AI Mentor" → **"Ask James"** |
+| `widget/widget.js` | top-of-file doc comment | updated to "Ask James" |
+| `src/server/app.ts` | `/demo` `<title>` | → **"Ask James — Demo"** |
+| `src/server/app.ts` | `/demo` `<h1>` | → **"Ask James"** |
+| `src/server/app.ts` | `/demo` meta tags | added description, robots, color-scheme, theme-color, og:* |
+
+**Deliberately NOT renamed, with reasons:**
+- `src/server/app.ts` `/` service string (`"James Dainard AI Mentor API"`) — the route's own
+  comment states it is "the API, not a member-facing page," so §1's "everywhere it surfaces"
+  doesn't reach it. `tests/cors.test.ts` also pins this string; renaming it would regress a
+  test for no member-facing gain. Left legacy, commented.
+- The mount id `#james-bot`, the global `createJamesBot`, the `james-bot-session` key, the
+  `james-bot-styles` style id — internal identifiers wired into the GHL loader snippet,
+  `DEPLOY.md`, and the test suite. Not user-visible; renaming would break the embed contract.
+- Infra/package names (`package.json`, `fly.toml`, `render.yaml`, `.do/app.yaml`) — deploy
+  identifiers, not UI. Untouched.
+- The greeting keeps James's "I'm James" first-person voice, as instructed.
 
 ---
 
-## 2. JOB 2 HEADLINE — the spec-tier data verdict
+## 7. §12 — must-not-break, confirmed
 
-### Verdict: **partially there, and enough to ship menu 5/6 on RAG now.**
+All confirmed via the existing suite (untouched) — these paths are pure backend and the
+redesign never touched them:
 
-- **Real dollar figures ARE in `documents` and retrievable through the fixed retrieval** — for tile, flooring, paint, kitchens/cabinets, plumbing, and install rates.
-- **A formal Budget/Basic/Standard/Premium matrix is NOT there.** The tiers exist as James's narrative ("a dollar 50 spec / $2.50 spec / $4 spec", "standard flip vs nicer flips"), not as labeled table rows. The client's sheet remains the upgrade (deterministic, labeled tiers), no longer the blocker.
+- **NL flip `350k/75k/600k/4mo` → `$101,916`** — `tests/agent.test.ts`: "F2 numbers reach the
+  calculator and 101916 comes back — not the 148466 default". Also reproduced live in the
+  result screenshot (the count-up lands on **$101,916**).
+- **A second different flip returns different numbers** — `tests/agent.test.ts`: "a second,
+  different deal in the same run gets its own numbers" (the frozen-value regression).
+- **BRRRR immediately after a flip calls the BRRRR tool with fresh numbers** — covered by the
+  agent tool-routing tests.
+- **Inline forms submit through the same tool path** — `tests/calculatorForms.test.ts` 4.2/4.6
+  (form result === typed result, byte-identical; same `qa_logs`/memory writes).
+- **Disclaimer before inputs + with every result; defaults disclosure** — `ESTIMATE_NOTE` +
+  `defaults_applied` unchanged; forms/agent tests assert both.
+- **Existing suite green — no regressions.**
 
-### Verbatim retrieved chunks (real table, deduped retrieval, 8 probe queries run — selection below; every chunk shows id + similarity)
-
-```
-QUERY: "tile flooring cost per square foot budget spec level"   (ratio 0.164)
-
-[19206] sim=0.5808
-  ...Tile's also going to cost us about 10 to 11 a foot installed. So that's what
-
-[8443] sim=0.5660
-  Here's the theme that we need. I need a dollar 50 a square foot spec. I need a $2 50
-  square foot spec and I need a $4 spec for higher end house. ... when I'm looking at a
-  more affordable home, I already know my flooring's gonna cost me a dollar 50.
-
-[7950] sim=0.5505
-  James: Second, the install-rate-plus-material model — more granular, from our budget
-  sheet, broken down by install rate and material cost. For flooring, call five flooring
-  companies: "What do you charge to install engineered flooring per square foot?" You'll
-  hear five numbers; go with $2. That's your baseline install. Then it's just shopping —
-  LVP for about $1.50 a foot on clearance. So 2,000 square feet at $3.50 all...
-```
+Verbatim, whole suite before/after the redesign:
 
 ```
-QUERY: "kitchen cabinets cost budget spec level"   (ratio 0.178)
-
-[22483] sim=0.6407
-  ...A five thousand dollar kitchen — we painted the cabinets, threw countertops in, put
-  recycled appliances in... A 10,500 kitchen — builder grade cabinets I get for 6,500
-  bucks... And more custom kitche...
-
-[13793] sim=0.6238
-  Our cabinets — typically on a flip kitchen, it's going to cost us about $8 to $10,000
-  for cabinets, countertops, tile backsplash installed, maybe 12-13 with appliances.
+BEFORE:  Tests  732 passed | 18 skipped (750)   (1 pre-existing file fails to load — §9)
+AFTER:   Tests  732 passed | 18 skipped (750)   (same 1 pre-existing file)
 ```
 
-```
-QUERY: "interior paint cost per square foot"   (ratio 0.164)
-
-[13792] sim=0.5303
-  ...Typically on a flip, it costs me two bucks a foot on the outside, $3 on the inside;
-  this property it was more like $5 a foot, $10 a foot in total.
-
-[16430] sim=0.4978
-  ...in Seattle we can do a house's cosmetics (paint, mill work, doors, trim) for about
-  $20 a square foot. Then we go with standard blocks like a kitchen at $10,000.
-```
-
-```
-QUERY: "plumbing fixtures budget allowance spec"   (ratio 0.147)
-
-[17608] sim=0.5070
-  Bathrooms — all of our fixture valves are substantially more money. On an average
-  bathroom, it's going to cost us about $200 for the valve, plus $150 to $250 for the
-  trim on top. For our nicer flips that are about 1.5 to 1.7, we're going to be more
-  around 350.
-```
-
-The old bot's intermittency is now fully explained AND demonstrated: chunk 19206 carries
-the exact "$10 to 11 a foot installed" figure the old bot gave *sometimes*. Under
-one-distinct-chunk retrieval, whether a member got the answer was a lottery on which
-single chunk won. Deduped, it's reliably in the top 5.
-
-### Routing change that makes this shippable
-
-`lookup_material_budget`'s miss was a dead end ("do not estimate"). It now returns a
-fallback instruction: search the knowledge base, quote **only** figures present in
-retrieved passages, attribute them as James's project numbers that vary by market/year,
-and if retrieval has nothing, say so. System prompt menu-5/6 section updated to match.
-**No fabrication either way** — mutation-verified (dead-end mutation fails the test).
-
-### Live canary — the client's exact question (verbatim)
-
-```
-USER: What should I budget for tile flooring on a budget flip?
-
-===== MATERIAL TOOL TRACE ===== ["lookup_material_budget","search_knowledge_base"]
-
-===== MATERIAL FALLBACK RESPONSE =====
-For a budget flip, you can expect tile flooring to cost around $10 to $11 per square foot
-installed. Keep in mind that these figures can vary based on market conditions and
-specific project requirements. Always verify with local suppliers or your contractor for
-the most accurate pricing. These are estimates for education only, not financial advice —
-verify your own figures before you act.
-```
-
-Trace shows the designed flow: lookup first → miss → knowledge base → retrieved figure
-quoted with the variance caveat. This is a live test (`MATERIAL`) that now runs with the
-suite.
+Widget-specific: `tests/widget.test.ts` + `tests/calculatorForm.widget.test.ts` = **40
+passed**, after a full rewrite of the widget's markup and CSS. TSC clean. Bundle rebuilt:
+8.0kb → **22.3kb** (all inline CSS + ambient layer + count-up; still no animation library).
 
 ---
 
-## 3. JOB 1 — adaptive retrieval + duplication alarm
+## 8. Screenshots
 
-### Root cause acknowledged
+Rendered from the **real built bundle** (`public/widget.js`) via headless Chrome with a
+stubbed `fetch` (no server, no API spend), at 2× DPR. Files in the session scratchpad
+`shots/`:
 
-n8n re-ingestion (five daily triggers, no dedupe, live since July 3) explains both prior
-measurements — and resolves the 2.2%-vs-16× discrepancy I couldn't reconcile last run
-(only the working branches re-ingest daily → heavy duplication of a subset). Ingestion is
-n8n's to fix; nothing here builds around it beyond defense.
+| File | State |
+|---|---|
+| `01-empty.png` | Empty state — glass header catching the warm orb, greeting bubble with amber left-rule, glass composer with amber focus ring, circular amber send |
+| `02-result.png` | Thread with a result — amber user bubble, glass result card, lead metric **$101,916** in amber (count-up landed), supporting metrics in aligned tabular figures, disclaimer in muted micro type |
+| `03-form.png` | Inline calculator form — glass card, `($)`/`(months)` unit hints, amber required asterisks, dark-inset fields, "Show advanced options (4)", solid amber Calculate + ghost Cancel |
+| `04-thinking.png` | Thinking state — amber user bubble, thinking pill with amber dots + honest rotating copy, header amber glow intensified (room warming) |
+| `05-mobile360.png` | Widget at a true 360px width — everything wraps, nothing clips, composer fits |
 
-### The additive RPC — applied to the live database
-
-Migration `add_match_documents_distinct` (also in `sql/add_match_documents_distinct.sql`):
-`DISTINCT ON (md5(normalized content))` over the nearest `scan_count` rows, returns top-N
-distinct **plus scan stats** (`scanned`, `distinct_scanned`) so the client computes the
-duplication ratio without transferring duplicates. `match_documents` untouched — verified
-by reading its definition only.
-
-**Verbatim side-by-side on the live table** (same query vector, id 11214's own embedding):
-
-```
-[{"fn":"old_match_documents",          "rows_returned":5, "distinct_contents":1},
- {"fn":"new_match_documents_distinct", "rows_returned":5, "distinct_contents":5}]
-```
-
-Live scan stats: `scanned=105, distinct_scanned=13` → duplication ratio **0.124 ≈ 8.1
-copies per chunk** — independently confirming the ~11-days-of-daily-re-ingestion arithmetic.
-
-### Adaptive + loud in the client (`src/agent/retrieval.ts`)
-
-- Preferred path calls the new RPC; if distinct results run short, the scan window
-  **escalates 200 → 800 → 2000 (hard cap)** — no fixed constant to rot as copies accumulate.
-- Fallback path (RPC missing in an environment): legacy over-fetch + client collapse,
-  with a `logger.error` naming the missing migration. Any *other* RPC error throws.
-- **Alarm:** every retrieval computes `distinct/fetched`; below **0.3** →
-  `logger.error` with both counts. The live table today is at **~0.13, so the alarm fires
-  on production traffic now — by design.** It should be loud until n8n dedupes.
-
-### Live, through the new path (verbatim)
-
-```
-===== RAG RETRIEVAL EVIDENCE =====
-query: "How does James build a buy box?"
-embedding model: text-embedding-3-small
-embedding tokens: 8
-source: match_documents_distinct | scanned 118 rows | duplication ratio 0.127
--> 5 distinct chunks
-  [7450]  similarity=0.5677 :: That's all they know. I wanna buy a house, renovate it...
-  [5319]  similarity=0.5604 :: So what does that even mean? The point of building a buy box...
-  [20193] similarity=0.5512 :: And that's what we're going to jump into right now is building your bu...
-  [20729] similarity=0.5473 :: James: Clarity and buy box are the most important things for investors...
-  [2902]  similarity=0.5324 :: So in this week's challenge... defining your buy box...
-```
-
-Note **5 distinct** — the old fixed 30-row over-fetch found only 4. The live test now
-also asserts `source === 'match_documents_distinct'`, so a fallback regression can't pass
-silently.
-
-### Mutation verification (all restored after)
-
-```
-MUTATION 1: remove the scan-window escalation
-  × ESCALATES the scan window when distinct results run short (the constant-is-a-clock bug)
-  Tests  1 failed | 21 passed (22)
-
-MUTATION 2: silence the duplication alarm
-  × fires logger.error below the threshold ratio
-  × boundary: exactly the threshold does not fire; just below does
-  × a heavily-duplicated retrieval through the full path triggers the alarm
-  Tests  3 failed | 19 passed (22)
-
-MUTATION 3: fallback silently swallows a real (non-missing-fn) error
-  × an unexpected RPC error surfaces — only a MISSING function triggers fallback
-  Tests  1 failed | 21 passed (22)
-```
+Note on the mobile shot: headless Chrome enforces a ~491px minimum viewport, so a literal
+360px window is impossible via flags (measured: `innerWidth=491`). The widget container was
+constrained to exactly 360px inside a wider window instead; its `@media (max-width:520px)`
+rules still fire (491 < 520). A plain-paragraph probe confirmed the earlier right-edge
+clipping was the capture canvas, **not** a widget overflow bug.
 
 ---
 
-## 4. JOB 3 — menu moved out of the model
+## 9. Anything I could not do — three brief items blocked by locked tests
 
-- `widget/widget.js` opening bubble now carries the client's exact greeting + 1–6 menu
-  (with "4. Partnership Agreements (coming soon)") + the pre-numbers disclaimer — static
-  copy, rendered before any network call, so the "disclaimer before numbers" requirement
-  is now deterministic. Widget test asserts every menu line and the disclaimer verbatim,
-  with `fetch` never called. Mutation (dropping a menu line) fails it.
-- **A1 rewritten** to what the model still owns — reproducing the menu mid-conversation:
+Three parts of §7 directly conflict with assertions in `tests/widget.test.ts` that a prior
+deliberate decision locked in. The rules forbid weakening tests and require the suite green,
+so I built the test-compatible behavior and am surfacing the conflict for you to decide —
+each needs a test change you should explicitly approve, not one I make silently.
 
-```
- ✓ A1 (rewritten): the menu reappears when asked MID-conversation 6045ms
-```
+1. **Composer multiline auto-grow (§7).** Kept a single-line `<input type="text">`. The suite
+   queries `#james-bot input[type="text"]` in ~20 places and asserts `.value`/`.disabled`;
+   a `<textarea>` returns null there and fails all of them. Enter-sends / Shift+Enter is moot
+   without multiline. **To do it:** migrate those queries to the textarea and re-assert.
 
-The old A1 flake (model paraphrasing the menu into prose at temp 0.3) is structurally
-gone for first load: static copy can't forget itself.
+2. **Empty-state suggested-prompt chips (§7).** The opening screen stays a single greeting
+   bubble. `tests/widget.test.ts` "the opening screen is plain" asserts **zero** `.jb-chip`,
+   exactly one `.jb-bubble`, and exactly one `<button>` — a prior decision that removed the
+   chip row and numbered menu as a "phone tree." Chips would break all three. **To do it:**
+   update that test (and "renders the send button and the opening message locally") to expect
+   the chips.
 
----
+3. **Numbered menu in the empty state (§7).** Same test forbids it (`not.toMatch(/^\s*1\.\s/m)`,
+   `not.toContain('2. Flip')`). Left out for the same reason.
 
-## 5. JOB 4 — deploy prep (still blocked, one command when unblocked)
+Two smaller notes:
 
-Ready: `Dockerfile`, `railway.json`, `fly.toml`, `render.yaml`, `.env.example` (every
-variable), `DEPLOY.md` (step-by-step + post-deploy verification curls), README now points
-at it. `npm run build` clean; production server verified locally by real curl last run.
-
-**NOT verified: `docker build`.** No Docker daemon on this machine:
-
-```
-docker absent: CANNOT verify the Dockerfile builds locally
-```
-
-**Needed from you (precisely):**
-1. **Platform choice** — Railway recommended (least steps for a containerized Node service).
-2. **Access** — either run `DEPLOY.md` yourself (~5 commands), or give me a token:
-   Railway `RAILWAY_TOKEN` / Fly `FLY_API_TOKEN` / Render dashboard access + repo on GitHub.
-3. **Env vars at deploy time** — `OPENAI_API_KEY` (**rotate first — still the exposed
-   key**), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ALLOWED_ORIGINS=https://preacademy.app.clientclub.net`.
-4. After deploy, the two curls in `DEPLOY.md` §1 (health + CORS preflight) are the
-   acceptance gate.
+- **§10 "no browser storage" vs the pre-existing session id.** The widget has a pre-existing
+  `localStorage['james-bot-session']` write that predates this brief and gives conversation
+  continuity across a full reload. I added **no new** storage, but did not rip out the
+  existing one: SCOPE is "visual layer only," and removing it is a behavioral change (a member
+  reloading `/demo` would lose their thread). It survives GHL SPA lesson swaps regardless (the
+  JS context persists). One-line change to in-memory if you want strict §10 — say the word;
+  the trade is losing continuity across a hard reload.
+- **Count-up under reduced motion.** The amber lead-figure color is now static (applied even
+  when motion is off, per §5); only the counting animation is disabled under
+  `prefers-reduced-motion` (per §6). Orb drift, entry transforms, and the arm-pulse are all
+  disabled there too; opacity fades are kept.
 
 ---
 
-## 6. Live test results — verbatim (all 18 + gate marker)
+## 10. Files changed
 
-```
- ✓ A1 (rewritten): the menu reappears when asked MID-conversation 6045ms
- ✓ MATERIAL: a tile-budget question quotes James's retrieved rate, not an invention 6257ms
- ✓ A2: "2" routes to Flip, discloses before asking, then requests inputs 2238ms
- ✓ A3: a full flip prompt returns 101916 and ~100.8% CoC with a disclaimer 5512ms
- ✓ A4: "Can you run a flip for me?" asks for inputs, never invents defaults 2299ms
- ✓ A5: "same deal but 4 months" restates the merged inputs and confirms 8086ms
- ✓ A6: "why is the cash-on-cash so low?" explains without re-running the tool 20519ms
- ✓ A7: flip then BRRRR — the second answer uses BRRRR, not the flip replay 45916ms
- ✓ A8: "4" says partnerships are coming soon and never fabricates a calc 5490ms
- ✓ A9: a long-term-hold question picks BRRRR or asks — never forces Flip 6994ms
- ✓ A10: "should I buy this, yes or no?" stays educational, no direct instruction 6941ms
- ✓ A11: refuses to guarantee returns 4797ms
- ✓ A12: an off-topic question gets a brief redirect to real estate 6151ms
- ✓ A14: remembers the 400k across turns without re-asking 12255ms
- ✓ A15: states which defaults were applied when only required inputs are given 13785ms
- ✓ A16: memory survives a server restart (Postgres-backed, not in-process) 12233ms
- ✓ RAG: a real knowledge-base query returns chunks with real similarity scores 1457ms
- ✓ A13: a live deal run writes a qa_logs row with real token_usage 14353ms
- Test Files  1 passed (1)
-      Tests  18 passed | 1 skipped (19)
-```
+| File | Change |
+|---|---|
+| `widget/widget.js` | Full visual rewrite: tokens, contained ambient orbs, glass utility, restyled header/composer/bubbles/forms, redesigned thinking state, count-up on the lead figure, "Ask James" header. Behavior/DOM contract preserved for every test. |
+| `src/server/app.ts` | `/demo` restyled to the dark aesthetic; title/h1/meta → "Ask James". `/` service string left legacy (commented). |
+| `public/widget.js` | Rebuilt (22.3kb). |
+| `RUN_REPORT.md` | This report; prior report archived to `reports/`. |
 
-Failures this run: **none.** Assertions changed this run: A1 (deliberately rewritten per
-Job 3 — first-load menu is now the widget's, mid-conversation menu is the model's). No
-assertion was loosened; MATERIAL and the RAG `source` assertion are net-new and stricter.
-
----
-
-## 7. Test counts
-
-| Suite | Distinct tests | Total assertions | Passed | Failed | Skipped |
-|---|---|---|---|---|---|
-| invariants.test.ts | ~14 property defs | 393 | 393 | 0 | 0 |
-| flip.test.ts | 63 | 63 | 63 | 0 | 0 |
-| brrrr.test.ts | 60 | 60 | 60 | 0 | 0 |
-| land.test.ts | 51 | 51 | 51 | 0 | 0 |
-| agent.test.ts | 27 | 27 | 27 | 0 | 0 |
-| retrieval.test.ts | **22** (was 17) | 22 | 22 | 0 | 0 |
-| materialBudget.test.ts | 17 | 17 | 17 | 0 | 0 |
-| quirks.test.ts | 12 | 12 | 12 | 0 | 0 |
-| finance.test.ts | 10 | 10 | 10 | 0 | 0 |
-| widget.test.ts | 10 | 10 | 10 | 0 | 0 |
-| cors.test.ts | 8 | 8 | 8 | 0 | 0 |
-| **Local total** | **~294 distinct** | **674** | **674** | **0** | **18** (live, gated) |
-| live.test.ts (`RUN_LIVE_TESTS=1`) | 18 | 18 | 18 | 0 | 1 (gate marker) |
-
-Not written: nothing from Jobs 1–4 remains unwritten. `npx tsc --noEmit` clean.
-Distinct vs assertions: 380 of the 674 are generated property-test trials from ~14
-property definitions.
-
----
-
-## 8. Claims I cannot support
-
-- **The Dockerfile building is unverified.** No Docker daemon here. It's a
-  standard two-stage node:24-alpine build and `npm run build` succeeds outside the
-  container, but "it should build" is not "it builds."
-- **Nothing is deployed.** All live evidence is a local server + real OpenAI + real
-  Supabase. Deployed behavior (platform networking, env wiring, cold starts) is unproven.
-- **The escalation path has not fired against the real table.** Live duplication (~8×)
-  is still absorbed by the initial 200-row window, so escalation is exercised only by
-  unit tests with synthetic responses. It will first fire for real when duplication
-  roughly doubles — exactly when it must work, and I can't rehearse that against
-  production data without writing to `documents`, which I won't do.
-- **The alarm fires via `consoleLogger` in the agent path.** `searchKnowledgeBase` is
-  called from the agent loop without a request-scoped logger, so production alarms go to
-  stderr, not Fastify's structured log with request context. Visible in any platform's
-  log capture, but not correlated to a request. Wiring `request.log` through the agent
-  loop is a small follow-up I didn't make this run.
-- **MATERIAL is one green run.** It passed its first and only execution. Given this
-  suite's history, I'd want it green across several runs before calling it stable —
-  the retrieval underneath it is deterministic now, but the model's phrasing of the rate
-  (`$10 to $11`) is not guaranteed to match my regex forever.
-- **Job 2's verdict rests on 8 probe queries.** Broad ones, but not an inventory of the
-  table. Categories I didn't probe (roofing, windows, HVAC, electrical) may be thinner
-  than tile/flooring/kitchens proved to be.
-- **The 0.3 alarm threshold is a judgment call**, not a measured boundary. Today's table
-  sits at ~0.13 (alarming, correctly). After n8n de-dupes it should sit near 1.0. Anything
-  in between is my guess at "worth waking someone up for."
-
-## 9. Blockers
-
-**From you:**
-1. **Deploy access** (platform + token, or run `DEPLOY.md`) — holds up: deployed CORS/health
-   verification, live suite against the real URL, GHL embed, Dockerfile build verification.
-2. **Rotate the OpenAI key** — still the one exposed in chat.
-
-**From the client / n8n side (not mine to fix, per the architecture boundary):**
-3. **n8n dedupe + table de-dupe.** Until then: the duplication alarm will fire on real
-   traffic (by design), the retrieval scan window carries the load, and the ratio degrades
-   by roughly one copy per day. After the table de-dupe, expect the alarm to go quiet and
-   retrieval quality to improve further (less budget wasted on copies even in-window).
-4. **Clair's spec-tier sheet** — now an *upgrade*, not a launch blocker: it converts menu
-   5/6 from narrative retrieved rates to labeled Budget/Basic/Standard/Premium rows via
-   `tools/ingest_material_budget.mjs` (a data drop, not a build).
+No calculator, agent, tool-schema, retrieval, or logging file was modified. No test was
+weakened or deleted.
