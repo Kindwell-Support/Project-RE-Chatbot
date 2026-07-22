@@ -34,9 +34,11 @@
   // that. (The opening screen is intentionally a single bubble — no chip row,
   // no numbered menu; pinned by tests/widget.test.ts.)
   var OPENING_MESSAGE = [
-    "Hi! I'm James. I'm excited to support you on your real estate investing journey. Ask me anything about REI and I'll give you my best answer based on 20 years of experience.",
+    "Hi! I'm James — ask me anything related to Real Estate Investing and I will share my knowledge based on my 20 years of experience.",
     '',
-    'I can run the numbers on a flip, BRRRR, or land deal too — just tell me about the deal.',
+    'I can answer questions related to REI, or I can perform calculations based on my BRRRR, Flip, Land Acquisition and Construction Calculators.',
+    '',
+    'Let me know how I can help.',
     '',
     'Quick note before we start: everything here is education and estimates only, not financial or investment advice. Always verify your own numbers before acting on a deal.',
   ].join('\n');
