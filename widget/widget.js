@@ -201,7 +201,8 @@
     '.jb-adv-body{margin-top:12px;padding-top:12px;border-top:1px solid var(--jb-glass-border);}',
     '.jb-calc-actions{display:flex;gap:10px;align-items:center;margin-top:4px;}',
     '.jb-btn{border:none;border-radius:10px;padding:11px 20px;background:var(--jb-accent);color:var(--jb-on-accent);',
-    'font-weight:700;font-size:14px;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);}',
+    'font-weight:700;font-size:14px;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);',
+    'display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:118px;}',
     '.jb-btn:hover{background:var(--jb-accent-hover);}',
     '.jb-btn:active{transform:scale(0.97);background:var(--jb-accent-pressed);}',
     '.jb-btn:focus-visible,.jb-calc-cancel:focus-visible,.jb-adv-toggle:focus-visible,.jb-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
@@ -209,6 +210,43 @@
     'border-radius:10px;padding:11px 16px;font-size:14px;font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-calc-cancel:hover{border-color:var(--jb-text-secondary);color:var(--jb-text-primary);}',
     '.jb-calc-error{color:var(--jb-danger);font-size:12.5px;margin-top:10px;}',
+    /* Disabled controls during a run: readable, obviously inert, not greyed to
+       the point the member thinks the card broke. */
+    '.jb-calc[data-busy="true"] .jb-control{opacity:0.55;cursor:default;}',
+    '.jb-btn[disabled],.jb-calc-cancel[disabled]{opacity:0.68;cursor:default;}',
+    '.jb-btn[disabled]:hover{background:var(--jb-accent);}',
+
+    /* --- Calculating state ---------------------------------------------------
+       Same room, working: the orbs warm via .jb-busy on the root (the existing
+       thinking treatment), the button acknowledges the click with zero delay,
+       and a skeleton of the result card stands where the answer will land. */
+    '.jb-spin{width:13px;height:13px;flex:0 0 auto;border-radius:50%;',
+    'border:2px solid rgba(10,10,11,0.28);border-top-color:var(--jb-on-accent);',
+    'animation:jb-spin 620ms linear infinite;}',
+    '@keyframes jb-spin{to{transform:rotate(360deg);}}',
+
+    /* The amber left edge is the app's existing "James is producing this" mark —
+       it is what makes .jb-think and the bot bubbles read on a near-black
+       background. Without it the card was measurably in view but too dim to
+       register as working, which is the whole point of the state. */
+    '.jb-pending{max-width:100%;width:100%;border-radius:16px;padding:16px;animation:jb-card-in 320ms var(--jb-ease) both;',
+    'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
+    '.jb-pending-head{display:flex;align-items:center;gap:10px;color:var(--jb-text-primary);font-size:13px;font-weight:600;margin-bottom:14px;}',
+    /* Full-strength amber dots here (the ambient .jb-think-dots sit at 0.5). */
+    '.jb-pending .jb-think-dots i{opacity:0.9;}',
+    '.jb-pending-bars{display:flex;flex-direction:column;gap:10px;}',
+    '.jb-bar{height:12px;border-radius:6px;background:rgba(255,255,255,0.11);position:relative;overflow:hidden;}',
+    '.jb-bar-lead{height:26px;width:52%;background:rgba(247,178,17,0.16);}',
+    '.jb-bar:nth-child(2){width:88%;}',
+    '.jb-bar:nth-child(3){width:70%;}',
+    /* Amber sweep, not a grey shimmer — it reads as this app doing the work. */
+    '.jb-bar::after{content:"";position:absolute;inset:0;transform:translateX(-100%);',
+    'background:linear-gradient(90deg,transparent,rgba(247,178,17,0.34),transparent);',
+    'animation:jb-sweep 1500ms var(--jb-ease) infinite;}',
+    '.jb-bar-lead::after{background:linear-gradient(90deg,transparent,rgba(247,178,17,0.52),transparent);}',
+    '.jb-bar:nth-child(2)::after{animation-delay:150ms;}',
+    '.jb-bar:nth-child(3)::after{animation-delay:300ms;}',
+    '@keyframes jb-sweep{to{transform:translateX(100%);}}',
 
     /* --- Responsive ---------------------------------------------------------- */
     /* Mobile: backdrop-filter is costlier per pixel, so soften the blur. */
@@ -224,6 +262,12 @@
     '.jb-calc{animation:jb-fade 220ms var(--jb-ease) both;}',
     '.jb-send,.jb-btn,.jb-input,.jb-control{transition:none;}',
     '.jb-send:active,.jb-btn:active{transform:none;}',
+    /* Feedback stays, motion goes: the skeleton holds still and the button
+       label alone says "Calculating…" (the spinner is not built at all — see
+       setCalculating/renderPending). */
+    '.jb-pending{animation:jb-fade 220ms var(--jb-ease) both;}',
+    '.jb-bar::after,.jb-spin{animation:none!important;}',
+    '.jb-bar::after{display:none;}',
     '}',
     '@keyframes jb-fade{from{opacity:0;}to{opacity:1;}}',
   ].join('');
@@ -540,6 +584,52 @@
         };
       }
 
+      // Calculating placeholder: a skeleton of the result card, standing where
+      // the answer will land. Reuses the room-warming (jb-busy on root) that the
+      // typed-message thinking state already uses, so a calculation reads as the
+      // same system doing focused work rather than a bolted-on spinner.
+      //
+      // Under reduced motion the sweep and the dots are CSS-disabled and the
+      // label is plain "Calculating…" — feedback without movement.
+      function addPending() {
+        var stick = nearBottom();
+        var row = el('div', 'jb-row jb-bot');
+        var card = el('div', 'jb-pending jb-glass', {
+          role: 'status',
+          'aria-live': 'polite',
+          'data-pending': 'true',
+        });
+
+        var head = el('div', 'jb-pending-head');
+        if (!prefersReducedMotion()) {
+          var dots = el('span', 'jb-think-dots', { 'aria-hidden': 'true' });
+          dots.innerHTML = '<i></i><i></i><i></i>';
+          head.appendChild(dots);
+        }
+        var label = el('span', 'jb-pending-label');
+        label.textContent = 'Calculating…';
+        head.appendChild(label);
+        card.appendChild(head);
+
+        // Lead figure first, then two supporting lines — the shape of the
+        // result card it is standing in for.
+        var bars = el('div', 'jb-pending-bars', { 'aria-hidden': 'true' });
+        bars.appendChild(el('div', 'jb-bar jb-bar-lead'));
+        bars.appendChild(el('div', 'jb-bar'));
+        bars.appendChild(el('div', 'jb-bar'));
+        card.appendChild(bars);
+
+        row.appendChild(card);
+        list.appendChild(row);
+        root.classList.add('jb-busy');
+        if (stick) list.scrollTop = list.scrollHeight;
+
+        return function remove() {
+          root.classList.remove('jb-busy');
+          if (row.parentNode) row.parentNode.removeChild(row);
+        };
+      }
+
       // Opening message: local and instant. The greeting and the pre-numbers
       // disclaimer are static copy — a model can forget them, static text can't.
       addBubble(OPENING_MESSAGE, 'bot');
@@ -714,8 +804,41 @@
           return values;
         }
 
+        // Click-once. `submitting` is set SYNCHRONOUSLY inside the handler, so a
+        // rapid double-click cannot start a second calculation: the second event
+        // returns here before the first fetch has even been dispatched. The
+        // disabled attribute is the visible half of the same guarantee.
+        var submitting = false;
+        var calcLabel = calcBtn.textContent;
+
+        /**
+         * The click acknowledgement. Called synchronously on click — nothing is
+         * awaited before it, so there is no frame in which the member has
+         * clicked and nothing has changed.
+         */
+        function setCalculating(on) {
+          submitting = on;
+          card.setAttribute('data-busy', on ? 'true' : 'false');
+          calcBtn.disabled = on;
+          cancelBtn.disabled = on;
+          if (on) calcBtn.setAttribute('aria-busy', 'true');
+          else calcBtn.removeAttribute('aria-busy');
+          Array.prototype.forEach.call(card.querySelectorAll('.jb-control'), function (c) {
+            c.disabled = on;
+          });
+
+          if (!on) {
+            calcBtn.textContent = calcLabel;
+            return;
+          }
+          calcBtn.textContent = '';
+          // Under reduced motion the label alone carries it — no spinner node.
+          if (!prefersReducedMotion()) calcBtn.appendChild(el('span', 'jb-spin'));
+          calcBtn.appendChild(document.createTextNode('Calculating…'));
+        }
+
         calcBtn.addEventListener('click', function () {
-          if (busy) return;
+          if (submitting || busy) return;
           errorNode.textContent = '';
           Array.prototype.forEach.call(card.querySelectorAll('.jb-control'), function (c) {
             c.removeAttribute('aria-invalid');
@@ -743,22 +866,56 @@
             return;
           }
 
-          submitCalculatorForm(spec, values, dismiss, errorNode);
+          // Acknowledge first, network second.
+          setCalculating(true);
+          submitCalculatorForm(spec, values, dismiss, errorNode, setCalculating);
         });
 
-        cancelBtn.addEventListener('click', dismiss);
+        cancelBtn.addEventListener('click', function () {
+          if (submitting) return; // a run is in flight; nothing to cancel into
+          dismiss();
+        });
 
         row.appendChild(card);
         list.appendChild(row);
         if (stick) list.scrollTop = list.scrollHeight;
       }
 
-      function submitCalculatorForm(spec, values, dismiss, errorNode) {
+      /**
+       * Run a form submission.
+       *
+       * Every exit path resolves the calculating state — success, a 400, a
+       * network failure, or a timeout. A spinner that never stops is worse than
+       * the dead gap this replaces, so the timeout exists specifically so there
+       * is no branch where the member is left watching it.
+       */
+      function submitCalculatorForm(spec, values, dismiss, errorNode, setCalculating) {
         started = true;
         setBusy(true);
-        var removeTyping = null;
+        var removePending = addPending();
+        var settled = false;
 
-        fetch(apiUrl + '/chat', {
+        /** Clear the calculating state exactly once, whichever way this ends. */
+        function settle(message) {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          removePending();
+          setBusy(false);
+          setCalculating(false);
+          if (message) errorNode.textContent = message;
+        }
+
+        // Bounded: fetch has no timeout of its own, so a hung connection would
+        // otherwise leave the button spinning indefinitely.
+        var controller =
+          typeof window.AbortController === 'function' ? new window.AbortController() : null;
+        var timer = window.setTimeout(function () {
+          if (controller) controller.abort();
+          settle('That took too long to come back. Try Calculate again.');
+        }, 90000);
+
+        var init = {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
@@ -766,39 +923,47 @@
             member_email: memberEmail,
             form_submission: { calculator: spec.calculator, values: values },
           }),
-        })
+        };
+        if (controller) init.signal = controller.signal;
+
+        fetch(apiUrl + '/chat', init)
           .then(function (res) {
-            return res.json().then(function (data) {
-              return { ok: res.ok, status: res.status, data: data };
-            });
+            return res.json().then(
+              function (data) {
+                return { ok: res.ok, status: res.status, data: data };
+              },
+              function () {
+                // A non-JSON body (proxy error page) must not read as success.
+                return { ok: false, status: res.status, data: {} };
+              },
+            );
           })
           .then(function (result) {
+            if (settled) return; // timed out already; ignore the late arrival
             // A 400 is a validation answer about THIS form — keep the form up
             // with the message on it rather than dropping a dead-end error
             // bubble the member cannot act on.
             if (!result.ok) {
               if (result.status === 400 && result.data && result.data.error) {
-                errorNode.textContent = result.data.error;
+                settle(result.data.error);
                 return;
               }
-              throw new Error('HTTP ' + result.status);
+              settle("Couldn't reach the calculator — try Calculate again in a few seconds.");
+              return;
             }
+            settle();
             dismiss();
             // Echo the server's own transcript line so the chat matches what a
             // later /history replay will show.
             if (result.data.user_message) addBubble(result.data.user_message, 'user');
-            removeTyping = addTyping();
-            removeTyping();
+            // The result card transitions in with the existing entry animation
+            // and the lead-figure count-up, straight out of the skeleton.
             addBubble(result.data.output || "I didn't catch that — try again.", 'bot', {
               animate: true,
             });
           })
           .catch(function () {
-            if (removeTyping) removeTyping();
-            errorNode.textContent = 'Connection hiccup — try Calculate again in a few seconds.';
-          })
-          .then(function () {
-            setBusy(false);
+            settle("Couldn't reach the calculator — try Calculate again in a few seconds.");
           });
       }
 
