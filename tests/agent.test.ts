@@ -284,7 +284,13 @@ describe('3.2 tool arguments survive the handoff into the calculator', () => {
       'run a flip',
     );
 
-    const toolMessage = (calls[1].messages as Array<any>).find((m) => m.role === 'tool');
+    // Located by tool_call_id, not by position: "run a flip" also routes an
+    // input form deterministically (calculatorIntent.ts), so this conversation
+    // legitimately carries two tool results and only c1 is the failed call.
+    const toolMessage = (calls[1].messages as Array<any>).find(
+      (m) => m.role === 'tool' && m.tool_call_id === 'c1',
+    );
+    expect(toolMessage, 'the failed flip_calculator result never reached the model').toBeDefined();
     const payload = JSON.parse(toolMessage.content);
     expect(payload.error).toMatch(/holding_months/);
     expect(payload.error).toMatch(/do not invent numbers/i);

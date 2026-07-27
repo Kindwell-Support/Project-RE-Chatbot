@@ -12,8 +12,21 @@ import {
   type CalculatorForm,
   type CalculatorKey,
 } from './formSchema.js';
+import { routeCalculatorIntent } from './calculatorIntent.js';
 
 const MAX_TOOL_ROUNDS = 6;
+
+/**
+ * Turn-scoped directive for the one case where asking IS correct: real
+ * calculator intent with no calculator named. The route is decided in code; the
+ * wording is left to the model so it still sounds like James.
+ */
+const ASK_WHICH_CALCULATOR = [
+  'ROUTING (this turn): the member signalled they want a deal analysed but did NOT say which',
+  'calculator. Ask which one in ONE short line — flip, BRRRR, or land / new construction — and',
+  'nothing else. Do not ask for any numbers, do not list input fields, and do not run a',
+  'calculator. As soon as they name one, its input form appears automatically.',
+].join(' ');
 
 export interface TokenUsage {
   prompt_tokens: number;
@@ -35,8 +48,14 @@ export interface AgentResult {
   retrievedChunkIds: Array<string | number>;
   similarityScores: number[];
   toolCalls: ToolCallTrace[];
-  /** Set when the model asked for an inline input form; the widget renders it. */
+  /** Set when an inline input form is to be rendered; the widget renders it. */
   renderForm?: CalculatorForm;
+  /**
+   * Who decided to render it. 'router' is the deterministic code path (see
+   * calculatorIntent.ts) and is the only path clear calculator intent can take;
+   * 'model' is the residual tool-call path for cases the rules don't cover.
+   */
+  formTrigger?: 'router' | 'model';
 }
 
 export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string };
@@ -118,6 +137,60 @@ export async function runAgent(
     });
   }
 
+  // --- Deterministic form routing -----------------------------------------
+  // This runs BEFORE the model's first turn, and it is what guarantees the
+  // form. Clear calculator intent with no numbers renders the form here, in
+  // code, by rule — the model is then handed the finished
+  // request_calculator_form result and only writes the one line around it. It
+  // is not asked whether to show a form and has no way to decline: renderForm
+  // is already set on the result below regardless of what it does next.
+  //
+  // Skipped for form submissions (a submission IS the form's answer).
+  let formTrigger: 'router' | 'model' | undefined;
+  if (!options.seedToolCall) {
+    const route = routeCalculatorIntent(userMessage, history);
+
+    if (route.kind === 'form') {
+      const args = { calculator: route.calculator };
+      // Same executeTool path a model-issued call takes — same validation, same
+      // trace entry — so a routed form cannot diverge from a model-asked one.
+      const result = await executeTool('request_calculator_form', args, ctx);
+      toolCalls.push({ name: 'request_calculator_form', args, ok: true });
+      formTrigger = 'router';
+      const routeId = 'router_calculator_form';
+      messages.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: routeId,
+            type: 'function',
+            function: { name: 'request_calculator_form', arguments: JSON.stringify(args) },
+          },
+        ],
+      });
+      messages.push({
+        role: 'tool',
+        tool_call_id: routeId,
+        content: typeof result === 'string' ? result : JSON.stringify(result),
+      });
+    } else if (route.kind === 'ask_which_calculator') {
+      messages.push({ role: 'system', content: ASK_WHICH_CALCULATOR });
+    }
+  }
+
+  /** Every exit point reports the form the same way — one place to get it right. */
+  const finish = (output: string): AgentResult => ({
+    output,
+    usage,
+    retrievedChunkIds,
+    similarityScores,
+    toolCalls,
+    ...(formRequest.form
+      ? { renderForm: formRequest.form, formTrigger: formTrigger ?? 'model' }
+      : {}),
+  });
+
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     const completion = await openai.chat.completions.create({
       model: config.openaiModel,
@@ -136,14 +209,7 @@ export async function runAgent(
     const message = choice.message;
 
     if (!message.tool_calls || message.tool_calls.length === 0 || round === MAX_TOOL_ROUNDS) {
-      return {
-        output: message.content ?? '',
-        usage,
-        retrievedChunkIds,
-        similarityScores,
-        toolCalls,
-        ...(formRequest.form ? { renderForm: formRequest.form } : {}),
-      };
+      return finish(message.content ?? '');
     }
 
     messages.push(message);
@@ -171,7 +237,7 @@ export async function runAgent(
   }
 
   // Unreachable, but keeps TypeScript satisfied.
-  return { output: '', usage, retrievedChunkIds, similarityScores, toolCalls };
+  return finish('');
 }
 
 interface ToolContext {

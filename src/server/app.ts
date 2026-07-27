@@ -289,8 +289,10 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     // `tool_calls` is trace evidence: which tools actually fired, in order.
     // Proves a BRRRR answer came from brrrr_calculator rather than being
     // replayed from a prior flip — the old build's memory-replay bug.
-    // `render_form` is the transport for the model's request_calculator_form
-    // decision — the model chooses, the response carries it, the widget renders.
+    // `render_form` is the transport for the form directive. The decision is
+    // made deterministically in calculatorIntent.ts before the model's first
+    // turn — the router decides, the response carries it, the widget renders.
+    // The model cannot suppress it.
     return {
       output: result.output,
       tool_calls: result.toolCalls.map((t) => t.name),
