@@ -162,6 +162,12 @@ export interface CompsFailure {
      */
     resolution?: 'unit_mismatch' | 'not_found';
     /**
+     * unit_mismatch only: did the member's RAW input contain a unit
+     * designator (#, unit, apt, suite)? Branches the copy — "double-check
+     * the unit number" is only sayable when they typed one.
+     */
+    inputHasUnit?: boolean;
+    /**
      * TOO_FEW_COMPS only (operator ruling): 'no_type_match' = the kept set
      * is EMPTY and the fetched pool contains ZERO comps of the subject's
      * property type — we didn't find the right pool, which is not the same

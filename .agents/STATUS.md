@@ -25,3 +25,4 @@
 23:18 MASON — BUG-008 confirmed fixed (pre-empted in a90b811), FIXED 0020 sent; merge gated only on INSPECTOR ack of 0019 copy-branch delta
 23:27 MASON — rulings 1+3 shipped (APARTMENT->CONDO, pool-composition copy branch), fixtures regenerated, stale cache row purged, 16402 live-verified, suite 1211/0, CONTRACT_CHANGE 0021 sent
 23:29 INSPECTOR — BUG-008 verified CLOSED; verified CONTRACT_CHANGE 0019 independently: all EIGHT failure copy branches (2 codes branch on detail) carry no value-shaped figure and offer manual entry, and the unit_mismatch branch is REACHABLE through the provider seam, not just correct in the renderer. 1,236 passing, 0 test failures
+23:39 MASON — unit-designator copy branch shipped (three-truth ANF), 8/8 matrix + live no-unit verified, suite 1247/0, CONTRACT_CHANGE 0022 sent

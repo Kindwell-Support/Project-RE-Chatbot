@@ -18,7 +18,7 @@ import { calculateArv } from './arv.js';
 import { ALGO_VERSION, MIN_COMPS_TO_COMPUTE, PROVIDER_MAX_RETRIES, RADIUS_TIERS_MI } from './config.js';
 import { FAILURE_COPY } from './format.js';
 import { selectRadiusTier } from './filter.js';
-import { cacheKey, normalizeAddress } from './normalize.js';
+import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
 import { rankComps } from './rank.js';
 import type { CompsFailure, CompsFailureCode, CompsOutcome, CompsResult, RawComp, SubjectProperty } from './types.js';
 import {
@@ -223,7 +223,12 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
         { cacheKey: key, guard: looked.guard },
         'comps subject resolution mismatch — provider returned a different property',
       );
-      return failure('ADDRESS_NOT_FOUND', { resolution: 'unit_mismatch' });
+      // inputHasUnit branches the copy: "double-check the unit number" is
+      // only sayable when the member actually typed one.
+      return failure('ADDRESS_NOT_FOUND', {
+        resolution: 'unit_mismatch',
+        inputHasUnit: hasUnitDesignator(rawAddress),
+      });
     }
     subject = looked;
     // One fetch at the WIDEST tier; the pure tier logic narrows from there.

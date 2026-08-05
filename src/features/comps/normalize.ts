@@ -55,3 +55,14 @@ export function normalizeAddress(raw: string): string {
 export function cacheKey(normalized: string): string {
   return createHash('sha256').update(normalized, 'utf8').digest('hex');
 }
+
+/**
+ * Does the RAW member input name a unit — "#429", "Unit 12", "Apt 4B",
+ * "Suite 210"? Branches the wrong-property copy (CONTRACT §10): telling a
+ * member to "double-check the unit number" when they never typed one blames
+ * them for Zillow's resolution. Deliberately conservative — explicit
+ * designators only; a bare trailing number is not treated as a unit.
+ */
+export function hasUnitDesignator(raw: string): boolean {
+  return /#\s*[0-9a-z]|\b(?:unit|apt|apartment|suite|ste)\s*#?\s*[0-9a-z]/i.test(String(raw ?? ''));
+}

@@ -32,13 +32,17 @@ const MANUAL_OFFER =
  * entry. NONE of them contains a number that could be mistaken for an ARV.
  */
 export const FAILURE_COPY: Record<CompsFailureCode, (detail?: CompsFailure['detail']) => string> = {
-  // Branched on detail.resolution (operator ruling — one code, two truths):
-  // a wrong-property match means the address may be perfectly real and
-  // "check the spelling" would blame the member for Zillow's index.
+  // Branched on detail.resolution, then on inputHasUnit (operator rulings —
+  // one code, three truths): a wrong-property match means the address may be
+  // perfectly real, and each variant blames only what the member can act on.
+  // "Double-check the unit number" is only sayable when they typed one.
   ADDRESS_NOT_FOUND: (detail) =>
     detail?.resolution === 'unit_mismatch'
-      ? "I found the building but couldn't match that exact unit. Double-check the unit number, or tell me " +
-        "your ARV and I'll run the numbers with it."
+      ? detail.inputHasUnit
+        ? "I found the building but couldn't match that exact unit. Double-check the unit number, or tell me " +
+          "your ARV and I'll run the numbers with it."
+        : "I found the building but Zillow couldn't pin it to a specific property. If it's a condo or " +
+          "apartment, try including the unit number — otherwise tell me your ARV and I'll run the numbers with it."
       : "I couldn't find that address on Zillow. Double-check the spelling, and include the city and state — " +
         'e.g. "123 Main St, Phoenix, AZ". ' + MANUAL_OFFER,
   SUBJECT_SQFT_UNKNOWN: () =>
