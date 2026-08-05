@@ -11,6 +11,15 @@ export interface AppConfig {
   matchCount: number;
   matchThreshold: number;
   enableDemoPage: boolean;
+  /**
+   * Apify token for the comps feature. OPTIONAL at boot by design: absence
+   * does not fail assertRuntimeConfig — it gates the run_comps tool out of
+   * TOOL_DEFINITIONS entirely (CONTRACT §9), so the model can never offer a
+   * lookup the backend cannot perform.
+   */
+  apifyToken?: string;
+  /** Daily cap on PROVIDER runs (cache hits are free) — the spend guard on the client's Apify quota. */
+  compsDailyRunCap: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -32,6 +41,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // /demo hosts the widget on the API's own origin (no GHL needed). On by
     // default outside production; in production set ENABLE_DEMO_PAGE=true.
     enableDemoPage: env.ENABLE_DEMO_PAGE === 'true' || env.NODE_ENV !== 'production',
+    ...(env.APIFY_TOKEN ? { apifyToken: env.APIFY_TOKEN } : {}),
+    compsDailyRunCap: Number(env.COMPS_DAILY_RUN_CAP ?? 50),
   };
 }
 

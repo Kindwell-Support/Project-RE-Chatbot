@@ -14,6 +14,8 @@ import {
 } from '../agent/formSubmission.js';
 import { getHistory, appendExchange } from './memory.js';
 import { logExchange } from './logging.js';
+import type { PropertyDataProvider } from '../features/comps/providers/types.js';
+import { ApifyZillowProvider } from '../features/comps/providers/apifyZillow.js';
 
 interface FormSubmissionBody {
   calculator?: string;
@@ -35,6 +37,13 @@ interface HistoryQuery {
 export interface AppDeps {
   openai?: OpenAI;
   supabase?: SupabaseClient;
+  /**
+   * Comps data provider (CONTRACT §6 seam, BLOCKED-0008). Tests inject a fake
+   * here exactly like the two clients above; production leaves it undefined
+   * and buildApp constructs the Apify provider lazily — never at module
+   * scope, so importing the app can never touch the network.
+   */
+  propertyProvider?: PropertyDataProvider;
 }
 
 /**
@@ -60,6 +69,16 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     (supabase ??= createClient(config.supabaseUrl, config.supabaseServiceKey, {
       auth: { persistSession: false },
     }));
+  // Same lazy pattern as the two clients above (CONTRACT §6): constructed on
+  // first use, never at module scope. Returns undefined without a token —
+  // the comps tools are gated out of TOOL_DEFINITIONS in that case, so
+  // nothing downstream ever calls a missing provider.
+  let propertyProvider = deps.propertyProvider;
+  const getPropertyProvider = (): PropertyDataProvider | undefined =>
+    (propertyProvider ??= config.apifyToken
+      ? new ApifyZillowProvider(config.apifyToken)
+      : undefined);
+  void getPropertyProvider; // consumed by the comps tool wiring (tools slice)
 
   // --- CORS -----------------------------------------------------------------
   // Explicit, allow-listed. Never "*" — the widget runs on the GHL membership
