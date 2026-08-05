@@ -9,6 +9,48 @@ carried into the GREEN message with its severity).
 
 ---
 
+## BUG-007 — the override escape hatch skips the property binding
+
+- **Status**: OPEN
+- **Severity**: minor (narrow trigger, real consequence)
+- **Reported**: msg `0013-inspector-override-escape-hatch.md`
+
+```
+module:    src/agent/agent.ts (explicit-ARV branch, case 2)
+repro:     npx vitest run tests/comps/state.test.ts -t "typed for ANOTHER field"
+expected:  when a block is bound and the member names a DIFFERENT property, the
+           reply says which property it is analysing
+actual:    a flip on 456 Oak ran with ARV 400,000 carried from 123 Main's
+           $403,000, and the reply names neither property
+spec-ref:  CONTRACT §8 (address-mismatch guard)
+```
+
+The three-way discriminator is right and covers the case the operator flagged:
+a transformed carry with no matching number in the member's message is refused
+(verified — my LEAK test passes). The gap is narrower.
+
+`messageStatesNumber` asks "did the member say this number this turn?" but not
+"did they say it AS an ARV". A member's message routinely carries several dollar
+figures; a purchase price is the commonest. When the model passes that figure as
+`after_repair_value`, the call reads as a genuine override, and case 2's
+`if (addressConflict(...)) return { args }` deliberately skips the echo.
+
+Result: a full flip on a property the member named as different, priced off a
+number carried from the bound property, with no address in the reply at all —
+and the state block still bound to the OLD address for the next turn.
+
+Not the wrong-house-ARV leak (that is closed); the residue is that an accepted
+override on a conflicting address leaves the analysis unlabelled.
+
+Suggested fix, minimal: on address conflict with an accepted override, still
+name the property being analysed — or re-bind/clear the block so the next turn
+cannot read a stale binding. Blocking is NOT wanted here; the member gave
+coherent input.
+
+Verified NOT affected: `brrrr_calculator` goes through the same guard.
+
+---
+
 ## BUG-006 — mapped `soldDate` was a timestamp, not a date — CLOSED
 
 - **Status**: CLOSED (repro re-run and confirmed)

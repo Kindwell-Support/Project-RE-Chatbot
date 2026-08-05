@@ -409,8 +409,14 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       expect(flip, 'flip_calculator never ran — nothing to prove').toBeDefined();
       expect(flip!.inputs_used!.after_repair_value, 'the pre-fill overrode an explicit ARV')
         .toBe(500000);
-      expect(reply.output.replace(/[$,\s]/g, ''), 'the comps ARV leaked into the reply')
-        .not.toContain('403000');
+
+      // The member's number is what prices the deal. The reply DISCLOSING that
+      // it replaced a $403,000 comps estimate is correct and wanted — an
+      // earlier version of this test asserted 403,000 must be absent, which
+      // would have punished exactly the right behaviour. What must not happen
+      // is the stored ARV reaching the CALCULATOR, and that is asserted above.
+      const digits = reply.output.replace(/[$,\s]/g, '');
+      expect(digits, "the member's override is not visible in the reply").toContain('500000');
     });
   });
 
@@ -453,6 +459,228 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       expect(digits, "A's ARV is still being quoted").not.toContain('403000');
       expect(reply.output.toUpperCase()).toContain('456 OAK');
       expect(reply.output.toUpperCase(), 'the echo names the previous address').not.toContain('123 MAIN');
+    });
+  });
+
+  // =========================================================================
+  // THE PRODUCTION PATH.
+  //
+  // Live verification (MASON) showed the real model does NOT omit
+  // `after_repair_value` and let the pre-fill inject it. It reads the ARV out
+  // of the prior comps tool result — which is sitting right there in its
+  // context — and passes it EXPLICITLY. So every guarantee attached to the
+  // injection path (the echo, the address-mismatch ask) was being exercised on
+  // a branch production rarely takes.
+  //
+  // Same class as the COMPS_STRICT catch one level up: not assertions passing
+  // on nothing, but assertions passing on the wrong thing. The tests below
+  // drive the path the model actually takes.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('production path: the model carries the ARV explicitly', () => {
+    /** Run comps on A, then have the model pass an explicit ARV of its own choosing. */
+    async function compsThenExplicitFlip(opts: {
+      session: string;
+      followUp: string;
+      explicitArv: number;
+    }) {
+      const { app, openai, supabase } = buildCompsApp({
+        script: [
+          runComps('123 Main St'), say('Comps done — ARV $403,000.'),
+          runFlip({ after_repair_value: opts.explicitArv }), say('Net profit is $88,000.'),
+        ],
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+      });
+      await chat(app, 'run comps on 123 Main St', opts.session);
+      expect(
+        supabase.compsBlockFor(opts.session)?.arv,
+        'precondition: no comps block was bound',
+      ).toBe(403000);
+
+      const reply = await chat(app, opts.followUp, opts.session);
+      const flip = toolResults(openai.calls).find(
+        (r) => (r as { calculator?: string }).calculator === 'flip',
+      ) as { inputs_used?: Record<string, unknown> } | undefined;
+      return { reply, flip, supabase };
+    }
+
+    it('an explicit ARV equal to the stored block still gets the echo', async () => {
+      // MASON's 8b9ee5b: same value ⇒ same guarantees. Without this the reply
+      // carries no address binding at all on the path production actually uses.
+      const { reply, flip } = await compsThenExplicitFlip({
+        session: 'p-echo', followUp: 'now run the flip numbers', explicitArv: 403000,
+      });
+      expect(flip, 'flip never ran').toBeDefined();
+      expect(flip!.inputs_used!.after_repair_value).toBe(403000);
+      expect(reply.output.toUpperCase(), 'no bound-address echo on the explicit path')
+        .toContain('123 MAIN');
+      expect(reply.output.toLowerCase()).toMatch(/change arv|override/);
+    });
+
+    it('an explicit ARV equal to the stored block, on a DIFFERENT address, is refused', async () => {
+      const { reply, flip } = await compsThenExplicitFlip({
+        session: 'p-mismatch',
+        followUp: 'run the flip on 456 Oak Ave',
+        explicitArv: 403000,
+      });
+      if (flip?.inputs_used) {
+        expect(
+          flip.inputs_used.after_repair_value,
+          "123 Main's ARV priced a deal the member asked about at 456 Oak",
+        ).not.toBe(403000);
+      }
+      expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('403000');
+    });
+
+    /**
+     * THE UNCOVERED CASE — the guard is keyed on `explicit === block.arv`.
+     *
+     * A strict equality check is defeated by ANY transformation of the carried
+     * number. The model rounds ("about $400k"), trims to be conservative, or
+     * re-reads the low end of the band — and the address-mismatch guard stops
+     * applying entirely, because the code returns before ever calling
+     * `addressConflict`.
+     *
+     * The result is the original wrong-house bug wearing a disguise: 456 Oak
+     * gets priced off 123 Main's comps, with no echo, no ask, and a number that
+     * no longer even matches the stored block so nothing downstream can
+     * reconcile it.
+     */
+    it('LEAK: a TRANSFORMED carry on a different address is silently accepted', async () => {
+      const { reply, flip } = await compsThenExplicitFlip({
+        session: 'p-leak',
+        followUp: 'run the flip on 456 Oak Ave',
+        explicitArv: 400000, // 403,000 rounded — not equal, so the guard misses
+      });
+
+      // 400,000 is not the member's number: it appears nowhere in their message.
+      // It is 123 Main's ARV, rounded, applied to a property the member named
+      // as different.
+      if (flip?.inputs_used) {
+        expect(
+          flip.inputs_used.after_repair_value,
+          "a rounded carry of 123 Main's ARV priced the deal at 456 Oak — " +
+            'the mismatch guard is keyed on exact equality and a transformed ' +
+            'carry walks straight past it',
+        ).not.toBe(400000);
+      }
+      expect(
+        reply.output.replace(/[$,\s]/g, ''),
+        'the reply prices 456 Oak with a number derived from 123 Main',
+      ).not.toContain('400000');
+    });
+
+    it('CONTROL: a member-supplied ARV for a different address IS accepted', async () => {
+      // The fix must be targeted, not a blanket block. When the member states
+      // both the address AND the number, asking "which deal is this?" would be
+      // obtuse — they just told us. The discriminator available in code is
+      // whether the figure appears in the member's own message; here "450k"
+      // does, and in the LEAK case above "400000" does not.
+      const { flip } = await compsThenExplicitFlip({
+        session: 'p-control',
+        followUp: 'run the flip on 456 Oak Ave with a 450k ARV',
+        explicitArv: 450000,
+      });
+      expect(flip, 'a genuinely member-supplied ARV was blocked').toBeDefined();
+      expect(flip!.inputs_used!.after_repair_value).toBe(450000);
+    });
+
+    it('a carried figure that happens to match a number the member typed for ANOTHER field', async () => {
+      // The discriminator is "did the member say this number this turn?" — but
+      // not "did they say it AS an ARV". A member's message routinely contains
+      // several dollar figures, and a purchase price is the most common.
+      //
+      // Here the member names a different property and a purchase price of
+      // 400,000; the model passes 400,000 as the ARV, carried from 123 Main's
+      // rounded $403,000. `messageStatesNumber` finds it, so the call reads as
+      // a genuine override and the address-conflict branch returns the args
+      // untouched — no echo, no ask.
+      const { app, openai, supabase } = buildCompsApp({
+        script: [
+          runComps('123 Main St'), say('Comps done — ARV $403,000.'),
+          {
+            toolCalls: [{
+              id: 'flip-1', name: 'flip_calculator',
+              args: {
+                purchase_price: 400000, rehab_budget: 50000, holding_months: 4,
+                after_repair_value: 400000,
+              },
+            }],
+          },
+          say('Here are the numbers.'),
+        ],
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+      });
+      await chat(app, 'run comps on 123 Main St', 'p-coincide');
+      expect(supabase.compsBlockFor('p-coincide')?.arv).toBe(403000);
+
+      const reply = await chat(
+        app,
+        'run the flip on 456 Oak Ave, purchase price 400000, rehab 50000',
+        'p-coincide',
+      );
+
+      const flip = toolResults(openai.calls).find(
+        (r) => (r as { calculator?: string }).calculator === 'flip',
+      ) as { inputs_used?: Record<string, unknown> } | undefined;
+
+      // If this runs, the member gets a full flip on 456 Oak whose ARV equals
+      // their purchase price — a 0% margin deal presented as analysis, priced
+      // off a number that came from a different house. Either refuse, or say
+      // out loud where the ARV came from.
+      if (flip?.inputs_used) {
+        const echoed = reply.output.toUpperCase();
+        expect(
+          echoed.includes('456 OAK') || echoed.includes('123 MAIN'),
+          'a flip on 456 Oak ran with an ARV carried from 123 Main and the reply ' +
+            'names neither property — the member cannot tell which house this is',
+        ).toBe(true);
+      }
+    });
+
+    it('the same guard covers brrrr_calculator, not just flip', async () => {
+      // A guarantee that holds for one calculator and not the other is half a
+      // guarantee, and BRRRR is the long-hold member's tool.
+      const { app, openai, supabase } = buildCompsApp({
+        script: [
+          runComps('123 Main St'), say('Comps done — ARV $403,000.'),
+          {
+            toolCalls: [{
+              id: 'brrrr-1', name: 'brrrr_calculator',
+              args: {
+                purchase_price: 250000, rehab_budget: 60000, monthly_rent: 3000,
+                after_repair_value: 403000,
+              },
+            }],
+          },
+          say('Here is the BRRRR.'),
+        ],
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+      });
+      await chat(app, 'run comps on 123 Main St', 'p-brrrr-guard');
+      expect(supabase.compsBlockFor('p-brrrr-guard')?.arv).toBe(403000);
+
+      const reply = await chat(app, 'run the BRRRR on 456 Oak Ave', 'p-brrrr-guard');
+      const brrrr = toolResults(openai.calls).find(
+        (r) => (r as { calculator?: string }).calculator === 'brrrr',
+      ) as { inputs_used?: Record<string, unknown> } | undefined;
+
+      if (brrrr?.inputs_used) {
+        expect(
+          brrrr.inputs_used.after_repair_value,
+          "123 Main's ARV priced a BRRRR the member asked about at 456 Oak",
+        ).not.toBe(403000);
+      }
+      expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('403000');
+    });
+
+    it('CONTROL: a member-supplied ARV for the SAME address is accepted untouched', async () => {
+      const { flip } = await compsThenExplicitFlip({
+        session: 'p-control-2',
+        followUp: 'run the flip on 123 Main St but use 520k as the ARV',
+        explicitArv: 520000,
+      });
+      expect(flip, 'flip never ran').toBeDefined();
+      expect(flip!.inputs_used!.after_repair_value).toBe(520000);
     });
   });
 
