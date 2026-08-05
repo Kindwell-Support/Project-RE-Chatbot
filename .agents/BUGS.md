@@ -9,6 +9,41 @@ carried into the GREEN message with its severity).
 
 ---
 
+## BUG-008 — the widget pre-fills without a label, contradicting its own stated invariant
+
+- **Status**: OPEN
+- **Severity**: minor (not reachable through today's server; defence-in-depth)
+- **Reported**: msg `0014-inspector-form-surface-verified.md`
+
+```
+module:    widget/widget.js:735
+repro:     npx vitest run tests/comps/formPrefill.widget.test.ts -t "NO label"
+expected:  no label => no pre-fill (the module's OWN comment, widget.js:733-734)
+actual:    the value is written into the input and nothing is rendered beside it
+spec-ref:  CONTRACT §8.1
+```
+
+The comment three lines above the condition states the guarantee exactly:
+
+> The label is the guarantee: no label, no pre-fill — the member always sees
+> which property the number came from.
+
+The condition is `if (field.prefill && field.prefill.value !== undefined)`. It
+never checks the label. Given a prefill with a value and no label, the widget
+writes $403,000 into the ARV box and renders an empty note — a number the member
+did not type, sitting in a required field, with nothing saying where it came
+from. Indistinguishable from their own input, and it SUBMITS untouched by
+design.
+
+Not reachable today: the server always supplies the label (verified against the
+real payload). So this is the same shape as BUG-002 — the defence is POSITIONAL
+(it holds because of what the server happens to send) rather than structural
+(the renderer enforcing its own invariant).
+
+Fix is one clause: `if (field.prefill && field.prefill.value !== undefined && field.prefill.label)`.
+
+---
+
 ## BUG-007 — the override escape hatch skips the property binding
 
 - **Status**: OPEN
