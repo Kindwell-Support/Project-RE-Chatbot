@@ -652,6 +652,67 @@ describe(`hard filters, distance and tiers${sliceNote(...MODS)}`, () => {
   });
 
   // =========================================================================
+  // BUG-006 — FAILS ON PURPOSE. This is the repro; reported in mailbox 0011.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('BUG-006: a same-day sale is rejected as future-dated', () => {
+    // The mapped fixtures carry `soldDate` as a full timestamp preserving the
+    // sale's LOCAL midnight — "2026-08-05T07:00:00.000Z" for Phoenix (UTC-7,
+    // no DST). §4 says `soldDate` is an ISO *date*, and every piece of
+    // arithmetic downstream assumes date-only.
+    //
+    // Rule 12 rejects `soldDate` strictly after `now`. So between 00:00Z and
+    // 07:00Z a sale that closed TODAY in the client's own market is "in the
+    // future" and silently disappears — with a reason that reads perfectly
+    // plausible in the rejection table.
+    const soldTodayPhoenix = '2026-08-05T07:00:00.000Z';
+
+    /** Identical to the subject in every filterable way — only rule 12 can fire. */
+    const twin = validComp({
+      zpid: 'TWIN', soldDate: soldTodayPhoenix,
+      beds: SUBJECT.beds, baths: SUBJECT.baths, livingArea: SUBJECT.livingArea,
+      lotSize: SUBJECT.lotSize, propertyType: SUBJECT.propertyType,
+      lat: SUBJECT.lat, lng: SUBJECT.lng,
+    });
+
+    const reasonAt = (nowIso: string) => {
+      const { kept, rejected } = applyHardFilters(SUBJECT, [twin], 2.0, new Date(nowIso));
+      return kept.length ? null : rejected[0].reason;
+    };
+
+    it('is kept regardless of what hour of the UTC day the lookup runs', () => {
+      // The freshest comps are the most valuable ones, and 00:00-07:00 UTC is
+      // 5pm-midnight in Phoenix — prime usage hours in the client's market.
+      expect(reasonAt('2026-08-05T18:00:00.000Z'), 'evening UTC').toBeNull();
+      expect(reasonAt('2026-08-05T07:01:00.000Z'), 'just after 07:00Z').toBeNull();
+      expect(reasonAt('2026-08-05T06:59:00.000Z'), 'just before 07:00Z').toBeNull();
+      expect(reasonAt('2026-08-05T02:00:00.000Z'), 'early UTC').toBeNull();
+    });
+
+    it('the same address does not return different comps depending on the hour', () => {
+      // Nondeterminism is the compounding harm: results are cached for 14 days,
+      // so whichever comp set happens to be computed first gets frozen in.
+      const hours = ['2026-08-05T02:00:00.000Z', '2026-08-05T12:00:00.000Z', '2026-08-05T23:00:00.000Z'];
+      const outcomes = hours.map(reasonAt);
+      expect(
+        new Set(outcomes).size,
+        `the same comp is kept at some hours and rejected at others: ${JSON.stringify(
+          Object.fromEntries(hours.map((h, i) => [h, outcomes[i]])),
+        )}`,
+      ).toBe(1);
+    });
+
+    it('the root cause: soldDate should be a date, not a timestamp', () => {
+      // With the contract's own date-only form the whole class disappears —
+      // `.toISOString().slice(0, 10)` in the adapter is the entire fix.
+      const dateOnly = validComp({ ...twin, soldDate: '2026-08-05' });
+      for (const nowIso of ['2026-08-05T02:00:00.000Z', '2026-08-05T23:00:00.000Z']) {
+        const { kept } = applyHardFilters(SUBJECT, [dateOnly], 2.0, new Date(nowIso));
+        expect(kept, `date-only form failed at ${nowIso}`).toHaveLength(1);
+      }
+    });
+  });
+
+  // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('the injected clock', () => {
     it('nothing reads the real date — moving `now` moves the staleness wall', () => {
       const comp = validComp({ soldDate: '2024-08-01' });
