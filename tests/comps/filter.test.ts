@@ -327,6 +327,18 @@ describe(`hard filters, distance and tiers${sliceNote(...MODS)}`, () => {
       expect(applyHardFilters(noLot, [validComp({ lotSize: 9_000_000 })], 2.0, NOW).kept)
         .toHaveLength(1);
     });
+
+    it('rule 12 FUTURE_SOLD_DATE — a sale that has not happened is not a comp', () => {
+      // BUG-003's rejection half. Rule 2 does NOT catch this: a future date is
+      // not "more than 12 months old", so before rule 12 existed a comp dated
+      // tomorrow passed every filter and then scored NEGATIVE, ranking ahead of
+      // every genuine sale and surviving the cap unconditionally.
+      // Zillow emits these — pending-close dates and timezone-shifted rows.
+      expect(reasonFor({ soldDate: daysAgo(-1) })).toBe('FUTURE_SOLD_DATE');
+      expect(reasonFor({ soldDate: daysAgo(-400) })).toBe('FUTURE_SOLD_DATE');
+      // Sold TODAY is not the future — the comparison is strictly after `now`.
+      expect(reasonFor({ soldDate: daysAgo(0) }), 'a sale dated today was rejected').toBeNull();
+    });
   });
 
   // =========================================================================
@@ -376,6 +388,40 @@ describe(`hard filters, distance and tiers${sliceNote(...MODS)}`, () => {
         reasonFor({ soldPrice: null, lotSize: 9_000_000 }),
         'missing price before lot anomaly',
       ).toBe('PRICE_MISSING');
+
+      // Rule 12 is LAST, so anything earlier wins over a future date. This is
+      // the ordering most likely to be got wrong, because "the sale hasn't
+      // happened" feels like it should be reported first.
+      expect(
+        reasonFor({ soldDate: daysAgo(-1), status: 'FOR_SALE' }),
+        'not-sold before future-dated',
+      ).toBe('NOT_SOLD');
+      expect(
+        reasonFor({ soldDate: daysAgo(-1), livingArea: null }),
+        'missing sqft before future-dated',
+      ).toBe('SQFT_MISSING');
+      expect(
+        reasonFor({ soldDate: daysAgo(-1), lotSize: 9_000_000 }),
+        'lot anomaly before future-dated',
+      ).toBe('LOT_ANOMALY');
+      // ...and with nothing earlier failing, rule 12 is what fires.
+      expect(reasonFor({ soldDate: daysAgo(-1) })).toBe('FUTURE_SOLD_DATE');
+    });
+
+    it('a future-dated comp never reaches the ARV at all', () => {
+      // The end-to-end statement of BUG-003: rule 12 excludes it, so the
+      // negative-score promotion it used to get is unreachable by construction
+      // rather than merely clamped.
+      const comps = [
+        validComp({ zpid: 'FUTURE', soldDate: daysAgo(-1), soldPrice: 1_200_000 }),
+        ...Array.from({ length: 4 }, (_, i) =>
+          validComp({ zpid: `REAL${i}`, lat: latAt(0.01 * i), soldDate: daysAgo(30) }),
+        ),
+      ];
+      const { kept, rejected } = applyHardFilters(SUBJECT, comps, 2.0, NOW);
+      expect(kept.map((c) => c.zpid)).not.toContain('FUTURE');
+      expect(kept).toHaveLength(4);
+      expect(rejected.find((r) => r.comp.zpid === 'FUTURE')!.reason).toBe('FUTURE_SOLD_DATE');
     });
 
     it('every rejection carries a reason and the original comp', () => {

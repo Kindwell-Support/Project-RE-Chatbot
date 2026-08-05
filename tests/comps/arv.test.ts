@@ -224,35 +224,33 @@ describe(`ARV arithmetic${sliceNote(...MODS)}`, () => {
     });
 
     /**
-     * KNOWN GAP — BUG-002, minor. Pinned to today's behaviour, not to what it
-     * ought to be, so the suite stays green while the gap is open.
+     * BUG-002 — FIXED (CONTRACT §0 #6, §5.5). Both helpers now throw at the
+     * function boundary rather than emitting NaN / Infinity.
      *
-     * `trimmedMean([])` returns `{ mean: NaN }` and `pricePerSqft(x, 0)`
-     * returns `Infinity`. Neither is reachable through the service: the count
-     * gate rejects below 3 comps, and hard-filter rules 3 and 9 drop comps with
-     * a missing sqft or price before any $/sqft is taken.
-     *
-     * So the defence is real — but it is POSITIONAL, not structural. It holds
-     * because of who calls these today. The moment `trimmedMean` is reused
-     * (rental comps, a recompute-from-cached-raw path that skips the gate) the
-     * NaN is one call away from a rendered "$NaN" or a coerced "$0 ARV".
-     *
-     * If these start failing because MASON added throws, that is the fix
-     * landing — update this block, don't revert it.
+     * This block previously pinned the broken behaviour so the suite stayed
+     * green while the gap was open. It now pins the fix. The defence used to be
+     * positional — safe only because of who called these — and is now
+     * structural, which is what makes it survive the next caller.
      */
-    it('KNOWN GAP (BUG-002): trimmedMean([]) returns NaN instead of throwing', () => {
-      const r = trimmedMean([]);
-      expect(Number.isNaN(r.mean)).toBe(true);
-      expect(r.used).toEqual([]);
-      expect(r.trimmedOut).toEqual([]);
+    it('BUG-002 FIXED: trimmedMean([]) throws instead of returning NaN', () => {
+      // `mean([])` is 0/0 = NaN. NaN renders as "$NaN" if you are lucky and
+      // coerces to 0 — "your ARV is $0" — if you are not.
+      expect(() => trimmedMean([])).toThrow();
+      // ...and a single value is still perfectly legal, so the guard is a guard
+      // and not a blanket rejection.
+      expect(trimmedMean([207]).mean).toBe(207);
     });
 
-    it('KNOWN GAP (BUG-002): pricePerSqft(x, 0) returns Infinity instead of throwing', () => {
-      expect(pricePerSqft(400000, 0)).toBe(Infinity);
-      // Infinity is especially nasty for rule 10: `Infinity < 0.4 * median` is
-      // false, so a divide-by-zero comp would never be rejected as
+    it('BUG-002 FIXED: pricePerSqft with a non-positive area throws instead of Infinity', () => {
+      // Infinity was especially nasty for rule 10: `Infinity < 0.4 * median` is
+      // false, so a divide-by-zero comp could never be rejected as
       // non-arms-length — it would sail through and poison the mean.
-      expect(Infinity < 0.4 * 205).toBe(false);
+      expect(Infinity < 0.4 * 205).toBe(false); // the hazard, stated
+      expect(() => pricePerSqft(400000, 0)).toThrow();
+      expect(() => pricePerSqft(400000, -1)).toThrow();
+      // A zero PRICE is not a programmer error — rule 9 handles it — so it
+      // must still compute rather than throw.
+      expect(pricePerSqft(0, 2000)).toBe(0);
     });
 
     it('pricePerSqft handles the non-degenerate edges cleanly', () => {

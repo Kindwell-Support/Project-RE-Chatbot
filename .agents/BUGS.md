@@ -9,76 +9,87 @@ carried into the GREEN message with its severity).
 
 ---
 
-## BUG-003 — a future-dated comp scores NEGATIVE and outranks every genuine sale
+## BUG-004 — the subject property appears in its own comp set
 
 - **Status**: OPEN
 - **Severity**: major
-- **Reported**: msg `0005-inspector-bug-negative-recency-score.md`
+- **Reported**: msg `0009-inspector-payload-reconciled-two-major-findings.md`
 
 ```
-module:    src/features/comps/rank.ts (the recency term, CONTRACT §5.4)
-repro:     npx vitest run tests/comps/rank.test.ts -t "recency term must never go below 0"
-expected:  parts.recency >= 0  (§5.4 states score is 0-100)
-actual:    -0.0547525
-spec-ref:  CONTRACT.md §5.4
+module:    src/features/comps/providers/apifyZillow.ts (adapter) + CONTRACT §5.3
+repro:     spike-subject-real.json zpid 7520659 IS one of the 37 items in spike-comps.json
+expected:  the subject is never a comp for itself
+actual:    zpid 7520659, "1111 W ENCANTO Boulevard", 2971 sqft, $1,010,000,
+           distance 0.0000 mi — passes all twelve hard filters
+spec-ref:  CONTRACT.md §5.3 (no rule excludes the subject)
 ```
 
-Arithmetic. A comp dated one day after `now`:
+The comps search is a `mapBounds` box centred on the subject, so the subject sits
+inside its own search box and returns as a `RECENTLY_SOLD` result like any other.
 
-```
-monthsAgo = -1 / 30.44                        = -0.03285151
-recency   = min(-0.03285151 / 12, 1) × 20     = -0.05475252
-```
+It is a *perfect* comp by construction — distance 0, sqft delta 0, bed/bath delta
+0, sold the same day. Score 0. It sorts first, cannot be capped out, and survives
+the trim unless it happens to be an extreme. For any recently-sold subject the
+ARV is anchored to the subject's own sale price and then presented as a
+market-derived estimate with a confidence tier on it.
 
-`min(x, 1)` clamps the top of the range. Nothing clamps the bottom, so a
-negative age produces a negative score component and a total score below zero.
-
-**Why it is reachable.** Hard-filter rule 2 rejects `soldDate` null or *more
-than* 12 months old. A future date is neither, so a `status: SOLD` comp dated
-tomorrow passes every one of the eleven rules.
-
-**Why it matters.** Ranking is ascending, so a negative score sorts ahead of a
-flawless comp (score 0). Bad provider data is therefore *guaranteed* into the
-kept set and *guaranteed* to displace a legitimate comp once the set is capped
-at `MAX_COMPS_KEPT`. Its $/sqft then enters the trimmed mean like any other.
-Secondary: `monthsAgo` also feeds the median age behind the `high` confidence
-clause, so negative ages pull that median down and make `high` marginally easier
-to reach.
-
-Fix options for MASON (his call):
-1. Reject a future `soldDate` — semantically it has not sold, so rule 1
-   `NOT_SOLD` fits without adding a `RejectReason`. Needs a §5.3 wording change.
-2. Clamp the recency term at 0: `min(max(monthsAgo, 0) / 12, 1)`.
-Recommend 1, with 2 as defence in depth.
+Confirmed against real recorded data, not hypothetical: at 0.5 and 1.0 mi it is
+the ONLY surviving comp.
 
 ---
 
-## BUG-002 — degenerate inputs return NaN / Infinity at the pure-function edge
+## FINDING-001 — the recorded fixture pair can never produce an ARV
 
-- **Status**: OPEN
+- **Status**: OPEN (test validity, not product correctness)
+- **Severity**: major
+- **Reported**: msg `0009`
+
+Running §5.3 over `spike-subject-real.json` + `spike-comps.json` (now = 2026-08-05):
+
+| radius | kept | rejections |
+| --- | --- | --- |
+| 0.5 mi | 1 | SQFT_OUT_OF_RANGE 33, TOO_FAR 2, SQFT_MISSING 1 |
+| 1.0 mi | 1 | same |
+| 2.0 mi | 2 | SQFT_OUT_OF_RANGE 33, TOO_FAR 1, SQFT_MISSING 1 |
+
+Always below `MIN_COMPS_TO_COMPUTE` (3), and the single survivor at the tight
+tiers is the subject itself (BUG-004). Cause is size, not distance: subject 2,971
+sqft against comps with a median of 1,510; only 3 of 36 land in the ±25% band.
+
+Consequence: if `stub.ts` replays these, only the FAILURE path is exercisable.
+Requested a second recorded pair for a subject typical of its own comp set.
+
+---
+
+## BUG-003 — a future-dated comp scores NEGATIVE — CLOSED
+
+- **Status**: CLOSED (repro re-run and confirmed 2026-08-05)
+- **Severity**: major
+- **Fix**: rule 12 `FUTURE_SOLD_DATE` (§5.3) + `max(monthsAgo, 0)` in the recency
+  term and the confidence-median input (§5.4).
+
+Verified after the fix:
+- `parts.recency` is 0, not -0.0547, for a comp dated tomorrow.
+- `monthsAgo` still reports the RAW negative value — the evidence is preserved,
+  which is the right call and is now pinned by its own test.
+- The comp is REJECTED at the filter with reason `FUTURE_SOLD_DATE`, so the
+  negative-score promotion is unreachable by construction rather than merely
+  clamped.
+- Rule 12 is last, so an earlier failure still wins the first-match report —
+  ordering pinned in `filter.test.ts`.
+- No neighbour regressions: all 248 comps tests green, including the 25 goldens.
+
+---
+
+## BUG-002 — degenerate inputs returned NaN / Infinity — CLOSED
+
+- **Status**: CLOSED (repro re-run and confirmed 2026-08-05)
 - **Severity**: minor
-- **Reported**: msg `0006-inspector-minor-batch.md`
+- **Fix**: `trimmedMean([])` and `pricePerSqft(price, area <= 0)` now throw.
 
-```
-module:    src/features/comps/arv.ts
-repro:     npx vitest run tests/comps/arv.test.ts -t "KNOWN GAP"
-expected:  throws, per the guards calculateArv already has
-actual:    trimmedMean([]) -> { mean: NaN }; pricePerSqft(x, 0) -> Infinity
-spec-ref:  CONTRACT.md §4 (exported signatures); TEST_PLAN.md §8 Q2
-```
-
-`calculateArv` guards both cases properly and throws with a clear message —
-that is the defence that matters and it is verified. The two smaller exported
-helpers do not.
-
-Unreachable today: the count gate stops below 3 comps, and rules 3 and 9 drop
-comps with a missing sqft or price before any $/sqft is taken. But the defence
-is POSITIONAL, not structural — it holds because of who calls these today.
-Infinity is the nastier of the two: `Infinity < 0.4 × median` is false, so a
-divide-by-zero comp could never be rejected as non-arms-length.
-
-Pinned to current behaviour in `arv.test.ts` so the suite stays green while
-this is open.
+Verified: both throw; `trimmedMean([207])` still returns 207 (the guard is a
+guard, not a blanket rejection); `pricePerSqft(0, 2000)` still returns 0, because
+a zero PRICE is rule 9's business and not a programmer error.
 
 ---
 

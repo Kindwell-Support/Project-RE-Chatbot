@@ -370,43 +370,61 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
   });
 
   // =========================================================================
-  // BUG-003 — these two FAIL on purpose. They are the repro, not noise.
-  // Reported to MASON in mailbox 0005. Delete nothing here; they go green when
-  // the fix lands.
+  // BUG-003 — the scoring half of the fix (CONTRACT §0 #5, §5.4).
+  //
+  // The rejection half is rule 12 `FUTURE_SOLD_DATE` and belongs to the filter
+  // layer — asserted in `filter.test.ts`. `rankComps` is only ever handed comps
+  // that already passed the filters, so it cannot and should not exclude
+  // anything; what it must guarantee is that §5.4's stated 0–100 range holds
+  // no matter what reaches it.
   // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('BUG-003: a future-dated comp scores NEGATIVE', () => {
+  describe.skipIf(pendingSlice(...MODS))('BUG-003: the recency clamp', () => {
     const tomorrow = new Date(NOW.getTime() + 86_400_000).toISOString().slice(0, 10);
 
-    it('the recency term must never go below 0', () => {
-      // monthsAgo for a sale dated tomorrow is -1/30.44 = -0.0328521 months.
-      //   recency = min(-0.0328521 / 12, 1) × 20 = -0.0027377 × 20 = -0.0547525
-      // The min() clamps the TOP of the range; nothing clamps the bottom.
-      // CONTRACT §5.4 states the score is "0-100"; a negative term breaks that.
+    it('the recency term never goes below 0', () => {
+      // Unclamped, monthsAgo for a sale dated tomorrow is -1/30.44 = -0.0328521:
+      //   recency = min(-0.0328521 / 12, 1) × 20 = -0.0547525
+      // min() clamps the TOP of the range; max(monthsAgo, 0) clamps the bottom.
       const future = scoreComp(SUBJECT, comp({ soldDate: tomorrow }), NOW);
-      expect(future.monthsAgo).toBeLessThan(0);
       expect(
         future.parts.recency,
         'recency went negative — a sale that has not happened scores better than one that has',
-      ).toBeGreaterThanOrEqual(0);
+      ).toBe(0);
+      expect(future.score).toBeGreaterThanOrEqual(0);
     });
 
-    it('and it therefore outranks a perfect comp and cannot be capped out', () => {
-      // The concrete harm. A negative score sorts ahead of a flawless comp
-      // (score 0), so bad provider data is GUARANTEED into the kept set and
-      // guaranteed to displace a real comp when the set is capped at 8.
-      // Rule 2 does not catch it: a future date is not "> 12 months old".
-      const comps = [
-        comp({ zpid: 'FUTURE', soldDate: tomorrow, soldPrice: 1_200_000 }),
-        ...Array.from({ length: 8 }, (_, i) =>
-          comp({ zpid: `REAL${i}`, lat: latAt(0.01 * i), soldDate: daysAgo(30) }),
-        ),
+    it('but monthsAgo itself stays RAW and negative — the evidence is preserved', () => {
+      // §5.4 is explicit that the clamp lives in the term, not the field. A
+      // negative monthsAgo is the visible trace of bad provider data; silently
+      // flooring it to 0 would hide the thing rule 12 exists to catch.
+      const future = scoreComp(SUBJECT, comp({ soldDate: tomorrow }), NOW);
+      expect(future.monthsAgo).toBeLessThan(0);
+      expect(future.monthsAgo).toBeCloseTo(-1 / DAYS_PER_MONTH, 9);
+    });
+
+    it('a future-dated comp can no longer undercut a comp sold today', () => {
+      // Pre-fix, the future comp scored -0.0547 and sorted ahead of a flawless
+      // comp at 0. Clamped, the worst it can do is tie.
+      const future = scoreComp(SUBJECT, comp({ soldDate: tomorrow }), NOW);
+      const today = scoreComp(SUBJECT, comp({ soldDate: daysAgo(0) }), NOW);
+      expect(future.score).toBeGreaterThanOrEqual(today.score);
+      expect(future.score).toBeGreaterThanOrEqual(0);
+    });
+
+    it('no comp, however malformed, can score outside 0-100', () => {
+      const nasty = [
+        comp({ soldDate: tomorrow }),
+        comp({ soldDate: new Date(NOW.getTime() + 400 * 86_400_000).toISOString().slice(0, 10) }),
+        comp({ soldDate: daysAgo(9999), lat: latAt(50), livingArea: 1, beds: 99, baths: 99 }),
       ];
-      const ranked = rankComps(SUBJECT, comps, NOW);
-      expect(ranked).toHaveLength(MAX_COMPS_KEPT);
-      expect(
-        ranked[0].comp.zpid,
-        'a comp dated in the future is ranked above every genuine sale',
-      ).not.toBe('FUTURE');
+      for (const c of nasty) {
+        const s = scoreComp(SUBJECT, c, NOW);
+        expect(s.score).toBeGreaterThanOrEqual(0);
+        expect(s.score).toBeLessThanOrEqual(100);
+        for (const [k, v] of Object.entries(s.parts)) {
+          expect(v, `parts.${k} is ${v}`).toBeGreaterThanOrEqual(0);
+        }
+      }
     });
   });
 });
