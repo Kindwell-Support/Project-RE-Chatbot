@@ -16,7 +16,7 @@
  * The token lives in the Authorization header only. It must never appear in
  * an error message, a log line, or a thrown value.
  */
-import { PROVIDER_MAX_RETRIES, PROVIDER_TIMEOUT_MS } from '../config.js';
+import { PROVIDER_TIMEOUT_MS } from '../config.js';
 import { normalizeAddress } from '../normalize.js';
 import type { PropertyType, RawComp, SubjectProperty } from '../types.js';
 import {
@@ -68,12 +68,22 @@ function mapLotSize(value: unknown, unit: unknown): number | null {
   return String(unit ?? '').toLowerCase().startsWith('acre') ? n * SQFT_PER_ACRE : n;
 }
 
-/** Subject dateSold is ISO already; comps carry epoch millis. Accept both, emit ISO. */
+/**
+ * Subject dateSold is ISO already; comps carry epoch millis. Accept both and
+ * emit the CALENDAR DATE ("2026-08-05"), never the instant (BUG-006): Zillow's
+ * epochs are local-midnight-in-UTC (07:00Z for Phoenix), and preserving the
+ * time component made rule 12 reject every same-day sale for seven hours of
+ * each UTC day — eating the freshest comps during the client's evening, then
+ * freezing whichever set computed first into the 14-day cache. All US markets
+ * sit west of UTC, so the UTC date of local midnight IS the local date.
+ */
 function mapSoldDate(value: unknown): string | null {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return new Date(value).toISOString();
+    return new Date(value).toISOString().slice(0, 10);
   }
-  if (typeof value === 'string' && value && !Number.isNaN(Date.parse(value))) return value;
+  if (typeof value === 'string' && value && !Number.isNaN(Date.parse(value))) {
+    return value.slice(0, 10);
+  }
   return null;
 }
 
@@ -225,28 +235,13 @@ export class ApifyZillowProvider implements PropertyDataProvider {
   }
 
   /**
-   * One synchronous actor run. Retry policy per CONTRACT §3: one retry on
-   * timeout / 5xx / network, NEVER on 4xx (a bad request re-sent is a second
-   * bill for the same mistake — Apify runs cost the client real money).
+   * ONE attempt, no retry here. The retry policy (CONTRACT §3: one retry on
+   * transient, never on 4xx) lives in service.ts at the PropertyDataProvider
+   * seam — where it is uniform for every provider and assertable offline by
+   * counting spy calls. This class only classifies failures into the three
+   * typed errors the policy discriminates on.
    */
   private async runActor(
-    actor: string,
-    operation: string,
-    input: Record<string, unknown>,
-  ): Promise<Array<Record<string, unknown>>> {
-    let lastError: unknown;
-    for (let attempt = 0; attempt <= PROVIDER_MAX_RETRIES; attempt++) {
-      try {
-        return await this.runActorOnce(actor, operation, input);
-      } catch (err) {
-        if (err instanceof ProviderHttpError && err.status < 500) throw err; // 4xx: no retry
-        lastError = err;
-      }
-    }
-    throw lastError;
-  }
-
-  private async runActorOnce(
     actor: string,
     operation: string,
     input: Record<string, unknown>,

@@ -15,7 +15,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { calculateArv } from './arv.js';
-import { ALGO_VERSION, MIN_COMPS_TO_COMPUTE, RADIUS_TIERS_MI } from './config.js';
+import { ALGO_VERSION, MIN_COMPS_TO_COMPUTE, PROVIDER_MAX_RETRIES, RADIUS_TIERS_MI } from './config.js';
 import { FAILURE_COPY } from './format.js';
 import { selectRadiusTier } from './filter.js';
 import { cacheKey, normalizeAddress } from './normalize.js';
@@ -90,6 +90,32 @@ export interface RunCompsDeps {
   logger?: LoggerLike;
   /** Injectable clock — pure code below never reads it directly. */
   now?: () => Date;
+}
+
+/**
+ * Retry policy (CONTRACT §3/§6), enforced at the provider SEAM so it is
+ * uniform for every implementation and offline-assertable by spy count:
+ * ONE retry on transient failures (timeout / 5xx / network), ZERO on 4xx —
+ * a 4xx re-sent is the same bill for the same mistake, and it scales with
+ * every mistyped address forever.
+ */
+function isTransient(err: unknown): boolean {
+  if (err instanceof ProviderTimeoutError || err instanceof ProviderNetworkError) return true;
+  if (err instanceof ProviderHttpError) return err.status >= 500;
+  return false;
+}
+
+async function withRetry<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= PROVIDER_MAX_RETRIES; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      if (!isTransient(err)) throw err;
+      lastError = err;
+    }
+  }
+  throw lastError;
 }
 
 function failure(code: CompsFailureCode, detail?: CompsFailure['detail']): CompsFailure {
@@ -177,15 +203,21 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
   let subject: SubjectProperty | null;
   let comps: RawComp[];
   try {
-    subject = await deps.provider.lookupSubject(rawAddress);
+    subject = await withRetry(() => deps.provider.lookupSubject(rawAddress));
     if (subject === null) return failure('ADDRESS_NOT_FOUND');
     // One fetch at the WIDEST tier; the pure tier logic narrows from there.
     // Fetching per-tier would triple the bill for thin markets — the exact
     // case where money is being wasted on a likely failure.
-    comps = await deps.provider.fetchSoldComps(subject, RADIUS_TIERS_MI[RADIUS_TIERS_MI.length - 1]);
+    comps = await withRetry(() =>
+      deps.provider.fetchSoldComps(subject as SubjectProperty, RADIUS_TIERS_MI[RADIUS_TIERS_MI.length - 1]),
+    );
   } catch (err) {
     if (err instanceof ProviderTimeoutError) return failure('PROVIDER_TIMEOUT');
-    if (err instanceof ProviderHttpError || err instanceof ProviderNetworkError) {
+    if (
+      err instanceof ProviderHttpError ||
+      err instanceof ProviderNetworkError ||
+      err instanceof SyntaxError // a provider leaking malformed-body JSON errors is a transport failure, not our bug
+    ) {
       logger?.warn({ err: err.message, cacheKey: key }, 'comps provider error');
       return failure('PROVIDER_ERROR');
     }

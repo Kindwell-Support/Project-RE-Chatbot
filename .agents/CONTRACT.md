@@ -222,7 +222,7 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
    the member's own purchase price; prepended so the reject table names the
    real reason)
 1. `NOT_SOLD` — status ≠ SOLD (case-insensitive)
-2. `STALE_SALE` — `soldDate` null or > `MAX_COMP_AGE_MONTHS` months before `now` (months = days / `DAYS_PER_MONTH`)
+2. `STALE_SALE` — `soldDate` null or > `MAX_COMP_AGE_MONTHS` months before `now` (months = days / `DAYS_PER_MONTH`). **All date arithmetic (`monthsBetween`) runs at UTC CALENDAR-DAY granularity** (BUG-006): `soldDate` is an ISO date, so a sale "today" is 0 months old at every hour of the day, and comp sets are deterministic per calendar day rather than per hour
 3. `SQFT_MISSING` — `livingArea` null or ≤ 0
 4. `SQFT_OUT_OF_RANGE` — outside subject ± `SQFT_TOLERANCE`
 5. `BEDS_DIFF` — both non-null and |Δbeds| > `MAX_BED_DIFF` (null on either side = no rejection)
@@ -290,9 +290,13 @@ export interface PropertyDataProvider {
 }
 ```
 Errors: providers throw `ProviderTimeoutError` / `ProviderHttpError(status)` /
-`ProviderNetworkError`; `service.ts` maps them to failure codes. Retry policy:
-one retry on timeout/5xx/network, none on 4xx. `stub.ts` replays fixtures and
-is what CI runs — the default `npm test` never touches the network.
+`ProviderNetworkError`; `service.ts` maps them to failure codes (a leaked
+`SyntaxError` from a malformed body maps to `PROVIDER_ERROR` too). **The retry
+policy lives in `service.ts` at this seam** — one retry on timeout/5xx/network,
+none on 4xx — so it is uniform for every provider implementation and
+offline-assertable by spy call count; providers themselves make exactly ONE
+attempt and only classify failures. `stub.ts` replays fixtures and is what CI
+runs — the default `npm test` never touches the network.
 
 **Injection seam (BLOCKED-0008 resolution, binding):**
 `AppDeps` (src/server/app.ts) gains `propertyProvider?: PropertyDataProvider`.
@@ -318,7 +322,7 @@ Field mapping the adapter implements (payload reality vs contract types):
 | --- | --- | --- |
 | `zpid: string` | `zpid` is a **number** → `String(zpid)` | number in `homeInfo`, string on the card → `String()` |
 | `status` | `homeStatus` — `"RECENTLY_SOLD"` maps to `SOLD` | `homeInfo.homeStatus` — same mapping |
-| `soldDate` (ISO) | `dateSold` is already ISO (`"2026-07-31T00:00:00.000Z"`) | `homeInfo.dateSold` is **epoch millis** → ISO. The two actors use different formats for the same concept |
+| `soldDate` (ISO **date**) | `dateSold` is an ISO timestamp (`"2026-07-31T00:00:00.000Z"`) → **calendar date only** (`"2026-07-31"`) | `homeInfo.dateSold` is **epoch millis** (local-midnight-in-UTC, e.g. 07:00Z for Phoenix) → **calendar date only**. BUG-006: preserving the instant rejected same-day sales as future-dated for 7 UTC hours a day |
 | `soldPrice` | `lastSoldPrice` | `homeInfo.price` |
 | `livingArea` | `livingArea` | `homeInfo.livingArea` |
 | `lotSize` (sqft) | `lotSize` (already sqft) when present, else `lotAreaValue`+`lotAreaUnits` | `homeInfo.lotAreaValue` + `lotAreaUnit` — **`"acres"` or `"sqft"`** (case-insensitive); acres × 43,560 |
@@ -463,8 +467,13 @@ plus which comps were trimmed and why (`trimmedOut`), the trimmed $/sqft, the
 subject sqft, the multiplication, ARV with low–high band and confidence, radius
 tier used, and the one-line footer: *automated estimate from public sold data,
 not a formal appraisal*. Confidence `low` adds the weak-estimate warning.
-Failures render their §10 copy. `renderCompsForChat` is deterministic for a
-given outcome object.
+
+Failure copy ownership (FINDING-002): the §10 wording is COMPOSED in
+`service.ts` (from format.ts's exported `FAILURE_COPY` table — one source) and
+carried on `CompsFailure.message`; `renderCompsForChat` renders failures as a
+passthrough of that message, with a code-keyed fallback to the same table
+(BUG-005) so a malformed failure object still renders §10 copy rather than
+"undefined". `renderCompsForChat` is deterministic for a given outcome object.
 
 ## 12. Fixtures (shared, `src/features/comps/__fixtures__/`)
 

@@ -108,9 +108,21 @@ function renderSuccess(result: CompsResult): string {
   return lines.join('\n');
 }
 
-/** Failure render: the §10 copy verbatim — service and chat share ONE wording. */
+/**
+ * Failure render: the §10 copy the service minted, with a code-keyed fallback
+ * (BUG-005) — `message` is required by the type, but a failure object built
+ * anywhere else could omit it, and `undefined` reaching the chat renders as
+ * the literal word "undefined". The fallback regenerates from the same table,
+ * so the §10 guarantees hold even for a malformed failure object.
+ */
 function renderFailure(failure: CompsFailure): string {
-  return failure.message;
+  if (typeof failure.message === 'string' && failure.message.trim().length > 0) {
+    return failure.message;
+  }
+  const copy = FAILURE_COPY[failure.code];
+  return copy
+    ? copy(failure.detail)
+    : "Something went wrong pulling comps — no estimate this time. If you have your own ARV, tell me and I'll run the numbers with it.";
 }
 
 export function renderCompsForChat(outcome: CompsOutcome): string {

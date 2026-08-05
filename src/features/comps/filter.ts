@@ -32,12 +32,26 @@ export function haversineMiles(aLat: number, aLng: number, bLat: number, bLng: n
   return 2 * EARTH_RADIUS_MI * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** Months between an ISO date and `now`; Infinity when unparseable (saturates every age check). */
+/**
+ * Months between an ISO date and `now`; Infinity when unparseable (saturates
+ * every age check).
+ *
+ * Compares at UTC CALENDAR-DAY granularity (BUG-006): `soldDate` is an ISO
+ * *date* per §4, so a sale "today" is 0 months old at every hour of the day.
+ * Instant-granularity comparison made rule 12 reject same-day sales for the
+ * seven UTC hours before Phoenix midnight — nondeterministic comp sets that
+ * the 14-day cache then froze. Day-truncation also degrades gracefully if a
+ * timestamp ever leaks through the adapter again.
+ */
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 export function monthsBetween(iso: string | null, now: Date): number {
   if (!iso) return Infinity;
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return Infinity;
-  return (now.getTime() - t) / (1000 * 60 * 60 * 24 * DAYS_PER_MONTH);
+  const soldDay = Math.floor(t / MS_PER_DAY);
+  const nowDay = Math.floor(now.getTime() / MS_PER_DAY);
+  return (nowDay - soldDay) / DAYS_PER_MONTH;
 }
 
 /** Median with the contract's even-n rule: mean of the middle two. */
