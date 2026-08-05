@@ -4,10 +4,35 @@ Owner: MASON. INSPECTOR tests from this file. If code and contract disagree, the
 contract wins until a `CONTRACT_CHANGE` is agreed.
 
 - `ALGO_VERSION = 1`
-- Status: **provider stubbed** — `APIFY_TOKEN` is not yet available. Everything
-  below is testable offline against `StubPropertyDataProvider` + fixtures. The
-  Apify implementation slots in behind the same interface with zero changes to
-  pure logic.
+- Status: **token available; full module in scope for tonight.** Pure logic
+  stays offline-testable against the stub + fixtures; the Apify provider is
+  being built against a recorded spike payload.
+
+## 0. Change log (operator-directed, 2026-08-05 evening)
+
+1. **CUT** in-flight promise dedupe (§7).
+2. **CUT** per-session rate cap; the daily cap remains (§3, §9).
+3. Radius tier escalation **stays as built** — the operator's cut was
+   conditional ("if not already built"); it is built and covered by
+   INSPECTOR's filter spec + goldens, so it is not churned.
+4. Confidence tiers stay at three, as built (25 goldens green).
+5. **RULING (BUG-003)** new hard-filter rule 12 `FUTURE_SOLD_DATE` + defensive
+   recency clamp in scoring (§5.3, §5.4).
+6. **RULING (BUG-002)** `trimmedMean([])` and `pricePerSqft(price, area <= 0)`
+   throw at the function boundary (§5.5).
+7. **RULING (CF-001)** `compsUsed` = kept/ranked count, pre-trim (§4).
+8. **RULING (§5.1 prose)** normalization *replaces* disallowed chars with a
+   space (the implementation was right; the prose was wrong).
+9. **RULING (Q3)** cache hits do NOT consume the daily run cap — the cap
+   guards Apify spend; a hit costs nothing (§9).
+10. **RULING (Q5)** `OTHER` matching nothing, including `OTHER`, is deliberate.
+11. `run_comps` is **gated out of `TOOL_DEFINITIONS` when `APIFY_TOKEN` is
+    absent** (§9). `set_manual_arv` stays registered regardless.
+12. `session_state` written as ONE atomic block, cleared at the START of every
+    `run_comps`; pre-fill echoes the bound address and never fires across an
+    address mismatch (§8).
+13. BUG-001 (materialBudget shebang/CRLF) is ruled **out of scope** for this
+    feature.
 
 ---
 
@@ -30,7 +55,7 @@ Dev server: MASON on port 3000 (already running), INSPECTOR on 3001.
 src/features/comps/
   types.ts       config.ts      normalize.ts   filter.ts      rank.ts
   arv.ts         format.ts      service.ts     tools.ts
-  providers/types.ts  providers/apifyZillow.ts  providers/geocode.ts  providers/stub.ts
+  providers/types.ts  providers/apifyZillow.ts  providers/stub.ts   # geocode.ts dropped — detail scraper takes plain addresses (§6.1)
   cache/compsCache.ts
   __fixtures__/            # shared with INSPECTOR — hand-written now, real recordings when token lands
 sql/add_comps_tables.sql
@@ -61,15 +86,14 @@ sql/add_comps_tables.sql
 | `CACHE_TTL_DAYS` | `14` | |
 | `PROVIDER_TIMEOUT_MS` | `90_000` | per Apify run |
 | `PROVIDER_MAX_RETRIES` | `1` | transient only (timeout/5xx/network); **0 on 4xx** |
-| `COMPS_RUNS_PER_SESSION_PER_HOUR` | `5` | env-overridable |
-| `COMPS_DAILY_RUN_CAP` | `50` | env-overridable |
+| `COMPS_DAILY_RUN_CAP` | `50` | env-overridable. Counts PROVIDER runs only — cache hits are free (change log #9). ~~per-session cap~~ cut (change log #2) |
 | `DAYS_PER_MONTH` | `30.44` | the only months↔days conversion used anywhere |
 | `EARTH_RADIUS_MI` | `3958.8` | haversine |
 
-`AppConfig` (src/config.ts) gains: `apifyToken?: string` (`APIFY_TOKEN`),
-`compsRunsPerSessionPerHour` (`COMPS_RUNS_PER_SESSION_PER_HOUR`),
-`compsDailyRunCap` (`COMPS_DAILY_RUN_CAP`). None are required at boot; comps
-feature checks token presence at call time.
+`AppConfig` (src/config.ts) gains: `apifyToken?: string` (`APIFY_TOKEN`) and
+`compsDailyRunCap` (`COMPS_DAILY_RUN_CAP`). Neither is required at boot.
+Token absent ⇒ `run_comps` is not registered in `TOOL_DEFINITIONS` at all
+(change log #11); `set_manual_arv` is always registered.
 
 ## 4. Types — `src/features/comps/types.ts` (exported signatures; no `any`)
 
@@ -99,7 +123,7 @@ export interface RawComp {
 export type RejectReason =
   | 'NOT_SOLD' | 'STALE_SALE' | 'SQFT_MISSING' | 'SQFT_OUT_OF_RANGE'
   | 'BEDS_DIFF' | 'BATHS_DIFF' | 'TYPE_MISMATCH' | 'TOO_FAR'
-  | 'PRICE_MISSING' | 'NON_ARMS_LENGTH' | 'LOT_ANOMALY';
+  | 'PRICE_MISSING' | 'NON_ARMS_LENGTH' | 'LOT_ANOMALY' | 'FUTURE_SOLD_DATE';
 
 export interface RejectedComp { comp: RawComp; reason: RejectReason }
 
@@ -116,7 +140,7 @@ export interface ArvResult {
   arvPerSqft: number; sd: number; cv: number;
   confidence: ArvConfidence;
   trimmedOut: { zpid: string; pricePerSqft: number; end: 'low' | 'high' }[];
-  compsUsed: number;
+  compsUsed: number;  // RULING CF-001: kept/ranked comps — n BEFORE the trim (the charter's `n = ppsf.length`)
 }
 
 export interface CompsResult {
@@ -171,9 +195,10 @@ export function renderCompsForChat(outcome: CompsOutcome): string;   // pure, da
 ## 5. Algorithm (binding)
 
 ### 5.1 Normalization
-Uppercase → strip all chars except `[A-Z0-9 ]` → collapse whitespace → expand
-suffix abbreviations **as whole words**. Exact map (both directions normalize to
-the long form):
+Uppercase → **replace every character outside `[A-Z0-9 ]` with a space** (never
+literal deletion — `'123,Main,St'` must tokenize as three words, not collapse
+into one) → collapse whitespace → expand suffix abbreviations **as whole
+words**. Exact map (both directions normalize to the long form):
 
 | Abbrev | Expands to | | Abbrev | Expands to |
 | --- | --- | --- | --- | --- |
@@ -203,6 +228,7 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
 9. `PRICE_MISSING` — `soldPrice` null or ≤ 0
 10. `NON_ARMS_LENGTH` — ppsf < `NON_ARMS_LENGTH_PPSF_FRACTION` × median ppsf of the **candidate set** (all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters; median of even n = mean of middle two). Deterministic, order-independent.
 11. `LOT_ANOMALY` — both lots non-null and comp lot > `LOT_ANOMALY_MULTIPLE` × subject lot
+12. `FUTURE_SOLD_DATE` — `soldDate` parses to strictly after `now` (BUG-003: a sale that hasn't happened is not a comp; Zillow emits pending-close and timezone-shifted dates)
 
 Radius tiers: run filters at 0.5 mi; if kept < `MIN_COMPS_FOR_TIER`, rerun the
 full filter pass at 1.0, then 2.0. Stop at the first tier with ≥ 5 kept, else
@@ -211,12 +237,16 @@ reported from the **final** tier only.
 
 ### 5.4 Scoring (lower better)
 ```
-distance = min(distanceMi / DISTANCE_NORM_MI, 1)            * WEIGHT_DISTANCE
-sqft     = min(|cSqft - sSqft| / sSqft / SQFT_TOLERANCE, 1) * WEIGHT_SQFT
-recency  = min(monthsAgo / RECENCY_NORM_MONTHS, 1)          * WEIGHT_RECENCY
-bedbath  = min((|dBeds| + |dBaths|) / 2, 1)                 * WEIGHT_BEDBATH   // null diff counts 0
-score    = sum                                              // 0–100
+distance = min(distanceMi / DISTANCE_NORM_MI, 1)                  * WEIGHT_DISTANCE
+sqft     = min(|cSqft - sSqft| / sSqft / SQFT_TOLERANCE, 1)       * WEIGHT_SQFT
+recency  = min(max(monthsAgo, 0) / RECENCY_NORM_MONTHS, 1)        * WEIGHT_RECENCY
+bedbath  = min((|dBeds| + |dBaths|) / 2, 1)                       * WEIGHT_BEDBATH   // null diff counts 0
+score    = sum                                                    // 0–100, structurally >= 0
 ```
+The `max(monthsAgo, 0)` clamp is BUG-003's defensive half: rule 12 already
+rejects future-dated comps, but §5.4's stated 0–100 range must hold no matter
+what reaches the function. The same clamp applies to `monthsAgo` wherever it
+feeds the confidence age median.
 Sort ascending; ties broken by `distanceMi` asc, then `zpid` asc (determinism).
 Keep top `MAX_COMPS_KEPT`. Fewer than `MIN_COMPS_TO_COMPUTE` kept ⇒ `TOO_FEW_COMPS`.
 
@@ -237,19 +267,68 @@ median age ≤ 6 months (medians over the kept, ranked set); `medium` if
 compsUsed ≥ 4 ∧ cv ≤ 0.25; else `low`. `low` still returns numbers but the
 rendered copy must call the estimate weak and invite manual override.
 
+Boundary guards (BUG-002, change log #6): `trimmedMean([])` **throws**
+(`TypeError`), and `pricePerSqft(price, livingArea)` **throws** when
+`livingArea <= 0` — NaN renders as "$NaN" and Infinity defeats the
+non-arms-length comparison (`Infinity < 0.4 × median` is false), so both fail
+loudly at the function boundary instead of positionally relying on today's
+callers.
+
 ## 6. Provider interface
 
 ```ts
 export interface PropertyDataProvider {
   readonly name: string;   // 'apify-zillow' | 'stub'
-  lookupSubject(normalizedAddress: string): Promise<SubjectProperty | null>;  // null ⇒ ADDRESS_NOT_FOUND
+  lookupSubject(rawAddress: string): Promise<SubjectProperty | null>;  // null ⇒ ADDRESS_NOT_FOUND
   fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]>;
 }
 ```
 Errors: providers throw `ProviderTimeoutError` / `ProviderHttpError(status)` /
 `ProviderNetworkError`; `service.ts` maps them to failure codes. Retry policy:
 one retry on timeout/5xx/network, none on 4xx. `stub.ts` replays fixtures and
-is what CI runs until the token lands.
+is what CI runs — the default `npm test` never touches the network.
+
+### 6.1 Apify payload mapping — RECORDED FACTS (spike, 2026-08-05; fixtures in `__fixtures__/spike-*.json`)
+
+Two actors, two sequential runs (~8–13s each; both well inside the 90s timeout):
+
+| Step | Actor | Input |
+| --- | --- | --- |
+| Subject | `maxcopell/zillow-detail-scraper` | `{ addresses: ["<raw address>"], propertyStatus: "RECENTLY_SOLD" }` — takes plain addresses, so **`providers/geocode.ts` is dropped from the layout**; no geocoding step exists |
+| Comps | `maxcopell/zillow-scraper` | one `searchUrls` entry: `zillow.com/homes/recently_sold/?searchQueryState=<json>` with `mapBounds` = subject lat/lng ± radius, `filterState.isRecentlySold`, `extractionMethod: "MAP_MARKERS"`, `resultsLimit: 40` |
+
+Field mapping the adapter implements (payload reality vs contract types):
+
+| Contract field | Subject (detail payload) | Comp (search payload, under `hdpData.homeInfo`) |
+| --- | --- | --- |
+| `zpid: string` | `zpid` is a **number** → `String(zpid)` | number in `homeInfo`, string on the card → `String()` |
+| `status` | `homeStatus` — `"RECENTLY_SOLD"` maps to `SOLD` | `homeInfo.homeStatus` — same mapping |
+| `soldDate` (ISO) | `dateSold` is already ISO (`"2026-07-31T00:00:00.000Z"`) | `homeInfo.dateSold` is **epoch millis** → ISO. The two actors use different formats for the same concept |
+| `soldPrice` | `lastSoldPrice` | `homeInfo.price` |
+| `livingArea` | `livingArea` | `homeInfo.livingArea` |
+| `lotSize` (sqft) | `lotSize` (already sqft) when present, else `lotAreaValue`+`lotAreaUnits` | `homeInfo.lotAreaValue` + `lotAreaUnit` — **`"acres"` or `"sqft"`** (case-insensitive); acres × 43,560 |
+| `propertyType` | `homeType` | `homeInfo.homeType` |
+| `lat`/`lng` | `latitude`/`longitude` | `homeInfo.latitude`/`longitude` |
+| `beds`/`baths` | `bedrooms`/`bathrooms` | `homeInfo.bedrooms`/`bathrooms` |
+
+`homeType` observed values → enum: `SINGLE_FAMILY→SFR`, `CONDO→CONDO`,
+`TOWNHOUSE→TOWNHOUSE`, `MANUFACTURED→MANUFACTURED`, anything else
+(`LOT`, `MULTI_FAMILY`, `APARTMENT`, `HOME_TYPE_UNKNOWN`, …) → `OTHER`.
+
+Comps list hygiene: skip items with no `hdpData.homeInfo`, or `zpid` null, or
+`isBuilding` — the search emits building/rental cards mixed into sold results
+(3/40 in the recorded run).
+
+**Address-miss detection is TWO checks, both required:**
+1. Hard miss: the item is `{ isValid: false, invalidReason, ... }` with no
+   property data (recorded in `spike-miss.json`) ⇒ `ADDRESS_NOT_FOUND`.
+2. **Fuzzy mis-match**: a bad address can return `isValid` with a DIFFERENT
+   property — recorded: `"123 E Coronado Rd"` → `"319 E Coronado Rd #1234"`,
+   `homeStatus OTHER`, all-null facts. Guard: `normalizeAddress(input street
+   part)` must equal `normalizeAddress(returned streetAddress)` (the
+   normalizer already unifies `Blvd`/`Boulevard`, `W`/`WEST` — verified on the
+   recorded pair); mismatch ⇒ `ADDRESS_NOT_FOUND`. Never run comps against a
+   property the member didn't name.
 
 ## 7. Caching — table `comps_cache`
 
@@ -262,27 +341,51 @@ created_at timestamptz not null default now(), expires_at timestamptz not null
 - TTL `CACHE_TTL_DAYS` (14). Expired rows are treated as absent.
 - Raw payload cached separately from result. Cache hit with stale
   `algo_version` ⇒ **recompute from raw, update result, do not re-hit the provider**.
-- In-flight dedupe: module-level `Map<cacheKey, Promise<CompsOutcome>>`; entry
-  removed on settle. Two concurrent identical requests = one provider run.
+- ~~In-flight promise dedupe~~ **CUT** (change log #1). Two concurrent
+  identical requests may each hit the provider; accepted cost for tonight.
 - Cache read/write failures degrade to a live run + warn log; never a user-facing error.
+- Cache hits do not consume `COMPS_DAILY_RUN_CAP` (change log #9).
 
 ## 8. Conversation state — table `session_state` (new; nothing like it exists today)
 
+Safety-by-construction rules (change log #12):
+
 ```sql
-session_id text primary key, state jsonb not null default '{}',
+session_id text primary key,           -- REUSES the chat_messages session_id verbatim; no new identifier
+state jsonb not null default '{}',
 updated_at timestamptz not null default now()
 ```
-Keys written on comps success: `subjectAddress, subjectSqft, subjectBeds,
-subjectBaths, arv, arvLow, arvHigh, arvConfidence, arvSource ('comps'|'manual'),
-compsRunId`. `set_manual_arv` writes `arv` + `arvSource:'manual'` (clears
-low/high/confidence).
 
-Pre-fill: when `flip_calculator` / `brrrr_calculator` is invoked **without**
-`after_repair_value` and state carries `arv`, the agent layer injects it before
-`assertRequired` runs, and the reply must echo the injection visibly:
-`using ARV $412,000 from the comps you ran on 123 Main St — say "change ARV" to override`.
-An explicit ARV in the call always wins. State read/write failures degrade to
-no-prefill + warn, never a blocked reply.
+- The comps block is written as **ONE atomic object**, never field-by-field:
+  ```ts
+  interface CompsStateBlock {
+    subjectAddress: string; subjectSqft: number;
+    subjectBeds: number | null; subjectBaths: number | null;
+    arv: number; arvLow: number | null; arvHigh: number | null;
+    arvConfidence: ArvConfidence | null;
+    arvSource: 'comps' | 'manual';
+    compsRunId: string | null;
+    computedAt: string;                // ISO timestamp
+  }
+  // state.comps: CompsStateBlock | undefined — the whole block or nothing
+  ```
+- **The block is CLEARED at the START of every `run_comps` call, before the
+  provider is hit.** A failed run leaves NO ARV behind — not the previous one.
+- `set_manual_arv` writes the same shape with `arvSource: 'manual'`,
+  `arvLow/arvHigh/arvConfidence/compsRunId: null`, and `subjectAddress`
+  carried from the existing block when present (else `'manual entry'`).
+- Pre-fill: when `flip_calculator` / `brrrr_calculator` is invoked **without**
+  `after_repair_value` and `state.comps` exists, the agent layer injects
+  `state.comps.arv` before `assertRequired` runs. The reply MUST echo the bound
+  address — `using ARV $402,000 from the comps on 123 Main St — say "change
+  ARV" to override` — non-negotiable; the echo is what makes a stale value
+  visible instead of silently wrong.
+- **Address-mismatch guard**: if the user's message states an address that is
+  not the same property as `subjectAddress` (compare normalized forms), do NOT
+  pre-fill. Ask which deal they mean.
+- An explicit ARV in the tool call always wins over the pre-fill.
+- State read/write failures degrade to no-prefill + warn log, never a blocked
+  reply.
 
 ## 9. LLM tools
 
@@ -301,8 +404,15 @@ no-prefill + warn, never a blocked reply.
 ```
 Handlers live in `tools.ts`; agent.ts switch delegates. `run_comps` returns the
 **rendered block** from `format.ts` — the model relays it and may add one short
-coaching line, but never authors comp data. Rate caps checked before provider
-work; breach ⇒ `RATE_LIMITED`.
+coaching line, but never authors comp data.
+
+Registration gate (change log #11): `run_comps` appears in `TOOL_DEFINITIONS`
+**only when `config.apifyToken` is present** — with no token the model cannot
+even attempt a comps run, and the prompt must not advertise it.
+`set_manual_arv` is always registered.
+
+Rate cap: the **daily** cap only (per-session cap cut). Checked before provider
+work; cache hits bypass it entirely; breach ⇒ `RATE_LIMITED`.
 
 ## 10. Failure copy (all end by offering manual ARV entry; none produce a number)
 
