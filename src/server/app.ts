@@ -16,6 +16,10 @@ import { getHistory, appendExchange } from './memory.js';
 import { logExchange } from './logging.js';
 import type { PropertyDataProvider } from '../features/comps/providers/types.js';
 import { ApifyZillowProvider } from '../features/comps/providers/apifyZillow.js';
+import { createCompsCache } from '../features/comps/cache/compsCache.js';
+import { createDailyRunBudget, type CompsCacheLike, type RunBudgetLike } from '../features/comps/service.js';
+import { createSessionStateStore } from '../features/comps/sessionState.js';
+import type { SessionStateStore } from '../features/comps/tools.js';
 
 interface FormSubmissionBody {
   calculator?: string;
@@ -78,7 +82,14 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     (propertyProvider ??= config.apifyToken
       ? new ApifyZillowProvider(config.apifyToken)
       : undefined);
-  void getPropertyProvider; // consumed by the comps tool wiring (tools slice)
+  let compsCache: CompsCacheLike | undefined;
+  const getCompsCache = () => (compsCache ??= createCompsCache(getSupabase()));
+  let sessionStateStore: SessionStateStore | undefined;
+  const getSessionStateStore = () => (sessionStateStore ??= createSessionStateStore(getSupabase()));
+  // One budget per app instance: the daily Apify spend cap. In-memory (resets
+  // on deploy), which can only under-count — it can never wrongly lock a
+  // member out.
+  const compsBudget: RunBudgetLike = createDailyRunBudget(config.compsDailyRunCap);
 
   // --- CORS -----------------------------------------------------------------
   // Explicit, allow-listed. Never "*" — the widget runs on the GHL membership
@@ -262,7 +273,17 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
 
     let result;
     try {
-      result = await runAgent(oa, sb, config, history, userMessage, { seedToolCall });
+      result = await runAgent(oa, sb, config, history, userMessage, {
+        seedToolCall,
+        comps: {
+          sessionId: session_id,
+          provider: getPropertyProvider(),
+          cache: getCompsCache(),
+          budget: compsBudget,
+          stateStore: getSessionStateStore(),
+          logger: request.log,
+        },
+      });
     } catch (err) {
       // request.log is silenced under NODE_ENV=test, which made live-test 502s
       // undiagnosable — the reason was swallowed entirely. Always surface the

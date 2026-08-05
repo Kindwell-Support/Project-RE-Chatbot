@@ -13,6 +13,14 @@ import {
   type CalculatorKey,
 } from './formSchema.js';
 import { routeCalculatorIntent } from './calculatorIntent.js';
+import {
+  addressConflict,
+  buildCompsToolDefinitions,
+  runCompsToolHandler,
+  setManualArvToolHandler,
+  type CompsToolContext,
+} from '../features/comps/tools.js';
+import { normalizeAddress } from '../features/comps/normalize.js';
 
 const MAX_TOOL_ROUNDS = 6;
 
@@ -21,6 +29,41 @@ const MAX_TOOL_ROUNDS = 6;
  * calculator intent with no calculator named. The route is decided in code; the
  * wording is left to the model so it still sounds like James.
  */
+/**
+ * Comps prompt section, appended to SYSTEM_PROMPT only when the comps context
+ * exists — and mentioning run_comps only when the provider (token) does. The
+ * prompt is the BACKUP for behaviour the tool layer already enforces in code:
+ * rendered-block relay, the pre-fill echo, and the mismatch ask.
+ */
+function compsPromptSection(hasProvider: boolean): string {
+  const manualOnly = `
+
+## ARV for Flip/BRRRR
+- If the member states their own ARV ("use 450k as the ARV"), call set_manual_arv to store it.
+- A stored ARV pre-fills the Flip and BRRRR calculators; they then only need the remaining inputs.
+- When a tool result carries "arv_prefill", its echo_instruction is MANDATORY: the first line of
+  your reply states the ARV used and where it came from, with the override offer. Never present a
+  pre-filled ARV as if the member supplied it this turn.
+- If the member is analyzing a DIFFERENT property than the stored one, do not reuse the stored ARV —
+  ask which deal they mean.`;
+
+  if (!hasProvider) return manualOnly;
+
+  return `
+
+## Comps and ARV (run_comps)
+- When the member asks to run comps / find comps / estimate ARV and gives a street address, call
+  run_comps with the full address (street, city, state). If the address is partial, ask for the rest
+  first — one question.
+- The result contains "rendered_block": relay it VERBATIM. Never re-derive, summarise, or adjust its
+  numbers, and NEVER invent a comp, an address, or an ARV yourself. You may add one short coaching
+  line after the block.
+- If the lookup fails, the block explains why and offers manual entry — relay it, and if they answer
+  with their own number, call set_manual_arv.
+- Comps runs cost real money and are capped daily. Do not re-run comps for an address you already
+  ran this conversation unless the member explicitly asks for a refresh.${manualOnly}`;
+}
+
 const ASK_WHICH_CALCULATOR = [
   'ROUTING (this turn): the member signalled they want a deal analysed but did NOT say which',
   'calculator. Ask which one in ONE short line — flip, BRRRR, or land / new construction — and',
@@ -74,6 +117,13 @@ export interface SeedToolCall {
 
 export interface RunAgentOptions {
   seedToolCall?: SeedToolCall;
+  /**
+   * Comps feature context (CONTRACT §6/§8/§9). When absent, or when
+   * `provider` is undefined (no APIFY_TOKEN), run_comps is NOT registered —
+   * the model cannot offer a lookup the backend can't perform.
+   * set_manual_arv registers whenever comps context exists at all.
+   */
+  comps?: CompsToolContext;
 }
 
 export async function runAgent(
@@ -84,8 +134,13 @@ export async function runAgent(
   userMessage: string,
   options: RunAgentOptions = {},
 ): Promise<AgentResult> {
+  const comps = options.comps;
+  const toolDefinitions = comps
+    ? [...TOOL_DEFINITIONS, ...buildCompsToolDefinitions(!!comps.provider)]
+    : TOOL_DEFINITIONS;
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: SYSTEM_PROMPT + (comps ? compsPromptSection(!!comps.provider) : '') },
     ...history,
     { role: 'user', content: userMessage },
   ];
@@ -109,6 +164,8 @@ export async function runAgent(
     similarityScores,
     usage,
     formRequest,
+    comps,
+    userMessage,
   };
 
   // Form submission: run the calculator first, then let the model narrate it.
@@ -179,9 +236,37 @@ export async function runAgent(
     }
   }
 
+  /**
+   * Structural pre-fill echo (CONTRACT §8): "the reply MUST echo the
+   * injection visibly" cannot be a prompt instruction alone — a model under
+   * pressure drops it, and a correct state field with a missing echo still
+   * ships the wrong-house bug. If a calculator ran on a pre-filled ARV and
+   * the final text is missing the amount, the bound address, or the override
+   * offer, the echo line is PREPENDED here, in code.
+   */
+  const ensurePrefillEcho = (output: string): string => {
+    const prefill = ctx.lastArvPrefill;
+    if (!prefill || !output) return output;
+    const digits = output.replace(/[$,\s]/g, '');
+    const arvDigits = String(prefill.arv);
+    const addressHead = prefill.subjectAddress.split(',')[0].trim().toUpperCase();
+    const hasArv = digits.includes(arvDigits);
+    const hasAddress = addressHead.length > 0 && output.toUpperCase().includes(addressHead);
+    const hasOverride = /change arv|override|different arv/i.test(output);
+    if (hasArv && hasAddress && hasOverride) return output;
+    const source =
+      prefill.source === 'comps'
+        ? `the comps on ${prefill.subjectAddress}`
+        : `your manual entry for ${prefill.subjectAddress}`;
+    return (
+      `Using ARV $${prefill.arv.toLocaleString('en-US')} from ${source} — say "change ARV" to override.\n\n` +
+      output
+    );
+  };
+
   /** Every exit point reports the form the same way — one place to get it right. */
   const finish = (output: string): AgentResult => ({
-    output,
+    output: ensurePrefillEcho(output),
     usage,
     retrievedChunkIds,
     similarityScores,
@@ -196,7 +281,7 @@ export async function runAgent(
       model: config.openaiModel,
       temperature: 0.3,
       messages,
-      tools: TOOL_DEFINITIONS,
+      tools: toolDefinitions,
     });
 
     if (completion.usage) {
@@ -248,6 +333,58 @@ interface ToolContext {
   similarityScores: number[];
   usage: TokenUsage;
   formRequest: { form?: CalculatorForm };
+  comps?: CompsToolContext;
+  /** The current member message — the ARV pre-fill's address-mismatch guard reads it. */
+  userMessage: string;
+  /** Set when a calculator ran on a pre-filled ARV this turn; finish() enforces the echo. */
+  lastArvPrefill?: { arv: number; subjectAddress: string; source: 'comps' | 'manual' };
+}
+
+/**
+ * ARV pre-fill (CONTRACT §8): when Flip/BRRRR is invoked WITHOUT an ARV and
+ * the session carries a comps block, inject the stored ARV — with the
+ * bound-address echo attached to the result so the model's reply names where
+ * the number came from. An explicit ARV in the call always wins; a message
+ * naming a DIFFERENT address never pre-fills (silently pricing the wrong
+ * deal is the failure mode this guard exists for). State errors degrade to
+ * no-prefill; the calculator then asks for the ARV as it always did.
+ */
+async function applyArvPrefill(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<
+  | { args: Record<string, unknown>; prefill?: Record<string, unknown> }
+  | { error: string }
+> {
+  if (args.after_repair_value !== undefined && args.after_repair_value !== null) return { args };
+  const store = ctx.comps?.stateStore;
+  if (!store || !ctx.comps) return { args };
+
+  const block = await store.getCompsBlock(ctx.comps.sessionId);
+  if (!block || !(block.arv > 0)) return { args };
+
+  if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
+    return {
+      error:
+        `No ARV was given, and the stored ARV belongs to ${block.subjectAddress} while this message names a ` +
+        'different property. Do NOT reuse the stored ARV. Ask ONE question: which deal is this — the one at ' +
+        `${block.subjectAddress}, or the new address (in which case ask for its ARV or offer to run comps on it)?`,
+    };
+  }
+
+  ctx.lastArvPrefill = { arv: block.arv, subjectAddress: block.subjectAddress, source: block.arvSource };
+  return {
+    args: { ...args, after_repair_value: block.arv },
+    prefill: {
+      arv: block.arv,
+      arv_source: block.arvSource,
+      subject_address: block.subjectAddress,
+      echo_instruction:
+        `REQUIRED: your reply's first line must state the pre-fill, e.g. "using ARV ` +
+        `$${block.arv.toLocaleString('en-US')} from ${block.arvSource === 'comps' ? 'the comps on' : 'your manual entry for'} ` +
+        `${block.subjectAddress} — say 'change ARV' to override." Never present a pre-filled ARV as if the member typed it.`,
+    },
+  };
 }
 
 async function executeTool(
@@ -256,12 +393,28 @@ async function executeTool(
   ctx: ToolContext,
 ): Promise<unknown> {
   switch (name) {
-    case 'flip_calculator':
-      return runFlipTool(args);
-    case 'brrrr_calculator':
-      return runBrrrrTool(args);
+    case 'flip_calculator': {
+      const prefilled = await applyArvPrefill(args, ctx);
+      if ('error' in prefilled) return prefilled;
+      const result = runFlipTool(prefilled.args);
+      return prefilled.prefill ? { ...result, arv_prefill: prefilled.prefill } : result;
+    }
+    case 'brrrr_calculator': {
+      const prefilled = await applyArvPrefill(args, ctx);
+      if ('error' in prefilled) return prefilled;
+      const result = runBrrrrTool(prefilled.args);
+      return prefilled.prefill ? { ...result, arv_prefill: prefilled.prefill } : result;
+    }
     case 'land_purchase_calculator':
       return runLandTool(args);
+    case 'run_comps': {
+      if (!ctx.comps) return { error: 'Comps are not configured on this deployment.' };
+      return runCompsToolHandler(args, ctx.comps);
+    }
+    case 'set_manual_arv': {
+      if (!ctx.comps) return { error: 'Comps state is not configured on this deployment.' };
+      return setManualArvToolHandler(args, ctx.comps);
+    }
     case 'request_calculator_form': {
       const calculator = args.calculator;
       if (!isCalculatorKey(calculator)) {
@@ -275,7 +428,10 @@ async function executeTool(
       // the defaults — it must not recite them as if they were the member's.
       return {
         form_rendered: true,
-        calculator: form.calculator,
+        // Named form_calculator, NOT `calculator`: that key is the calculator
+        // RESULT discriminator (runFlipTool et al.), and a form directive
+        // claiming it makes "find the flip result" match the form instead.
+        form_calculator: form.calculator,
         title: form.title,
         required_fields: form.required.map((f) => f.label),
         instruction:
