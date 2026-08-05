@@ -429,6 +429,15 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
      `431k`, `0.5m`, `431 thousand`; current message only — history is
      precisely where stale figures live) → genuine override: runs, and the
      echo names BOTH the override and the stored estimate it replaces.
+     **Sub-case, BUG-007 (operator ruling: label, never block)**: if the
+     message ALSO names a different property, the run is coherent new-deal
+     input and proceeds — but the echo is two-part and mandatory: (a) the
+     property the analysis is actually running on, and (b) the ARV's
+     provenance — the member's stated number, with an explicit flag that the
+     comps on file are bound to a different address (which `state.comps`
+     still is on the next turn). Shape: *"Running this on 456 Oak Ave using
+     YOUR stated ARV of $400,000 — note: the comps on file are for 123 Main
+     St, not this property."*
   3. `explicit != block.arv` AND the number is NOT in the member's message →
      a model-carried stale figure (address A's ARV surviving into address
      B's deal through conversation history). The calculator does NOT run;

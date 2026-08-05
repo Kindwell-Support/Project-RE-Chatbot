@@ -185,17 +185,30 @@ export async function runCompsToolHandler(
 const ADDRESS_FRAGMENT_RE =
   /\b\d{1,6}\s+(?:[NSEW]\.?\s+)?[A-Za-z][A-Za-z0-9'.\- ]{0,40}?\s?(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|ln|lane|ct|court|pl|place|way|ter|terrace)\b/gi;
 
+/**
+ * The first address fragment in the message that is NOT the stored subject,
+ * returned AS THE MEMBER TYPED IT — BUG-007 needs it to label which property
+ * an accepted override is actually analysing. Null when no conflict.
+ */
+export function findConflictingAddress(
+  message: string,
+  subjectAddress: string,
+  normalize: (raw: string) => string,
+): string | null {
+  const normalizedSubject = normalize(subjectAddress);
+  for (const match of String(message ?? '').matchAll(ADDRESS_FRAGMENT_RE)) {
+    const fragment = normalize(match[0]);
+    if (fragment && !normalizedSubject.includes(fragment)) return match[0].trim();
+  }
+  return null;
+}
+
 export function addressConflict(
   message: string,
   subjectAddress: string,
   normalize: (raw: string) => string,
 ): boolean {
-  const normalizedSubject = normalize(subjectAddress);
-  for (const match of String(message ?? '').matchAll(ADDRESS_FRAGMENT_RE)) {
-    const fragment = normalize(match[0]);
-    if (fragment && !normalizedSubject.includes(fragment)) return true;
-  }
-  return false;
+  return findConflictingAddress(message, subjectAddress, normalize) !== null;
 }
 
 /** set_manual_arv handler. Same block shape, arvSource 'manual' (CONTRACT §8). */

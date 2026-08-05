@@ -16,6 +16,7 @@ import { routeCalculatorIntent } from './calculatorIntent.js';
 import {
   addressConflict,
   buildCompsToolDefinitions,
+  findConflictingAddress,
   runCompsToolHandler,
   setManualArvToolHandler,
   type CompsToolContext,
@@ -255,8 +256,20 @@ export async function runAgent(
     const hasOverride = /change arv|override|different arv/i.test(output);
     if (hasArv && hasAddress && hasOverride) return output;
     if (prefill.source === 'override') {
-      // The member's own number replacing a stored estimate — the echo names
-      // BOTH, so a mistaken override is visible the moment it happens.
+      // BUG-007 (operator ruling): an override on a DIFFERENT property must
+      // name BOTH the property being analysed and the ARV's provenance —
+      // the member's stated number, with the comps on file bound elsewhere.
+      // Naming the property alone leaves state.comps silently bound to the
+      // old address on the next turn.
+      if (prefill.staleCompsAddress) {
+        return (
+          `Running this on ${prefill.subjectAddress} using YOUR stated ARV of $${prefill.arv.toLocaleString('en-US')} — ` +
+          `note: the comps on file are for ${prefill.staleCompsAddress}, not this property. ` +
+          `Say "run comps on ${prefill.subjectAddress}" for fresh ones, or "change ARV" to adjust.\n\n${output}`
+        );
+      }
+      // Same property: the member's own number replacing a stored estimate —
+      // the echo names BOTH, so a mistaken override is visible immediately.
       const replaced =
         prefill.overridden !== undefined
           ? ` (overriding the $${prefill.overridden.toLocaleString('en-US')} estimate stored for ${prefill.subjectAddress})`
@@ -352,6 +365,12 @@ interface ToolContext {
     source: 'comps' | 'manual' | 'override';
     /** For 'override': the stored comps/manual value the member's number replaced. */
     overridden?: number;
+    /**
+     * For 'override' on a DIFFERENT property (BUG-007): the address the
+     * stored comps block is still bound to — the echo must flag it, because
+     * state.comps keeps that binding on the next turn.
+     */
+    staleCompsAddress?: string;
   };
 }
 
@@ -430,9 +449,23 @@ async function applyArvPrefill(
     }
 
     if (messageStatesNumber(ctx.userMessage, explicit)) {
-      // Member named BOTH a different property and their own ARV — coherent
-      // new-deal input that never touches the stored block; no binding echo.
-      if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) return { args };
+      // Member named BOTH a different property and a number — coherent input,
+      // so it RUNS (refusing here would be obtuse; operator ruling on
+      // BUG-007). But never unlabelled: the number may be a purchase price
+      // the model mistook for an ARV ("456 Oak, purchase 400000" vs a stored
+      // $403k), and state.comps stays bound to the OLD address afterwards.
+      // The echo therefore names the property being analysed AND flags that
+      // the comps on file belong elsewhere.
+      const newAddress = findConflictingAddress(ctx.userMessage, block.subjectAddress, normalizeAddress);
+      if (newAddress) {
+        ctx.lastArvPrefill = {
+          arv: explicit,
+          subjectAddress: newAddress,
+          source: 'override',
+          staleCompsAddress: block.subjectAddress,
+        };
+        return { args };
+      }
       ctx.lastArvPrefill = { arv: explicit, subjectAddress: block.subjectAddress, source: 'override', overridden: block.arv };
       return { args };
     }
