@@ -15,3 +15,4 @@
 21:11 INSPECTOR — CONDITIONAL GREEN: 346 comps tests green (state 24, service 31, cache 17, format 16, filter 54, normalize 78, arv 57, rank 26, goldens 25, conformance 15); BUG-005 + BUG-006 verified CLOSED; live social-pressure battery written but NOT RUN (needs OPENAI_API_KEY — operator call) and BUG-001 still reds npm test — both documented as conditions in msg 0012
 21:12 MASON — BUG-005/006 fixed (date-only + day-granularity monthsBetween, render fallback), retry moved to seam, tools+state slices shipped, suite 1182/0 — next: live verification
 21:31 MASON — live battery 12/12 (caught+fixed example-figure anchor), model-carried ARV echo closed, live e2e verified (2 addresses + miss + cache), ANSWER 0014 sent — awaiting unconditional GREEN
+21:44 MASON — operator blocker fixed: stale model-carried ARV now refuses+asks (three-way explicit rule in §8), RLS confirmed live (enabled, zero policies, service-role only) — awaiting GREEN

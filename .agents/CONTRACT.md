@@ -418,13 +418,24 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
 - **Address-mismatch guard**: if the user's message states an address that is
   not the same property as `subjectAddress` (compare normalized forms), do NOT
   pre-fill. Ask which deal they mean.
-- An explicit ARV in the tool call always wins over the pre-fill. **One
-  refinement, from live observation**: when the explicit value EQUALS the
-  stored block's `arv`, the model is relaying the comps number it read in a
-  prior tool result rather than the member typing it — the echo and the
-  address-mismatch guard apply to that case too, so a model-carried comps ARV
-  keeps the same visibility guarantees as a code-injected one. A genuinely
-  different member-supplied number stays untouched and un-echoed.
+- **Explicit-ARV rule (operator ruling, blocker-level; replaces the plain
+  "explicit wins")** — when a stored block exists, an explicit
+  `after_repair_value` in a flip/brrrr call resolves by WHO said the number:
+  1. `explicit == block.arv` → the model is relaying the current block:
+     echo + address-mismatch guard apply (same guarantees as the injected
+     pre-fill).
+  2. `explicit != block.arv` AND the member stated that number in the
+     CURRENT message (forms accepted: `431000`, `431,000`, `$431,000`,
+     `431k`, `0.5m`, `431 thousand`; current message only — history is
+     precisely where stale figures live) → genuine override: runs, and the
+     echo names BOTH the override and the stored estimate it replaces.
+  3. `explicit != block.arv` AND the number is NOT in the member's message →
+     a model-carried stale figure (address A's ARV surviving into address
+     B's deal through conversation history). The calculator does NOT run;
+     the model is instructed to ask which number the member wants.
+     **Ambiguity is a question, not an assumption.**
+  With no stored block, explicit values behave as before (nothing to
+  conflict with).
 - State read/write failures degrade to no-prefill + warn log, never a blocked
   reply.
 

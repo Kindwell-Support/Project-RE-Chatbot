@@ -254,6 +254,15 @@ export async function runAgent(
     const hasAddress = addressHead.length > 0 && output.toUpperCase().includes(addressHead);
     const hasOverride = /change arv|override|different arv/i.test(output);
     if (hasArv && hasAddress && hasOverride) return output;
+    if (prefill.source === 'override') {
+      // The member's own number replacing a stored estimate — the echo names
+      // BOTH, so a mistaken override is visible the moment it happens.
+      const replaced =
+        prefill.overridden !== undefined
+          ? ` (overriding the $${prefill.overridden.toLocaleString('en-US')} estimate stored for ${prefill.subjectAddress})`
+          : ` for ${prefill.subjectAddress}`;
+      return `Using YOUR ARV $${prefill.arv.toLocaleString('en-US')}${replaced} — say "change ARV" to switch back or set another.\n\n${output}`;
+    }
     const source =
       prefill.source === 'comps'
         ? `the comps on ${prefill.subjectAddress}`
@@ -336,8 +345,33 @@ interface ToolContext {
   comps?: CompsToolContext;
   /** The current member message — the ARV pre-fill's address-mismatch guard reads it. */
   userMessage: string;
-  /** Set when a calculator ran on a pre-filled ARV this turn; finish() enforces the echo. */
-  lastArvPrefill?: { arv: number; subjectAddress: string; source: 'comps' | 'manual' };
+  /** Set when a calculator ran on a pre-filled/bound ARV this turn; finish() enforces the echo. */
+  lastArvPrefill?: {
+    arv: number;
+    subjectAddress: string;
+    source: 'comps' | 'manual' | 'override';
+    /** For 'override': the stored comps/manual value the member's number replaced. */
+    overridden?: number;
+  };
+}
+
+/**
+ * Did the member state this dollar amount in THIS message? The discriminator
+ * between a genuine override and a model-carried stale figure. Accepts the
+ * forms members actually type: 431000, 431,000, $431,000, 431k, 0.5m,
+ * "431 thousand". Exact value match only — current message only, because the
+ * conversation HISTORY is precisely where stale figures live.
+ */
+export function messageStatesNumber(message: string, value: number): boolean {
+  const re = /\$?\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|mm|million|thousand)?\b/gi;
+  for (const match of String(message ?? '').matchAll(re)) {
+    const base = Number(match[1].replace(/,/g, ''));
+    if (!Number.isFinite(base)) continue;
+    const suffix = (match[2] ?? '').toLowerCase();
+    const multiplier = suffix === 'k' || suffix === 'thousand' ? 1_000 : suffix ? 1_000_000 : 1;
+    if (base * multiplier === value) return true;
+  }
+  return false;
 }
 
 /**
@@ -363,15 +397,26 @@ async function applyArvPrefill(
 
   const explicit = args.after_repair_value;
   if (explicit !== undefined && explicit !== null) {
-    // Explicit ARV wins (CONTRACT §8) — but when it EQUALS the stored comps
-    // ARV, the model is almost certainly relaying the number it read in the
-    // comps tool result rather than the member typing it. Observed live: the
-    // model passes the ARV itself, skipping this path entirely, and the reply
-    // then carries no address binding and no override offer — the exact
-    // wrong-house hazard the echo exists to make visible. Same value ⇒ same
-    // guarantees: echo and mismatch guard apply. A genuinely different
-    // member-supplied number stays untouched.
-    if (block && block.arv > 0 && explicit === block.arv) {
+    // No stored block ⇒ nothing to conflict with; the plain pre-comps
+    // behaviour (explicit value, assertRequired, prompt rules) applies.
+    if (!block || !(block.arv > 0)) return { args };
+
+    // A stored block EXISTS, so an explicit ARV is one of three things, and
+    // the tool call alone cannot distinguish them — the discriminator is
+    // whether the MEMBER said the number this turn:
+    //
+    //  1. explicit == block.arv — the model relaying the current block
+    //     (observed live). Same value ⇒ same guarantees: echo + guard.
+    //  2. explicit != block.arv and the number IS in the member's message —
+    //     a genuine override. Runs, but never silently: the echo names both
+    //     the override and the stored estimate it replaces.
+    //  3. explicit != block.arv and the number is NOT in the member's message
+    //     — the model carried a stale figure (address A's ARV after B was
+    //     bound — the wrong-house leak reopened through history). Ambiguity
+    //     is a QUESTION, not an assumption: refuse and ask.
+    if (typeof explicit !== 'number' || !Number.isFinite(explicit)) return { args };
+
+    if (explicit === block.arv) {
       if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
         return {
           error:
@@ -381,8 +426,24 @@ async function applyArvPrefill(
         };
       }
       ctx.lastArvPrefill = { arv: block.arv, subjectAddress: block.subjectAddress, source: block.arvSource };
+      return { args };
     }
-    return { args };
+
+    if (messageStatesNumber(ctx.userMessage, explicit)) {
+      // Member named BOTH a different property and their own ARV — coherent
+      // new-deal input that never touches the stored block; no binding echo.
+      if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) return { args };
+      ctx.lastArvPrefill = { arv: explicit, subjectAddress: block.subjectAddress, source: 'override', overridden: block.arv };
+      return { args };
+    }
+
+    return {
+      error:
+        `ARV mismatch: you passed ${explicit}, but the stored ARV for ${block.subjectAddress} is ${block.arv}, ` +
+        `and the member did not state ${explicit} in this message — so that number is likely carried from an ` +
+        'earlier deal. Do NOT run the calculator. Ask ONE question: should this deal use the stored ' +
+        `${block.arv} ARV for ${block.subjectAddress}, or a different number (have them state it)?`,
+    };
   }
 
   if (!block || !(block.arv > 0)) return { args };
