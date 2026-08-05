@@ -139,10 +139,19 @@ function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, p
 
   const tier = selectRadiusTier(subject, comps, now);
   if (tier.kept.length < MIN_COMPS_TO_COMPUTE) {
+    // Operator ruling: when nothing was kept AND the fetched pool holds zero
+    // comps of the subject's type, "the market is thin" is a claim we cannot
+    // make — we know we didn't find the right pool (recorded: a condo
+    // subject against a 39-comp pool of SFRs and mobile homes). Same code,
+    // branched copy; the honesty guarantees don't move.
+    const sameTypeInPool = comps.filter((c) => c.propertyType === subject.propertyType).length;
     return failure('TOO_FEW_COMPS', {
       kept: tier.kept.length,
       needed: MIN_COMPS_TO_COMPUTE,
       radiusTierMi: tier.radiusTierMi,
+      ...(tier.kept.length === 0 && sameTypeInPool === 0 && comps.length > 0
+        ? { pool: 'no_type_match' as const }
+        : {}),
     });
   }
 

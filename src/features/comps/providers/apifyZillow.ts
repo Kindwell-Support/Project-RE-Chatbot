@@ -43,12 +43,19 @@ function mapHomeType(raw: unknown): PropertyType {
       return 'SFR';
     case 'CONDO':
       return 'CONDO';
+    // Operator ruling (recorded case: 16402 N 31st St #236): Zillow types
+    // condo units in apartment-style complexes as APARTMENT. Mapping them to
+    // OTHER made every such subject PERMANENTLY incapable of an ARV (rule 7:
+    // OTHER matches nothing) — and an apartment-typed unit IS the comp class
+    // of a condo, on both the subject and comp sides.
+    case 'APARTMENT':
+      return 'CONDO';
     case 'TOWNHOUSE':
       return 'TOWNHOUSE';
     case 'MANUFACTURED':
       return 'MANUFACTURED';
     default:
-      return 'OTHER'; // LOT, MULTI_FAMILY, APARTMENT, HOME_TYPE_UNKNOWN, ...
+      return 'OTHER'; // LOT, MULTI_FAMILY, HOME_TYPE_UNKNOWN, ...
   }
 }
 

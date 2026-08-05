@@ -44,11 +44,17 @@ export const FAILURE_COPY: Record<CompsFailureCode, (detail?: CompsFailure['deta
   SUBJECT_SQFT_UNKNOWN: () =>
     'I found the property, but Zillow has no square footage on record for it — and without the size I ' +
     "can't do the price-per-square-foot math honestly. " + MANUAL_OFFER,
+  // Branched on detail.pool (operator ruling): an empty kept set over a pool
+  // with ZERO same-type comps means we didn't find the right pool — telling
+  // that member "the market is thin" misassigns the blame to their market.
   TOO_FEW_COMPS: (detail) =>
-    `Not enough recent sales to work with: I found ${detail?.kept ?? 'fewer than the minimum'} usable ` +
-    `sold comp(s) within ${detail?.radiusTierMi ?? 2} mi in the last 12 months, and I need at least ` +
-    `${detail?.needed ?? 3} before an ARV means anything. The market there is too thin for automated comps. ` +
-    MANUAL_OFFER,
+    detail?.pool === 'no_type_match'
+      ? "I found sold homes nearby but none of the same property type as yours, so I can't build a " +
+        "reliable comp set here. If you have an ARV in mind, tell me and I'll run the numbers with it."
+      : `Not enough recent sales to work with: I found ${detail?.kept ?? 'fewer than the minimum'} usable ` +
+        `sold comp(s) within ${detail?.radiusTierMi ?? 2} mi in the last 12 months, and I need at least ` +
+        `${detail?.needed ?? 3} before an ARV means anything. The market there is too thin for automated comps. ` +
+        MANUAL_OFFER,
   PROVIDER_TIMEOUT: () =>
     "The property data source didn't answer in time. That's on their end, not your address — give it a " +
     'minute and ask me to run the comps again. ' + MANUAL_OFFER,

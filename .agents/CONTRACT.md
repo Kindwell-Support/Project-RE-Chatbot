@@ -331,8 +331,11 @@ Field mapping the adapter implements (payload reality vs contract types):
 | `beds`/`baths` | `bedrooms`/`bathrooms` | `homeInfo.bedrooms`/`bathrooms` |
 
 `homeType` observed values → enum: `SINGLE_FAMILY→SFR`, `CONDO→CONDO`,
+**`APARTMENT→CONDO`** (operator ruling, recorded case 16402 N 31st St #236:
+Zillow types condo units in apartment-style complexes as APARTMENT; the old
+`→OTHER` mapping made every such subject permanently incapable of an ARV),
 `TOWNHOUSE→TOWNHOUSE`, `MANUFACTURED→MANUFACTURED`, anything else
-(`LOT`, `MULTI_FAMILY`, `APARTMENT`, `HOME_TYPE_UNKNOWN`, …) → `OTHER`.
+(`LOT`, `MULTI_FAMILY`, `HOME_TYPE_UNKNOWN`, …) → `OTHER`.
 
 Comps list hygiene: skip items with no `hdpData.homeInfo`, or `zpid` null, or
 `isBuilding` — the search emits building/rental cards mixed into sold results
@@ -516,7 +519,7 @@ work; cache hits bypass it entirely; breach ⇒ `RATE_LIMITED`.
 | --- | --- |
 | `ADDRESS_NOT_FOUND` | **Branched on `detail.resolution` (operator ruling: one code, two truths).** `not_found` (genuine empty/invalid): couldn't find that address on Zillow; check spelling/city; or give me your own ARV. `unit_mismatch` (provider returned a DIFFERENT property — wrong unit, `hasBadGeocode`; recorded: asked #429, got #318): "I found the building but couldn't match that exact unit. Double-check the unit number, or tell me your ARV and I'll run the numbers with it." The mismatch is logged at INFO with `cacheKey` + which guard fired — if frequent in production, `SUBJECT_RESOLUTION_MISMATCH` earns its own code properly, with tests. Both branches: no number, manual entry offered |
 | `SUBJECT_SQFT_UNKNOWN` | found it but no square footage on record ⇒ no ARV math possible; supply ARV manually |
-| `TOO_FEW_COMPS` | only N solds nearby in 12 months (needed ≥ 3) at X mi; market too thin; manual ARV offered |
+| `TOO_FEW_COMPS` | **Branched on `detail.pool` (operator ruling).** Default: only N solds nearby in 12 months (needed ≥ 3) at X mi; market too thin; manual ARV offered. `no_type_match` (kept = 0 AND the fetched pool holds zero comps of the subject's type AND the pool is non-empty — we didn't find the right pool, which is not "the market is thin"): "I found sold homes nearby but none of the same property type as yours, so I can't build a reliable comp set here. If you have an ARV in mind, tell me and I'll run the numbers with it." Both branches: no number, manual entry offered |
 | `PROVIDER_TIMEOUT` | data source didn't answer in time; try again in a minute; or manual ARV |
 | `PROVIDER_ERROR` | data source errored; not your input's fault; retry later or manual ARV |
 | `RATE_LIMITED` | comps runs are capped (cost control); try later or manual ARV |

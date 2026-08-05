@@ -161,6 +161,14 @@ export interface CompsFailure {
      * code properly, with tests.
      */
     resolution?: 'unit_mismatch' | 'not_found';
+    /**
+     * TOO_FEW_COMPS only (operator ruling): 'no_type_match' = the kept set
+     * is EMPTY and the fetched pool contains ZERO comps of the subject's
+     * property type — we didn't find the right pool, which is not the same
+     * truth as "the market is thin". Branches the member copy; the code and
+     * the no-number/manual-entry guarantees are unchanged.
+     */
+    pool?: 'no_type_match';
   };
 }
 
