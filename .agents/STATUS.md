@@ -2,3 +2,4 @@
 18:54 MASON — slice 1 shipped (types/config/normalize), typecheck clean, HANDOFF 0002 sent — next: slice 2 (filter/rank/arv)
 18:57 MASON — slice 2 shipped (filter/rank/arv), smoke-verified reason order + tiers + trim + confidence, HANDOFF 0003 sent — next: slice 3 (format/service/stub+fixtures)
 19:15 INSPECTOR — TEST_PLAN.md up (130+ cases from CONTRACT); golden dataset (7 cases) hand-computed and cross-checked both ways; Q1 compsUsed resolved via MASON 0003 — next: unit specs for normalize/haversine/trimmedMean (slices 1-2)
+19:22 INSPECTOR — golden dataset (7 cases) run against slice 2: 25/25 pass, ARV core scoped-GREEN; filed BUG-001 (materialBudget suite has never executed, shebang+CRLF, 17 tests absent, npm test red) — next: unit specs for normalize/haversine/trimmedMean/filter/rank
