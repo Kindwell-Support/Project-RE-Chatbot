@@ -35,6 +35,7 @@ import {
   PROPERTY_TYPES,
 } from '../helpers/contractShape.js';
 import { GOLDEN_CASES } from '../fixtures/golden/index.js';
+import { mapCompItems } from '../../src/features/comps/providers/apifyZillow.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MASON_FIXTURES = resolve(HERE, '..', '..', 'src', 'features', 'comps', '__fixtures__');
@@ -190,6 +191,68 @@ describe('payload conformance to CONTRACT §4', () => {
         usable,
         `${sold} SOLD comps but ${usable} usable — the recorded payload cannot exercise the ARV path`,
       ).toBeGreaterThan(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // THE MAPPING RULE ITSELF — §6.1's homeType table.
+  //
+  // Nothing pinned this before. The fixture distributions shift whenever a
+  // recording is regenerated, so a silent revert of the APARTMENT ruling would
+  // change only the counts in a JSON file and no test would notice. This
+  // asserts the RULE, through the exported mapper, so the ruling is pinned
+  // independently of whatever any recording happens to contain.
+  // -------------------------------------------------------------------------
+  describe('homeType maps per CONTRACT §6.1', () => {
+    /** Minimal search card in the shape §6.1 documents. */
+    const card = (homeType: unknown) => ({
+      hdpData: {
+        homeInfo: {
+          zpid: 1, streetAddress: '1 TEST ST', homeStatus: 'RECENTLY_SOLD',
+          homeType, price: 400000, dateSold: 1785481200000, livingArea: 2000,
+          bedrooms: 3, bathrooms: 2, latitude: 33.47, longitude: -112.08,
+          lotAreaValue: 6000, lotAreaUnit: 'sqft',
+        },
+      },
+    });
+    const mappedType = (homeType: unknown) => mapCompItems([card(homeType)])[0]?.propertyType;
+
+    it.each([
+      ['SINGLE_FAMILY', 'SFR'],
+      ['CONDO', 'CONDO'],
+      ['TOWNHOUSE', 'TOWNHOUSE'],
+      ['MANUFACTURED', 'MANUFACTURED'],
+      ['LOT', 'OTHER'],
+      ['MULTI_FAMILY', 'OTHER'],
+      ['HOME_TYPE_UNKNOWN', 'OTHER'],
+    ])('%s -> %s', (raw, expected) => {
+      expect(mappedType(raw)).toBe(expected);
+    });
+
+    it('APARTMENT -> CONDO (operator ruling, CONTRACT_CHANGE 0021)', () => {
+      // The ruling that matters most, because getting it wrong is SILENT and
+      // TERMINAL: rule 7 says OTHER matches nothing including OTHER, so an
+      // apartment-typed subject mapped to OTHER can never produce an ARV under
+      // any input. Not a thin market — a permanently dead address.
+      expect(mappedType('APARTMENT')).toBe('CONDO');
+      expect(mappedType('APARTMENT'), 'the APARTMENT ruling was reverted').not.toBe('OTHER');
+    });
+
+    it('anything unrecognised, missing or malformed falls to OTHER', () => {
+      // OTHER is the honest default: we would rather refuse than comp a house
+      // against a property class we could not identify.
+      for (const raw of [null, undefined, '', 'FARM', 'BOAT', 42, {}, []]) {
+        expect(mappedType(raw), `${JSON.stringify(raw)} did not fall to OTHER`).toBe('OTHER');
+      }
+    });
+
+    it('every mapped value is inside the §4 union', () => {
+      for (const raw of [
+        'SINGLE_FAMILY', 'CONDO', 'APARTMENT', 'TOWNHOUSE', 'MANUFACTURED',
+        'LOT', 'MULTI_FAMILY', 'HOME_TYPE_UNKNOWN', null, 'GARBAGE',
+      ]) {
+        expect(PROPERTY_TYPES as readonly string[]).toContain(mappedType(raw));
+      }
     });
   });
 

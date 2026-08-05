@@ -240,7 +240,10 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
   describe.skipIf(pendingSlice(...MODS))('all eight failure copy branches', () => {
     const BRANCHES: Array<[string, CompsFailureCode, Record<string, unknown> | undefined]> = [
       ['ADDRESS_NOT_FOUND / not_found', 'ADDRESS_NOT_FOUND', { resolution: 'not_found' }],
-      ['ADDRESS_NOT_FOUND / unit_mismatch', 'ADDRESS_NOT_FOUND', { resolution: 'unit_mismatch' }],
+      ['ADDRESS_NOT_FOUND / mismatch, unit typed', 'ADDRESS_NOT_FOUND',
+        { resolution: 'unit_mismatch', inputHasUnit: true }],
+      ['ADDRESS_NOT_FOUND / mismatch, no unit typed', 'ADDRESS_NOT_FOUND',
+        { resolution: 'unit_mismatch', inputHasUnit: false }],
       ['ADDRESS_NOT_FOUND / no detail', 'ADDRESS_NOT_FOUND', undefined],
       ['SUBJECT_SQFT_UNKNOWN', 'SUBJECT_SQFT_UNKNOWN', undefined],
       ['TOO_FEW_COMPS / thin market', 'TOO_FEW_COMPS', { kept: 2, needed: 3, radiusTierMi: 2 }],
@@ -313,7 +316,9 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
         failure('ADDRESS_NOT_FOUND', { resolution: 'not_found' } as never) as never,
       );
       const mismatch = renderCompsForChat(
-        failure('ADDRESS_NOT_FOUND', { resolution: 'unit_mismatch' } as never) as never,
+        failure('ADDRESS_NOT_FOUND', {
+          resolution: 'unit_mismatch', inputHasUnit: true,
+        } as never) as never,
       );
       expect(mismatch).not.toBe(notFound);
       expect(notFound.toLowerCase(), 'the not-found branch should ask about spelling')
@@ -359,9 +364,39 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
           'detail fields are being ignored',
       ).not.toBe(rendered.get('TOO_FEW_COMPS / no detail'));
 
-      // Everything else distinct: 10 branches, exactly 1 intended duplicate.
+      // Everything else distinct: exactly 1 intended duplicate.
       expect(new Set(rendered.values()).size, 'two branches share copy unexpectedly')
         .toBe(BRANCHES.length - 1);
+    });
+
+    it('never tells a member to check a unit number they did not type', () => {
+      // 0f6cd86's point, and the same failure shape as "check the spelling":
+      // blaming the member for Zillow's resolution. If no unit designator was
+      // in their input, "double-check the unit number" is an instruction to
+      // re-examine something that was never there.
+      const noUnit = renderCompsForChat(
+        failure('ADDRESS_NOT_FOUND', {
+          resolution: 'unit_mismatch', inputHasUnit: false,
+        } as never) as never,
+      );
+      expect(
+        noUnit.toLowerCase(),
+        'told the member to double-check a unit number they never entered',
+      ).not.toMatch(/double-check the unit|check the unit number/);
+      // It should still SUGGEST a unit as a possible fix — that is useful.
+      expect(noUnit.toLowerCase(), 'no suggestion that a unit number might help')
+        .toMatch(/unit/);
+      expect(noUnit.toLowerCase(), 'blamed the spelling instead').not.toMatch(/spelling/);
+
+      // And the typed-unit branch keeps the direct instruction, which is right
+      // when they DID give one.
+      const withUnit = renderCompsForChat(
+        failure('ADDRESS_NOT_FOUND', {
+          resolution: 'unit_mismatch', inputHasUnit: true,
+        } as never) as never,
+      );
+      expect(withUnit.toLowerCase()).toMatch(/double-check the unit/);
+      expect(withUnit).not.toBe(noUnit);
     });
   });
 

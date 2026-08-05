@@ -198,6 +198,64 @@ describe(`service: retry policy and the honesty contract${sliceNote(...MODS)}`, 
       expect(text).not.toMatch(/at .*\(.*:\d+:\d+\)|ProviderHttpError|ProviderTimeoutError/);
     });
 
+    it('the no_type_match branch fires ONLY when the pool has zero same-type comps', async () => {
+      // CONTRACT_CHANGE 0021's condition is three-part: kept = 0 AND the pool
+      // contains zero comps of the subject's type AND the pool is non-empty.
+      // A shortcut on `kept === 0` alone would tell members with a genuinely
+      // thin market that we looked in the wrong place, and drop the counts that
+      // make the thin-market message credible. All three cases, one test.
+      const condo = (i: number) => ({
+        ...FRESH_COMPS[i], zpid: `C${i}`, propertyType: 'CONDO' as const,
+      });
+
+      // A) pool is non-empty and entirely the WRONG type -> pool copy.
+      const wrongPool = await runOnce({
+        subject: SUBJECT, comps: [condo(0), condo(1), condo(2), condo(3)],
+      });
+      const wrongText = wrongPool.shown.join('\n');
+      expect(wrongText.toLowerCase(), 'a type-free pool did not get the pool copy')
+        .toMatch(/same property type|none of the same/);
+      expect(
+        wrongText.toLowerCase(),
+        'told the member their market is thin when we know we found the wrong pool',
+      ).not.toMatch(/too thin/);
+
+      // B) THE DISCRIMINATOR: one SFR in the pool, rejected for an unrelated
+      //    reason (sqft). kept is still 0, but the pool DOES contain the
+      //    subject's type, so the honest answer is "thin", with its counts.
+      const oneSameType = await runOnce({
+        subject: SUBJECT,
+        comps: [
+          { ...FRESH_COMPS[0], zpid: 'SFR-OOB', livingArea: 400 }, // SFR, out of band
+          condo(1), condo(2),
+        ],
+      });
+      const oneText = oneSameType.shown.join('\n');
+      expect(
+        oneText.toLowerCase(),
+        'the pool branch fired despite a same-type comp being present — the ' +
+          'condition is short-cutting on kept === 0',
+      ).not.toMatch(/same property type|none of the same/);
+      expect(oneText.toLowerCase()).toMatch(/too thin|not enough/);
+      expect(oneText, 'the thin-market copy lost its counts').toMatch(/\b3\b/);
+
+      // C) empty pool -> nothing was found at all, which is thin, not mis-pooled.
+      const emptyPool = await runOnce({ subject: SUBJECT, comps: [] });
+      const emptyText = emptyPool.shown.join('\n');
+      expect(
+        emptyText.toLowerCase(),
+        'an EMPTY pool claimed we found homes of the wrong type',
+      ).not.toMatch(/same property type|none of the same/);
+
+      // All three still honest.
+      for (const [label, text] of [
+        ['wrong-type pool', wrongText], ['one same-type', oneText], ['empty pool', emptyText],
+      ] as const) {
+        expect(text, `${label} leaked a figure`).not.toMatch(DOLLAR_FIGURE);
+        expect(offersManualArv(text), `${label} does not offer manual entry`).toBe(true);
+      }
+    });
+
     it('the unit_mismatch branch is REACHABLE, not just correct', async () => {
       // `format.test.ts` proves the branch renders honestly. That is worth
       // nothing if no provider outcome ever sets `detail.resolution`, which is
@@ -234,6 +292,58 @@ describe(`service: retry policy and the honesty contract${sliceNote(...MODS)}`, 
       expect(shown.toLowerCase()).not.toMatch(/spelling/);
       expect(shown, 'the mismatch branch leaked a figure').not.toMatch(DOLLAR_FIGURE);
       expect(offersManualArv(shown), 'no manual-ARV offer on the mismatch branch').toBe(true);
+    });
+
+    it('the unit-typed vs no-unit mismatch branches are both reachable from real input', async () => {
+      // 0f6cd86 branches on whether the MEMBER typed a unit designator. The
+      // renderer tests prove both strings; only the seam proves `inputHasUnit`
+      // is actually derived from their input rather than hardcoded.
+      // `hasUnitDesignator` reads the ADDRESS ARGUMENT the tool was called
+      // with, not the chat message, so the address has to travel in the tool
+      // call — `runOnce` hardcodes it.
+      async function mismatchFor(address: string): Promise<string> {
+        const openai = makeFakeOpenAI([
+          { toolCalls: [{ id: 'rc1', name: 'run_comps', args: { address } }] },
+          { content: 'ok' },
+        ]);
+        const supabase = makeCompsSupabase({});
+        const spy = makeProviderSpy({
+          subject: { miss: 'RESOLUTION_MISMATCH', guard: 'street_prefix' } as never,
+        });
+        const app = buildApp(config, {
+          openai: openai.client, supabase: supabase.client, propertyProvider: spy.provider,
+        } as never);
+        await app.inject({
+          method: 'POST', url: '/chat',
+          headers: { origin: ALLOWED, 'content-type': 'application/json' },
+          payload: { message: `run comps on ${address}`, session_id: `u-${address.length}` },
+        });
+        await app.close();
+        return openai.calls
+          .flatMap((c) => ((c.messages as Array<Record<string, unknown>>) ?? []))
+          .filter((m) => m.role === 'tool' && m.tool_call_id === 'rc1')
+          .map((m) => String(m.content))
+          .join('\n')
+          .toLowerCase();
+      }
+
+      const w = await mismatchFor('4425 N 24th St #429, Phoenix AZ');
+      const n = await mismatchFor('4425 N 24th St, Phoenix AZ');
+      expect(w.length, 'no result reached the model').toBeGreaterThan(0);
+      expect(n.length, 'no result reached the model').toBeGreaterThan(0);
+
+      expect(w, 'a typed unit did not get the direct instruction').toMatch(/double-check the unit/);
+      expect(
+        n,
+        'told a member to double-check a unit number they never typed — the same ' +
+          'blame-the-member shape as "check the spelling"',
+      ).not.toMatch(/double-check the unit/);
+      expect(w, 'the two branches produced identical copy').not.toBe(n);
+
+      for (const [label, text] of [['with unit', w], ['no unit', n]] as const) {
+        expect(text, `${label} leaked a figure`).not.toMatch(DOLLAR_FIGURE);
+        expect(offersManualArv(text), `${label} does not offer manual entry`).toBe(true);
+      }
     });
 
     it('each code produces DISTINCT copy — not one generic apology', async () => {
