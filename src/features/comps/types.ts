@@ -152,6 +152,15 @@ export interface CompsFailure {
     kept?: number;
     needed?: number;
     radiusTierMi?: number;
+    /**
+     * ADDRESS_NOT_FOUND only (operator ruling: one code, branched copy):
+     * 'unit_mismatch' = Zillow resolved a DIFFERENT property than named
+     * (wrong unit, hasBadGeocode) — the address may be real; 'not_found' =
+     * a genuine empty/invalid result. Branches the member copy; if
+     * unit_mismatch proves frequent in production logs, it earns its own
+     * code properly, with tests.
+     */
+    resolution?: 'unit_mismatch' | 'not_found';
   };
 }
 

@@ -514,7 +514,7 @@ work; cache hits bypass it entirely; breach ⇒ `RATE_LIMITED`.
 
 | Code | Copy gist |
 | --- | --- |
-| `ADDRESS_NOT_FOUND` | couldn't find that address on Zillow; check spelling/city; or give me your own ARV |
+| `ADDRESS_NOT_FOUND` | **Branched on `detail.resolution` (operator ruling: one code, two truths).** `not_found` (genuine empty/invalid): couldn't find that address on Zillow; check spelling/city; or give me your own ARV. `unit_mismatch` (provider returned a DIFFERENT property — wrong unit, `hasBadGeocode`; recorded: asked #429, got #318): "I found the building but couldn't match that exact unit. Double-check the unit number, or tell me your ARV and I'll run the numbers with it." The mismatch is logged at INFO with `cacheKey` + which guard fired — if frequent in production, `SUBJECT_RESOLUTION_MISMATCH` earns its own code properly, with tests. Both branches: no number, manual entry offered |
 | `SUBJECT_SQFT_UNKNOWN` | found it but no square footage on record ⇒ no ARV math possible; supply ARV manually |
 | `TOO_FEW_COMPS` | only N solds nearby in 12 months (needed ≥ 3) at X mi; market too thin; manual ARV offered |
 | `PROVIDER_TIMEOUT` | data source didn't answer in time; try again in a minute; or manual ARV |

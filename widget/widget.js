@@ -730,9 +730,11 @@
         // comps run. DELIBERATELY NOT data-default: this is a required
         // field's value, and an untouched pre-fill must SUBMIT so the server
         // sees an explicit ARV (and runs its relay/override guards on it).
-        // The label is the guarantee: no label, no pre-fill — the member
-        // always sees which property the number came from.
-        if (field.prefill && field.prefill.value !== undefined) {
+        // The label is the guarantee, enforced structurally: a prefill with
+        // NO label is DECLINED outright — a bare number with no provenance
+        // reads as something the member typed, which is the §8 bug in
+        // miniature. Value and label render together or not at all.
+        if (field.prefill && field.prefill.value !== undefined && field.prefill.label) {
           control.value = String(field.prefill.value);
           var note = el('div', 'jb-prefill-note');
           note.textContent = field.prefill.label; // textContent — never markup

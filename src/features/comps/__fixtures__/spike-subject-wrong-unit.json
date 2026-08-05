@@ -1,0 +1,1674 @@
+[
+  {
+    "zpid": 2053953599,
+    "maloneId": "2309566832",
+    "city": "Phoenix",
+    "state": "AZ",
+    "homeStatus": "OTHER",
+    "address": {
+      "streetAddress": "12222 N Paradise Village Pkwy #318",
+      "city": "Phoenix",
+      "state": "AZ",
+      "zipcode": "85032"
+    },
+    "isListingClaimedByCurrentSignedInUser": false,
+    "isCurrentSignedInAgentResponsible": false,
+    "bedrooms": null,
+    "price": 0,
+    "yearBuilt": null,
+    "streetAddress": "12222 N Paradise Village Pkwy #318",
+    "zipcode": "85032",
+    "isCurrentSignedInUserVerifiedOwner": false,
+    "isVerifiedClaimedByCurrentSignedInUser": false,
+    "listingDataSource": "Legacy",
+    "responsivePhotos": [
+      {
+        "caption": "",
+        "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=400x300&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=PEPPIFGtkFsyhwEAYwNWTkJhWaw=",
+        "mixedSources": {
+          "jpeg": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=192x144&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=2m5rQ6VRXcQ7QezFHu5qJq_hEVI=",
+              "width": 192
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=384x288&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=f45BXwNaim86H2-hXx4F0Z_Yh3c=",
+              "width": 384
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=576x432&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ZymrdE2oxPljw5azokN2t25w_O4=",
+              "width": 576
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=768x576&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=WNbuStk5SdnPBd0zRdr-O81JvYw=",
+              "width": 768
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=960x720&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=v-8uet0F51k05A98oQVtY97PqBM=",
+              "width": 960
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1152x864&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=EeHJGiNVNm3vHd7pAS8JwSTm1-0=",
+              "width": 1152
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=FktpshcCDXIS_wdoWla4bdePogc=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=0dpjVhFd0EblLbnYullVFM4dD0Y=",
+              "width": 1536
+            }
+          ],
+          "webp": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=192x144&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=2m5rQ6VRXcQ7QezFHu5qJq_hEVI=",
+              "width": 192
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=384x288&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=f45BXwNaim86H2-hXx4F0Z_Yh3c=",
+              "width": 384
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=576x432&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ZymrdE2oxPljw5azokN2t25w_O4=",
+              "width": 576
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=768x576&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=WNbuStk5SdnPBd0zRdr-O81JvYw=",
+              "width": 768
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=960x720&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=v-8uet0F51k05A98oQVtY97PqBM=",
+              "width": 960
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1152x864&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=EeHJGiNVNm3vHd7pAS8JwSTm1-0=",
+              "width": 1152
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=FktpshcCDXIS_wdoWla4bdePogc=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=0dpjVhFd0EblLbnYullVFM4dD0Y=",
+              "width": 1536
+            }
+          ]
+        }
+      }
+    ],
+    "longitude": -111.98849,
+    "latitude": 33.598324,
+    "hasBadGeocode": true,
+    "listing_sub_type": {
+      "is_FSBA": false,
+      "is_newHome": false,
+      "is_FSBO": false,
+      "is_pending": false,
+      "is_bankOwned": false,
+      "is_openHouse": false,
+      "is_forAuction": false,
+      "is_comingSoon": false,
+      "is_foreclosure": false
+    },
+    "streetViewMetadataUrlMediaWallLatLong": "https://maps.googleapis.com/maps/api/streetview/metadata?location=33.598324,-111.988490&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=R548gKkIcOF3UhX83A21RJhEfU4=",
+    "streetViewMetadataUrlMediaWallAddress": "https://maps.googleapis.com/maps/api/streetview/metadata?location=12222+N+Paradise+Village+Pkwy%2C+Phoenix%2C+AZ+85032&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=Pw_WcE0gRZXzRQtn45lz8zqbWWY=",
+    "streetViewServiceUrl": "https://street-view-url.prod.zgk-partner.zillowapi.com?zpid=2053953599&address=12222%20N%20Paradise%20Village%20Pkwy%2C%20Phoenix%2C%20AZ%2085032&width=512&height=234&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&maxdistance=5280&lat=33.598324&lon=-111.98849&ttloverrides=%7B%22yesAddressSeconds%22:604800%7D&signature=Nd_tTEk2W4gZnWNEphMUm0aJjLo=",
+    "streetView": {
+      "addressSources": [
+        {
+          "width": 192,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=12222%20N%20Paradise%20Village%20Pkwy%2C%20Phoenix%2C%20AZ%2085032&size=192x72&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=pKxQMer2_7xY2onMZNzQQf2e320="
+        },
+        {
+          "width": 384,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=12222%20N%20Paradise%20Village%20Pkwy%2C%20Phoenix%2C%20AZ%2085032&size=384x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=K0j1TeP-GaooQZvp9L2e1HxCsCg="
+        },
+        {
+          "width": 768,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=12222%20N%20Paradise%20Village%20Pkwy%2C%20Phoenix%2C%20AZ%2085032&size=768x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=I_X47ysWlW3x-0N7N2T6YeyXXKw="
+        }
+      ],
+      "latLongSources": [
+        {
+          "width": 192,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=33.598324,-111.98849&size=192x72&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=R2dlBRuH0EVXrmEyzJ8eSTdYuX0="
+        },
+        {
+          "width": 384,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=33.598324,-111.98849&size=384x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=_v3q7v86fBc13cX4DF7t_sYuy6A="
+        },
+        {
+          "width": 768,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=33.598324,-111.98849&size=768x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=sSR17tOHtozXfl9onVDbH8hNTfs="
+        }
+      ]
+    },
+    "staticMap": {
+      "sources": [
+        {
+          "width": 192,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.598324,-111.98849&zoom=12&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=or3A3Hi9skfeHW6XZL5aPUF_N7U="
+        },
+        {
+          "width": 192,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.598324,-111.98849&zoom=12&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=_1hYS1SwfFg_TTxvw43RJ8yprR0=",
+          "isHighResolutionStaticMap": true
+        },
+        {
+          "width": 384,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.598324,-111.98849&zoom=12&size=384x288&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=_9xNQGY07lrMiDJEQzhjuK2YDsk="
+        },
+        {
+          "width": 384,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.598324,-111.98849&zoom=12&size=384x288&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=vCJFSFXfdG2iD0GCoM-PDod7kGk=",
+          "isHighResolutionStaticMap": true
+        },
+        {
+          "width": 768,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.598324,-111.98849&zoom=12&size=768x576&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=v9gg3bEVVnKLZl_-_wxjiy7DTBY="
+        },
+        {
+          "width": 768,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.598324,-111.98849&zoom=12&size=768x576&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=QqsZwQYR0tALexjA_Sqw90JmZ4k=",
+          "isHighResolutionStaticMap": true
+        }
+      ]
+    },
+    "livingArea": null,
+    "homeType": "HOME_TYPE_UNKNOWN",
+    "lotAreaUnits": "sqft",
+    "resoFacts": {
+      "associations": [],
+      "appliances": [],
+      "atAGlanceFacts": [
+        {
+          "factLabel": "Type",
+          "factValue": "Unknown"
+        },
+        {
+          "factLabel": "Year Built"
+        },
+        {
+          "factLabel": "Heating"
+        },
+        {
+          "factLabel": "Cooling"
+        },
+        {
+          "factLabel": "Parking",
+          "factValue": "No Data"
+        },
+        {
+          "factLabel": "Offer Review Date"
+        }
+      ],
+      "canRaiseHorses": false,
+      "cityRegion": "Phoenix",
+      "communityFeatures": [],
+      "cooling": [],
+      "feesAndDues": [],
+      "flooring": [],
+      "furnished": false,
+      "hasAttachedProperty": false,
+      "hasCooling": false,
+      "hasGarage": false,
+      "hasHeating": false,
+      "hasLandLease": false,
+      "hasSpa": false,
+      "hasView": false,
+      "heating": [],
+      "homeType": "Unknown",
+      "livingQuarters": [],
+      "otherFacts": [],
+      "parkingCapacity": 0,
+      "parkingFeatures": [],
+      "rooms": [],
+      "view": [],
+      "waterView": "",
+      "constructionMaterials": [],
+      "exteriorFeatures": [],
+      "foundationDetails": [],
+      "hasAdditionalParcels": false,
+      "hasHomeWarranty": false,
+      "parcelNumber": "16727293"
+    },
+    "isUndisclosedAddress": false,
+    "formattedChip": {
+      "location": [
+        {
+          "fullValue": "12222 N Paradise Village Pkwy #318"
+        },
+        {
+          "fullValue": "Phoenix, AZ 85032"
+        }
+      ]
+    },
+    "zestimate": null,
+    "rentZestimate": 2330,
+    "currency": "USD",
+    "hideZestimate": false,
+    "dateSoldString": "2006-11-01",
+    "taxAssessedValue": null,
+    "attributionInfo": {
+      "listingOffices": [],
+      "listingAgents": []
+    },
+    "country": "USA",
+    "monthlyHoaFee": null,
+    "propertyTaxRate": 0.41,
+    "listingMetadata": {
+      "FlexibleLayoutAB": true,
+      "mustAttributeOfficeNameBeforeAgentName": false,
+      "mustDisplayAttributionListAgentEmail": false,
+      "mustDisplayAttributionListAgentPhone": false,
+      "mustDisplayAttributionListingOfficePhone": false,
+      "mustDisplayDisclaimerBelowAttribution": false,
+      "mustHighlightListOfficeName": false,
+      "mustMakeListingAgentContactable": false,
+      "FlexibleLayoutB": true,
+      "FlexibleLayoutC": true,
+      "FlexibleLayoutD": true,
+      "FlexibleLayoutE": true,
+      "FlexibleLayoutF": false,
+      "FlexibleLayoutG": false,
+      "FlexibleLayoutH": true,
+      "FlexibleLayoutI": true,
+      "FlexibleLayoutJ": false,
+      "FlexibleLayoutK": false,
+      "FlexibleLayoutL": false,
+      "FlexibleLayoutM": true,
+      "FlexibleLayoutN": true,
+      "FlexibleLayoutO": false,
+      "FlexibleLayoutP": false,
+      "FlexibleLayoutQ": false,
+      "FlexibleLayoutR": false,
+      "FlexibleLayoutS": false,
+      "FlexibleLayoutT": false,
+      "FlexibleLayoutU": false,
+      "FlexibleLayoutV": false,
+      "FlexibleLayoutW": false,
+      "FlexibleLayoutX": false,
+      "FlexibleLayoutY": false,
+      "FlexibleLayoutZ": false,
+      "FlexibleLayoutAA": true,
+      "passwordRequiredForZestimateMarketAnalysis": false,
+      "canShowAutomatedValuationDisplay": true,
+      "canShowTaxHistory": true,
+      "canShowPriceHistory": true,
+      "canShowUserGeneratedContent": true,
+      "isAdsRestricted": false,
+      "hidePriceAdjustmentFlexField": false,
+      "canCommingleComparables": true,
+      "canShowComparables": true,
+      "isSuperTrafficOptimized": false,
+      "mustDisplayFeedLogoInContactBox": false,
+      "canShowCroppedPhotos": true,
+      "canShowNonIDXMedia": true,
+      "canShowOnMap": false,
+      "comminglingCategory": true,
+      "mustDisplayAttributionAboveLocalFacts": false,
+      "mustDisplayAuctionStatusAsSold": false,
+      "mustHighlightMlsStatus": false,
+      "mustHighlightMarketingType": false,
+      "canShowZillowLogoInHeader": true,
+      "canShowPrequalifiedLinkInChip": true,
+      "comminglingCategoryIsRulesApplicable": false,
+      "mustPreferMlsPhotos": false
+    },
+    "photoCount": 1,
+    "isPremierBuilder": false,
+    "isShowcaseListing": false,
+    "listingSubType": {
+      "isFSBA": false,
+      "isPending": false,
+      "isNewHome": false,
+      "isForeclosure": false,
+      "isBankOwned": false,
+      "isForAuction": false,
+      "isOpenHouse": false,
+      "isComingSoon": false,
+      "isFSBO": false
+    },
+    "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-318-Phoenix-AZ-85032/2053953599_zpid/",
+    "tourViewCount": 0,
+    "postingContact": {},
+    "vrModel": {},
+    "isZillowOwned": false,
+    "hasPublicVideo": false,
+    "lastSoldPrice": 270000,
+    "isHousingConnector": false,
+    "responsivePhotosOriginalRatio": [
+      {
+        "caption": "",
+        "mixedSources": {
+          "jpeg": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=800x600&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ef6LW9dr_Zlg4bEFpgSQY1B3mFE=",
+              "width": 800
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1024x768&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ETnSfTyOMrbbd2cxwy9rxyZlGIw=",
+              "width": 1024
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=FktpshcCDXIS_wdoWla4bdePogc=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=0dpjVhFd0EblLbnYullVFM4dD0Y=",
+              "width": 1536
+            }
+          ],
+          "webp": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=800x600&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ef6LW9dr_Zlg4bEFpgSQY1B3mFE=",
+              "width": 800
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1024x768&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ETnSfTyOMrbbd2cxwy9rxyZlGIw=",
+              "width": 1024
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=FktpshcCDXIS_wdoWla4bdePogc=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=0dpjVhFd0EblLbnYullVFM4dD0Y=",
+              "width": 1536
+            }
+          ]
+        }
+      }
+    ],
+    "streetViewTileImageUrlMediumLatLong": "https://maps.googleapis.com/maps/api/streetview?location=33.598324,-111.988490&size=400x250&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=psrhL2sGIRmF_b4KEycqv0vBPAU=",
+    "streetViewTileImageUrlMediumAddress": "https://maps.googleapis.com/maps/api/streetview?location=12222+N+Paradise+Village+Pkwy%2C+Phoenix%2C+AZ+85032&size=400x250&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=uK9eP0VIbprsEmMG2kZ7lyFE0RA=",
+    "streetViewMetadataUrlMapLightboxAddress": "https://maps.googleapis.com/maps/api/streetview/metadata?location=12222+N+Paradise+Village+Pkwy%2C+Phoenix%2C+AZ+85032&key=AIzaSyBV4lXhV-qzQOegyA3m0_AvGy9F21HIyOQ&source=outdoor&signature=KgV3u5JOEqg8Nan5znEvAP5fkow=",
+    "thumb": [
+      {
+        "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=46x46&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=NtBeKlWyMNozz72U9FBAH1Ez6h4="
+      }
+    ],
+    "neighborhoodMapThumb": [
+      {
+        "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=Tx8zTm3mOn2rL90a4HRK1_NcrXg="
+      }
+    ],
+    "stateId": 8,
+    "countyId": 2402,
+    "cityId": 40326,
+    "isNonOwnerOccupied": false,
+    "restimateMinus30": "0",
+    "adTargets": {
+      "listtp": "not_for_sale",
+      "dma": "24",
+      "cnty": "Maricopa",
+      "hood": "Paradise_Valley",
+      "bd": "0",
+      "ba": "0",
+      "aamgnrc1": "12222 N Paradise Village Pkwy #318",
+      "aamgnrc2": "318",
+      "city": "Phoenix",
+      "state": "AZ",
+      "zip": "85032",
+      "pid": "2053953599",
+      "premieragent": "no",
+      "service_version": "9d5f2ce5",
+      "env": "prod",
+      "guid": "5cf8d923-a1ec-4cb9-93e1-db31068f4701"
+    },
+    "description": " This home is located at 12222 N Paradise Village Pkwy #318, Phoenix, AZ 85032.",
+    "pals": [
+      {
+        "name": "ARMLS",
+        "palsId": "41005_2533180"
+      }
+    ],
+    "listedBy": [],
+    "parcelId": "16727293",
+    "taxHistory": [],
+    "priceHistory": [
+      {
+        "date": "2006-11-01",
+        "time": 1162339200000,
+        "price": 270000,
+        "priceChangeRate": 0,
+        "event": "Sold",
+        "source": "ARMLS",
+        "showCountyLink": false,
+        "postingIsRental": false,
+        "attributeSource": {
+          "infoString1": "2533180",
+          "infoString2": "ARMLS",
+          "infoString3": "https://photos.zillowstatic.com/fp/a3a022d32b0617399617ec42566a2693-zillow_web_logo_inf_11.jpg"
+        }
+      }
+    ],
+    "parentRegion": {
+      "name": "Paradise Valley"
+    },
+    "nearbyHomes": [
+      {
+        "zpid": 7824365,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/11a39464afc3bcbb283f774d7cdb3052-p_c.jpg"
+          }
+        ],
+        "price": 247500,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "livingAreaValue": 850,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 1007,
+        "lotAreaValue": 1007,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy S APT 229",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy S APT 229"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.598324,
+        "longitude": -111.98849,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-S-APT-229-Phoenix-AZ-85032/7824365_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 457191369,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/b476044e6bc97f6145a95194bb6ac521-p_c.jpg"
+          }
+        ],
+        "price": 0,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "livingAreaValue": 850,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotAreaUnits": "sqft",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy #321A",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy #321A"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.598324,
+        "longitude": -111.98849,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-321A-Phoenix-AZ-85032/457191369_zpid/",
+        "hdpTypeDimension": "NoZestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "providerListingID": "3ebd446henadr",
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 2055625874,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/d6ceda783e2f59031a4c5ca518660c5b-p_c.jpg"
+          }
+        ],
+        "price": 194800,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "livingAreaValue": 850,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 42558120,
+        "lotAreaValue": 977,
+        "lotAreaUnits": "Acres",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy #345",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy #345"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.598324,
+        "longitude": -111.98849,
+        "homeStatus": "OTHER",
+        "homeType": "CONDO",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-345-Phoenix-AZ-85032/2055625874_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Condo",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {
+          "mlsId": "6729376"
+        },
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 2077394579,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/85e2398ae2e0c940cc8a69bfd334771e-p_c.jpg"
+          }
+        ],
+        "price": 0,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "livingAreaValue": 850,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 1119,
+        "lotAreaValue": 1119,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy #423A",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy #423A"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.598324,
+        "longitude": -111.98849,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-423A-Phoenix-AZ-85032/2077394579_zpid/",
+        "hdpTypeDimension": "NoZestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 444990393,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/613edde8decf87d625d89b1470d9b760-p_c.jpg"
+          }
+        ],
+        "price": 0,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "livingAreaValue": 850,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 1007,
+        "lotAreaValue": 1007,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy #129",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy #129"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.598328,
+        "longitude": -111.98849,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-129-Phoenix-AZ-85032/444990393_zpid/",
+        "hdpTypeDimension": "NoZestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {
+          "mlsId": "6191868"
+        },
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 2077200950,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/483fed0de6f4e26a98bb78dfe1186c6a-p_c.jpg"
+          }
+        ],
+        "price": 209600,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "livingAreaValue": 850,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 1073,
+        "lotAreaValue": 1073,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy #127",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy #127"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.598324,
+        "longitude": -111.98852,
+        "homeStatus": "OTHER",
+        "homeType": "CONDO",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-127-Phoenix-AZ-85032/2077200950_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Condo",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 444991347,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/61cb44ef8757e132f52f7af072562f91-p_c.jpg"
+          }
+        ],
+        "price": 0,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 885,
+        "livingAreaValue": 885,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotAreaUnits": "sqft",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy #329",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy #329"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.59835,
+        "longitude": -111.98849,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-329-Phoenix-AZ-85032/444991347_zpid/",
+        "hdpTypeDimension": "NoZestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {
+          "mlsId": "2233761"
+        },
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 444992038,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/0e2358afeddc3458ac83aeb7ef6bd256-p_c.jpg"
+          }
+        ],
+        "price": 0,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 885,
+        "livingAreaValue": 885,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotAreaUnits": "sqft",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy #429",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy #429"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.59835,
+        "longitude": -111.98849,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-429-Phoenix-AZ-85032/444992038_zpid/",
+        "hdpTypeDimension": "NoZestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {
+          "mlsId": "2233725"
+        },
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 443934766,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/65c0a743dcf05031b0636829d98b3d4b-p_c.jpg"
+          }
+        ],
+        "price": 0,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 885,
+        "livingAreaValue": 885,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotAreaUnits": "sqft",
+        "address": {
+          "streetAddress": "12222 N Paradise Village Pkwy #428",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipcode": "85032"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "12222 N Paradise Village Pkwy #428"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.598293,
+        "longitude": -111.988525,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/12222-N-Paradise-Village-Pkwy-428-Phoenix-AZ-85032/443934766_zpid/",
+        "hdpTypeDimension": "NoZestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {
+          "mlsId": "2233795"
+        },
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      }
+    ],
+    "schools": [
+      {
+        "distance": 1.3,
+        "name": "Indian Bend Elementary School",
+        "rating": 4,
+        "level": "Primary",
+        "grades": "PK-6",
+        "link": "https://www.greatschools.org/arizona/phoenix/803-Indian-Bend-Elementary-School/",
+        "type": "Public"
+      },
+      {
+        "distance": 1.8,
+        "name": "Sunrise Middle School",
+        "rating": 6,
+        "level": "Elementary",
+        "grades": "5-8",
+        "link": "https://www.greatschools.org/arizona/scottsdale/1242-Sunrise-Middle-School/",
+        "type": "Public"
+      },
+      {
+        "distance": 3.1,
+        "name": "Paradise Valley High School",
+        "rating": 8,
+        "level": "Middle",
+        "grades": "7-12",
+        "link": "https://www.greatschools.org/arizona/phoenix/1067-Paradise-Valley-High-School/",
+        "type": "Public"
+      }
+    ],
+    "citySearchUrl": {
+      "text": "Homes in Phoenix",
+      "path": "/phoenix-az/"
+    },
+    "isInstantOfferEnabled": false,
+    "dateSold": "2006-11-01T00:00:00.000Z",
+    "county": "Maricopa County",
+    "isRentalListingOffMarket": false,
+    "nearbyCities": [
+      {
+        "regionUrl": {
+          "path": "/chandler-az/"
+        },
+        "name": "Chandler"
+      },
+      {
+        "regionUrl": {
+          "path": "/gilbert-az/"
+        },
+        "name": "Gilbert"
+      },
+      {
+        "regionUrl": {
+          "path": "/glendale-az/"
+        },
+        "name": "Glendale"
+      },
+      {
+        "regionUrl": {
+          "path": "/goodyear-az/"
+        },
+        "name": "Goodyear"
+      },
+      {
+        "regionUrl": {
+          "path": "/mesa-az/"
+        },
+        "name": "Mesa"
+      },
+      {
+        "regionUrl": {
+          "path": "/peoria-az/"
+        },
+        "name": "Peoria"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az/"
+        },
+        "name": "Phoenix"
+      },
+      {
+        "regionUrl": {
+          "path": "/scottsdale-az/"
+        },
+        "name": "Scottsdale"
+      },
+      {
+        "regionUrl": {
+          "path": "/surprise-az/"
+        },
+        "name": "Surprise"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az/"
+        },
+        "name": "Tempe"
+      }
+    ],
+    "nearbyNeighborhoods": [
+      {
+        "regionUrl": {
+          "path": "/ahwatukee-foothills-phoenix-az/"
+        },
+        "name": "Ahwatukee Foothills"
+      },
+      {
+        "regionUrl": {
+          "path": "/alhambra-phoenix-az/"
+        },
+        "name": "Alhambra"
+      },
+      {
+        "regionUrl": {
+          "path": "/camelback-east-phoenix-az/"
+        },
+        "name": "Camelback East"
+      },
+      {
+        "regionUrl": {
+          "path": "/deer-valley-phoenix-az/"
+        },
+        "name": "Deer Valley"
+      },
+      {
+        "regionUrl": {
+          "path": "/estrella-phoenix-az/"
+        },
+        "name": "Estrella"
+      },
+      {
+        "regionUrl": {
+          "path": "/laveen-phoenix-az/"
+        },
+        "name": "Laveen"
+      },
+      {
+        "regionUrl": {
+          "path": "/maryvale-phoenix-az/"
+        },
+        "name": "Maryvale"
+      },
+      {
+        "regionUrl": {
+          "path": "/north-mountain-phoenix-az/"
+        },
+        "name": "North Mountain"
+      },
+      {
+        "regionUrl": {
+          "path": "/paradise-valley-phoenix-az/"
+        },
+        "name": "Paradise Valley"
+      },
+      {
+        "regionUrl": {
+          "path": "/south-mountain-phoenix-az/"
+        },
+        "name": "South Mountain"
+      }
+    ],
+    "nearbyZipcodes": [
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85008/"
+        },
+        "name": "85008"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85009/"
+        },
+        "name": "85009"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85032/"
+        },
+        "name": "85032"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85033/"
+        },
+        "name": "85033"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85035/"
+        },
+        "name": "85035"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85037/"
+        },
+        "name": "85037"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85041/"
+        },
+        "name": "85041"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85308/"
+        },
+        "name": "85308"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85339/"
+        },
+        "name": "85339"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az-85383/"
+        },
+        "name": "85383"
+      }
+    ],
+    "zipcodeSearchUrl": {
+      "path": "/phoenix-az-85032/"
+    },
+    "apartmentsForRentInZipcodeSearchUrl": {
+      "path": "/phoenix-az-85032/apartments/"
+    },
+    "housesForRentInZipcodeSearchUrl": {
+      "path": "/phoenix-az-85032/rent-houses/"
+    },
+    "abbreviatedAddress": "12222 N Paradise Village Pkwy #318",
+    "neighborhoodRegion": {
+      "name": "Paradise Valley"
+    },
+    "neighborhoodSearchUrl": {
+      "path": "/paradise-valley-phoenix-az/"
+    },
+    "stateSearchUrl": {
+      "path": "/az/"
+    },
+    "countySearchUrl": {
+      "text": "Homes in Maricopa County",
+      "path": "/maricopa-county-az/"
+    },
+    "homeValuation": {},
+    "daysOnZillow": 7216,
+    "compsCarouselPropertyPhotos": [
+      {
+        "mixedSources": {
+          "jpeg": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=192x144&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=2m5rQ6VRXcQ7QezFHu5qJq_hEVI="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=384x288&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=f45BXwNaim86H2-hXx4F0Z_Yh3c="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=576x432&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ZymrdE2oxPljw5azokN2t25w_O4="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=768x576&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=WNbuStk5SdnPBd0zRdr-O81JvYw="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=960x720&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=v-8uet0F51k05A98oQVtY97PqBM="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1152x864&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=EeHJGiNVNm3vHd7pAS8JwSTm1-0="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=FktpshcCDXIS_wdoWla4bdePogc="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=0dpjVhFd0EblLbnYullVFM4dD0Y="
+            }
+          ]
+        }
+      }
+    ],
+    "isConfirmedClaimedByCurrentSignedInUser": false,
+    "isRecentStatusChange": false,
+    "buildingId": "2738247248",
+    "foreclosureTypes": {
+      "isBankOwned": false,
+      "wasNonRetailAuction": false
+    },
+    "isFeatured": false,
+    "rentalApplicationsAcceptedType": "REQUEST_TO_APPLY",
+    "propertyTypeDimension": "Home Type Unknown",
+    "hdpTypeDimension": "NoZestimate",
+    "listingTypeDimension": "Unknown Listed By",
+    "featuredListingTypeDimension": "organic",
+    "brokerIdDimension": "Unknown Listed By",
+    "keystoneHomeStatus": "NotForSale",
+    "pageUrlFragment": "NoZestimate",
+    "isRentalsLeadCapMet": false,
+    "isPaidMultiFamilyBrokerId": false,
+    "timeZone": "America/Phoenix",
+    "virtualTourUrl": null,
+    "selfTour": {
+      "hasSelfTour": false
+    },
+    "originalPhotos": [
+      {
+        "caption": "",
+        "mixedSources": {
+          "jpeg": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=800x600&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ef6LW9dr_Zlg4bEFpgSQY1B3mFE=",
+              "width": 800
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1024x768&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ETnSfTyOMrbbd2cxwy9rxyZlGIw=",
+              "width": 1024
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=FktpshcCDXIS_wdoWla4bdePogc=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=0dpjVhFd0EblLbnYullVFM4dD0Y=",
+              "width": 1536
+            }
+          ],
+          "webp": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=800x600&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ef6LW9dr_Zlg4bEFpgSQY1B3mFE=",
+              "width": 800
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1024x768&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ETnSfTyOMrbbd2cxwy9rxyZlGIw=",
+              "width": 1024
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=FktpshcCDXIS_wdoWla4bdePogc=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=0dpjVhFd0EblLbnYullVFM4dD0Y=",
+              "width": 1536
+            }
+          ]
+        }
+      }
+    ],
+    "addressOrUrlFromInput": "12222 N Paradise Village Pkwy S #429, Phoenix, AZ 85032",
+    "priceChange": null,
+    "pageViewCount": null,
+    "favoriteCount": null,
+    "annualHomeownersInsurance": null,
+    "listingProvider": null,
+    "buildingAttributes": null,
+    "listingPrice": {
+      "amount": 0,
+      "currency": "USD",
+      "formatted": "$0"
+    },
+    "listingAddress": {
+      "street": "12222 N Paradise Village Pkwy #318",
+      "unit": null,
+      "city": "Phoenix",
+      "state": "AZ",
+      "zipCode": "85032",
+      "county": "Maricopa County",
+      "country": "USA",
+      "neighborhood": "Paradise Valley",
+      "subdivision": null,
+      "communityName": null,
+      "timeZone": "America/Phoenix",
+      "full": "12222 N Paradise Village Pkwy #318, Phoenix, AZ 85032"
+    },
+    "coordinates": {
+      "latitude": 33.598324,
+      "longitude": -111.98849
+    },
+    "listingStatus": "other",
+    "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-318-Phoenix-AZ-85032/2053953599_zpid/",
+    "listingType": {
+      "isFSBA": false,
+      "isFSBO": false,
+      "isComingSoon": false,
+      "isPending": false,
+      "isOpenHouse": false,
+      "isNewHome": false,
+      "isForAuction": false,
+      "isForeclosure": false,
+      "isBankOwned": false,
+      "contingencyType": null
+    },
+    "bathroomsDetail": null,
+    "lotArea": {
+      "value": null,
+      "unit": "sqft",
+      "formatted": null
+    },
+    "pricePerSquareFoot": null,
+    "datePosted": null,
+    "onMarketDate": null,
+    "priceChangedAt": null,
+    "taxAnnualAmount": null,
+    "parking": {
+      "totalSpaces": 0,
+      "garageSpaces": null,
+      "hasGarage": false,
+      "hasAttachedGarage": null,
+      "features": []
+    },
+    "agent": null,
+    "broker": null,
+    "mls": null,
+    "mainImage": {
+      "thumbnail": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=46x46&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=NtBeKlWyMNozz72U9FBAH1Ez6h4=",
+      "medium": null,
+      "hiRes": null
+    },
+    "staticMapUrl": "https://maps.googleapis.com/maps/api/staticmap?center=33.598324,-111.98849&zoom=12&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=or3A3Hi9skfeHW6XZL5aPUF_N7U=",
+    "propertyFeatures": {
+      "appliances": [],
+      "heating": [],
+      "cooling": [],
+      "flooring": [],
+      "exteriorFeatures": [],
+      "interiorFeatures": [],
+      "view": [],
+      "waterSource": [],
+      "sewer": [],
+      "utilities": [],
+      "constructionMaterials": [],
+      "roofType": null,
+      "architecturalStyle": null,
+      "basement": null,
+      "levels": null,
+      "stories": null
+    },
+    "atAGlanceFacts": [
+      {
+        "factLabel": "Type",
+        "factValue": "Unknown"
+      },
+      {
+        "factLabel": "Year Built",
+        "factValue": null
+      },
+      {
+        "factLabel": "Heating",
+        "factValue": null
+      },
+      {
+        "factLabel": "Cooling",
+        "factValue": null
+      },
+      {
+        "factLabel": "Parking",
+        "factValue": "No Data"
+      },
+      {
+        "factLabel": "Offer Review Date",
+        "factValue": null
+      }
+    ],
+    "schoolDistricts": null,
+    "hoa": null,
+    "listingPriceHistory": [
+      {
+        "date": "2006-11-01T00:00:00.000Z",
+        "event": "Sold",
+        "price": 270000,
+        "pricePerSquareFoot": null,
+        "priceChangeRate": 0,
+        "source": "ARMLS",
+        "sellerAgent": null,
+        "buyerAgent": null
+      }
+    ],
+    "listingTaxHistory": [],
+    "nearbySchools": [
+      {
+        "name": "Indian Bend Elementary School",
+        "rating": 4,
+        "distance": 1.3,
+        "level": "Primary",
+        "type": "Public",
+        "grades": "PK-6",
+        "link": "https://www.greatschools.org/arizona/phoenix/803-Indian-Bend-Elementary-School/"
+      },
+      {
+        "name": "Sunrise Middle School",
+        "rating": 6,
+        "distance": 1.8,
+        "level": "Elementary",
+        "type": "Public",
+        "grades": "5-8",
+        "link": "https://www.greatschools.org/arizona/scottsdale/1242-Sunrise-Middle-School/"
+      },
+      {
+        "name": "Paradise Valley High School",
+        "rating": 8,
+        "distance": 3.1,
+        "level": "Middle",
+        "type": "Public",
+        "grades": "7-12",
+        "link": "https://www.greatschools.org/arizona/phoenix/1067-Paradise-Valley-High-School/"
+      }
+    ],
+    "nearbyProperties": [
+      {
+        "zpid": 7824365,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-S-APT-229-Phoenix-AZ-85032/7824365_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy S APT 229",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.598324,
+          "longitude": -111.98849
+        },
+        "price": 247500,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/11a39464afc3bcbb283f774d7cdb3052-p_c.jpg"
+      },
+      {
+        "zpid": 457191369,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-321A-Phoenix-AZ-85032/457191369_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy #321A",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.598324,
+          "longitude": -111.98849
+        },
+        "price": 0,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/b476044e6bc97f6145a95194bb6ac521-p_c.jpg"
+      },
+      {
+        "zpid": 2055625874,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-345-Phoenix-AZ-85032/2055625874_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy #345",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.598324,
+          "longitude": -111.98849
+        },
+        "price": 194800,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "homeType": "CONDO",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/d6ceda783e2f59031a4c5ca518660c5b-p_c.jpg"
+      },
+      {
+        "zpid": 2077394579,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-423A-Phoenix-AZ-85032/2077394579_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy #423A",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.598324,
+          "longitude": -111.98849
+        },
+        "price": 0,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/85e2398ae2e0c940cc8a69bfd334771e-p_c.jpg"
+      },
+      {
+        "zpid": 444990393,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-129-Phoenix-AZ-85032/444990393_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy #129",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.598328,
+          "longitude": -111.98849
+        },
+        "price": 0,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/613edde8decf87d625d89b1470d9b760-p_c.jpg"
+      },
+      {
+        "zpid": 2077200950,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-127-Phoenix-AZ-85032/2077200950_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy #127",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.598324,
+          "longitude": -111.98852
+        },
+        "price": 209600,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 850,
+        "homeType": "CONDO",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/483fed0de6f4e26a98bb78dfe1186c6a-p_c.jpg"
+      },
+      {
+        "zpid": 444991347,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-329-Phoenix-AZ-85032/444991347_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy #329",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.59835,
+          "longitude": -111.98849
+        },
+        "price": 0,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 885,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/61cb44ef8757e132f52f7af072562f91-p_c.jpg"
+      },
+      {
+        "zpid": 444992038,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-429-Phoenix-AZ-85032/444992038_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy #429",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.59835,
+          "longitude": -111.98849
+        },
+        "price": 0,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 885,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/0e2358afeddc3458ac83aeb7ef6bd256-p_c.jpg"
+      },
+      {
+        "zpid": 443934766,
+        "propertyUrl": "https://www.zillow.com/homedetails/12222-N-Paradise-Village-Pkwy-428-Phoenix-AZ-85032/443934766_zpid/",
+        "address": {
+          "street": "12222 N Paradise Village Pkwy #428",
+          "city": "Phoenix",
+          "state": "AZ",
+          "zipCode": "85032"
+        },
+        "coordinates": {
+          "latitude": 33.598293,
+          "longitude": -111.988525
+        },
+        "price": 0,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 885,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/65c0a743dcf05031b0636829d98b3d4b-p_c.jpg"
+      }
+    ],
+    "listingMortgageRates": null,
+    "listingPhotos": [
+      {
+        "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.598323822021484,-111.98848724365234&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=0dpjVhFd0EblLbnYullVFM4dD0Y=",
+        "caption": null
+      }
+    ],
+    "isValid": true,
+    "scrapedAt": "2026-08-05T18:07:30.337Z"
+  }
+]

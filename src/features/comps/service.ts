@@ -28,9 +28,10 @@ import {
   type PropertyDataProvider,
 } from './providers/types.js';
 
-/** Minimal logger seam matching src/server/logger.ts. */
+/** Minimal logger seam matching src/server/logger.ts; info is optional (Fastify has it, the console fallback may not). */
 interface LoggerLike {
   warn(obj: Record<string, unknown>, msg: string): void;
+  info?(obj: Record<string, unknown>, msg: string): void;
 }
 
 /**
@@ -203,8 +204,19 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
   let subject: SubjectProperty | null;
   let comps: RawComp[];
   try {
-    subject = await withRetry(() => deps.provider.lookupSubject(rawAddress));
-    if (subject === null) return failure('ADDRESS_NOT_FOUND');
+    const looked = await withRetry(() => deps.provider.lookupSubject(rawAddress));
+    if (looked === null) return failure('ADDRESS_NOT_FOUND', { resolution: 'not_found' });
+    if ('miss' in looked) {
+      // Operator ruling: same code, branched copy — and COUNTED. If this
+      // fires often in production, SUBJECT_RESOLUTION_MISMATCH earns its own
+      // code properly, with tests. cacheKey, never the raw address.
+      logger?.info?.(
+        { cacheKey: key, guard: looked.guard },
+        'comps subject resolution mismatch — provider returned a different property',
+      );
+      return failure('ADDRESS_NOT_FOUND', { resolution: 'unit_mismatch' });
+    }
+    subject = looked;
     // One fetch at the WIDEST tier; the pure tier logic narrows from there.
     // Fetching per-tier would triple the bill for thin markets — the exact
     // case where money is being wasted on a likely failure.

@@ -24,6 +24,7 @@ import {
   ProviderNetworkError,
   ProviderTimeoutError,
   type PropertyDataProvider,
+  type SubjectResolutionMismatch,
 } from './types.js';
 
 export const APIFY_BASE = 'https://api.apify.com/v2';
@@ -98,28 +99,46 @@ function mapSoldDate(value: unknown): string | null {
  *     pair), so a mismatch means a different property, and running comps
  *     against a property the member didn't name is worse than failing.
  */
+export type SubjectMissKind = 'INVALID' | 'BAD_GEOCODE' | 'STREET_MISMATCH' | 'NO_STREET' | 'NO_COORDS';
+
+/** Compatibility wrapper: subject or null, miss kind discarded. */
 export function mapSubjectItem(item: Record<string, unknown>, requestedAddress: string): SubjectProperty | null {
-  if (item.isValid === false) return null;
+  const mapped = mapSubjectItemWithReason(item, requestedAddress);
+  return 'subject' in mapped ? mapped.subject : null;
+}
+
+/**
+ * mapSubjectItem with the miss KIND, so the caller can distinguish "no such
+ * address" from "Zillow returned the wrong property" (operator ruling: the
+ * copy branches on this; the failure code does not).
+ */
+export function mapSubjectItemWithReason(
+  item: Record<string, unknown>,
+  requestedAddress: string,
+): { subject: SubjectProperty } | { miss: SubjectMissKind } {
+  if (item.isValid === false) return { miss: 'INVALID' };
   // The provider's own miss signal (INSPECTOR 0009): the fuzzy wrong-property
   // match carried hasBadGeocode: true, the genuine subject false. First-line
   // check ALONGSIDE the street-prefix guard below, not instead of it.
-  if (item.hasBadGeocode === true) return null;
+  if (item.hasBadGeocode === true) return { miss: 'BAD_GEOCODE' };
 
   const streetAddress = String(
     item.streetAddress ?? (item.address as Record<string, unknown> | undefined)?.streetAddress ?? '',
   );
-  if (!streetAddress) return null;
+  if (!streetAddress) return { miss: 'NO_STREET' };
 
   const normalizedInput = normalizeAddress(requestedAddress);
   const normalizedReturned = normalizeAddress(streetAddress);
-  if (!normalizedReturned || !normalizedInput.startsWith(normalizedReturned)) return null;
+  if (!normalizedReturned || !normalizedInput.startsWith(normalizedReturned)) {
+    return { miss: 'STREET_MISMATCH' };
+  }
 
   const lat = asFiniteNumber(item.latitude);
   const lng = asFiniteNumber(item.longitude);
-  if (lat === null || lng === null) return null; // no coordinates -> no comps search is possible
+  if (lat === null || lng === null) return { miss: 'NO_COORDS' }; // no coordinates -> no comps search possible
 
   const addr = (item.address ?? {}) as Record<string, unknown>;
-  return {
+  return { subject: {
     zpid: String(item.zpid ?? ''),
     address: [streetAddress, addr.city, addr.state, addr.zipcode].filter(Boolean).join(', '),
     beds: asFiniteNumber(item.bedrooms),
@@ -133,7 +152,7 @@ export function mapSubjectItem(item: Record<string, unknown>, requestedAddress: 
     lastSoldDate: mapSoldDate(item.dateSold),
     lat,
     lng,
-  };
+  } };
 }
 
 /**
@@ -216,13 +235,20 @@ export class ApifyZillowProvider implements PropertyDataProvider {
     private readonly timeoutMs: number = PROVIDER_TIMEOUT_MS,
   ) {}
 
-  async lookupSubject(rawAddress: string): Promise<SubjectProperty | null> {
+  async lookupSubject(rawAddress: string): Promise<SubjectProperty | SubjectResolutionMismatch | null> {
     const items = await this.runActor(DETAIL_ACTOR, 'subject lookup', {
       addresses: [rawAddress],
       propertyStatus: 'RECENTLY_SOLD',
     });
     if (items.length === 0) return null;
-    return mapSubjectItem(items[0], rawAddress);
+    const mapped = mapSubjectItemWithReason(items[0], rawAddress);
+    if ('subject' in mapped) return mapped.subject;
+    // BAD_GEOCODE / STREET_MISMATCH = Zillow returned a DIFFERENT property
+    // (recorded: asked #429, got #318) — the member's address may be real, so
+    // the copy must say "couldn't match that unit", not "no such address".
+    if (mapped.miss === 'BAD_GEOCODE') return { miss: 'RESOLUTION_MISMATCH', guard: 'hasBadGeocode' };
+    if (mapped.miss === 'STREET_MISMATCH') return { miss: 'RESOLUTION_MISMATCH', guard: 'street_prefix' };
+    return null; // INVALID / NO_STREET / NO_COORDS -> a genuine not-found
   }
 
   async fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]> {

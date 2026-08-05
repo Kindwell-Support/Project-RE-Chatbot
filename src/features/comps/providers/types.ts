@@ -5,10 +5,26 @@
  */
 import type { RawComp, SubjectProperty } from '../types.js';
 
+/**
+ * Zillow resolved a DIFFERENT property than the one named (wrong unit,
+ * bad geocode). Distinct from a null miss so the member copy can say
+ * "couldn't match that exact unit" instead of "couldn't find that address" —
+ * same ADDRESS_NOT_FOUND code either way (operator ruling: copy, not code).
+ */
+export interface SubjectResolutionMismatch {
+  miss: 'RESOLUTION_MISMATCH';
+  guard: 'hasBadGeocode' | 'street_prefix';
+}
+
 export interface PropertyDataProvider {
   readonly name: string; // 'apify-zillow' | 'stub'
-  /** Resolves the subject or null for ADDRESS_NOT_FOUND (both miss shapes — see CONTRACT §6.1). */
-  lookupSubject(rawAddress: string): Promise<SubjectProperty | null>;
+  /**
+   * Resolves the subject; null for a genuine empty/invalid result; a
+   * SubjectResolutionMismatch when the provider returned a wrong-property
+   * match. Implementations returning only `SubjectProperty | null` (fakes,
+   * stubs) remain conformant — the mismatch member is optional behaviour.
+   */
+  lookupSubject(rawAddress: string): Promise<SubjectProperty | SubjectResolutionMismatch | null>;
   /** Sold comps around the subject. May include garbage; the hard filters own rejection. */
   fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]>;
 }
