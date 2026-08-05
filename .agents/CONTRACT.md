@@ -418,7 +418,13 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
 - **Address-mismatch guard**: if the user's message states an address that is
   not the same property as `subjectAddress` (compare normalized forms), do NOT
   pre-fill. Ask which deal they mean.
-- An explicit ARV in the tool call always wins over the pre-fill.
+- An explicit ARV in the tool call always wins over the pre-fill. **One
+  refinement, from live observation**: when the explicit value EQUALS the
+  stored block's `arv`, the model is relaying the comps number it read in a
+  prior tool result rather than the member typing it — the echo and the
+  address-mismatch guard apply to that case too, so a model-carried comps ARV
+  keeps the same visibility guarantees as a code-injected one. A genuinely
+  different member-supplied number stays untouched and un-echoed.
 - State read/write failures degrade to no-prefill + warn log, never a blocked
   reply.
 

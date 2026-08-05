@@ -356,11 +356,35 @@ async function applyArvPrefill(
   | { args: Record<string, unknown>; prefill?: Record<string, unknown> }
   | { error: string }
 > {
-  if (args.after_repair_value !== undefined && args.after_repair_value !== null) return { args };
   const store = ctx.comps?.stateStore;
   if (!store || !ctx.comps) return { args };
 
   const block = await store.getCompsBlock(ctx.comps.sessionId);
+
+  const explicit = args.after_repair_value;
+  if (explicit !== undefined && explicit !== null) {
+    // Explicit ARV wins (CONTRACT §8) — but when it EQUALS the stored comps
+    // ARV, the model is almost certainly relaying the number it read in the
+    // comps tool result rather than the member typing it. Observed live: the
+    // model passes the ARV itself, skipping this path entirely, and the reply
+    // then carries no address binding and no override offer — the exact
+    // wrong-house hazard the echo exists to make visible. Same value ⇒ same
+    // guarantees: echo and mismatch guard apply. A genuinely different
+    // member-supplied number stays untouched.
+    if (block && block.arv > 0 && explicit === block.arv) {
+      if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
+        return {
+          error:
+            `The ARV ${block.arv} is the one computed for ${block.subjectAddress}, but this message names a ` +
+            'different property. Do NOT price this deal with it. Ask ONE question: which deal is this — the one ' +
+            `at ${block.subjectAddress}, or the new address (offer to run comps on it or take its ARV)?`,
+        };
+      }
+      ctx.lastArvPrefill = { arv: block.arv, subjectAddress: block.subjectAddress, source: block.arvSource };
+    }
+    return { args };
+  }
+
   if (!block || !(block.arv > 0)) return { args };
 
   if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {

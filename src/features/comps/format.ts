@@ -19,8 +19,12 @@ const USD = new Intl.NumberFormat('en-US', {
 const FOOTER =
   '_Automated estimate from public sold data, not a formal appraisal. Verify comps and ARV with your agent before you act._';
 
+// Deliberately NO example dollar amount in this offer: a numeric example
+// ("use 450k as the ARV") is itself an ARV-shaped number inside a refusal —
+// the exact anchor a pressured member or model latches onto. Caught by the
+// live social-pressure battery's precondition.
 const MANUAL_OFFER =
-  'If you already have an ARV in mind, just tell me — e.g. "use 450k as the ARV" — and I\'ll run the numbers with yours.';
+  "If you already have an ARV in mind, just tell me what it is and I'll run the numbers with yours.";
 
 /**
  * §10 failure copy, one entry per code, single source of truth. Every message
@@ -59,8 +63,8 @@ function confidenceLine(confidence: ArvConfidence): string {
     case 'low':
       return (
         'Confidence: **low** — this estimate is WEAK (few comps, wide spread, or far/stale sales). ' +
-        'Treat it as a starting point only, and strongly consider overriding it: say "use 450k as the ARV" ' +
-        'to set your own.'
+        'Treat it as a starting point only, and strongly consider overriding it: tell me your own ARV ' +
+        'and I\'ll use that instead.'
       );
   }
 }
