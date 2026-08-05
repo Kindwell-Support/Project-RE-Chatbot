@@ -1,28 +1,34 @@
 /**
- * THE RECALL PATH — a member-visible ARV that never passes through format.ts.
+ * THE RECALL PATH — closed by RULING 0024, and what that does and does not buy.
  *
- * MASON's 0023 established, forensically, that a re-asked address is answered
- * from the TRANSCRIPT: no `run_comps` invocation, `session_state` untouched,
- * single-round token shape. The prompt tells the model not to re-run an address
- * it already ran, and the model obeys by summarising history.
+ * MASON's 0023 established forensically that a re-asked address was answered
+ * from the TRANSCRIPT: no `run_comps`, `session_state` untouched, single-round
+ * token shape. Root cause was his own spend guard — "do not re-run comps for an
+ * address you already ran" — which the model obeyed by summarising history.
  *
- * Everything I verified tonight assumes the tool ran. The rendered block, the
- * trim disclosure, the confidence tier, the override offer, the data-only
- * guarantee in `format.ts` — all of it hangs off a tool call that, on these
- * turns, does not happen. This path sits outside all of it.
+ * The operator ruled: repeat requests RE-RUN, served free from the cache, and
+ * no comps request may ever be answered from memory. The prompt is flipped and
+ * `qa_logs.tool_calls` now records what actually ran.
  *
- * His evidence shows the two observed recalls were CORRECT. That is two
- * observations, not a guarantee, and "it was right twice" is exactly the
- * standard this suite exists to refuse. The question the operator's ruling
- * actually turns on is different and unanswered:
+ * WHAT THAT FIXES, AND WHAT IT DOESN'T. The path is closed by INSTRUCTION, not
+ * by STRUCTURE. Nothing in the code prevents a model from answering a comps
+ * question out of history; it is now told not to, in a prompt section this file
+ * pins. So the residual risk is model compliance — and every other honesty
+ * guarantee in this module is structural precisely because instructions are the
+ * weaker kind. That asymmetry is worth stating rather than glossing.
  *
- *     can the recall path produce the WRONG address's number?
+ * These tests therefore do two jobs:
  *
- * That is the wrong-house bug — the one this whole module's state design was
- * built to prevent — reopened on a path with no guard on it at all.
+ *   1. Pin the ruling — the re-run instruction, the no-memory rule, and a
+ *      regression guard against the old spend guard coming back. One of these
+ *      replaces a FALSE pin of mine that a real change walked straight past.
+ *   2. Characterise what a NON-COMPLIANT turn produces, by scripting the model
+ *      to recall. Those cases describe the residual risk the ruling accepts:
+ *      no rendered block, no confidence, no disclaimer, and state bound to a
+ *      different address than the one the member was just told about.
  *
- * No fix is authorised. These tests CHARACTERISE the hazard so the ruling is
- * made against evidence rather than against two lucky samples.
+ * The live question — whether the real model now re-runs, and whether a recall
+ * could ever return the WRONG address's number — is in the gated battery.
  */
 import { describe, it, expect } from 'vitest';
 import { pendingSlice, sliceNote } from '../helpers/compsGate.js';
@@ -31,7 +37,6 @@ import { loadConfig } from '../../src/config.js';
 import { makeFakeOpenAI, type FakeCompletion } from '../helpers/fakes.js';
 import { makeCompsSupabase, makeProviderSpy } from '../helpers/compsFakes.js';
 import { golden01 } from '../fixtures/golden/index.js';
-import { SYSTEM_PROMPT } from '../../src/agent/systemPrompt.js';
 
 const MODS = ['service', 'tools'] as const;
 
@@ -62,16 +67,80 @@ const runComps = (address: string): FakeCompletion => ({
 
 describe(`the transcript-recall path${sliceNote(...MODS)}`, () => {
   // =========================================================================
-  describe('the prompt instruction that induces it', () => {
-    it('the system prompt tells the model not to re-run an address', () => {
-      // Root cause, pinned. This is a deliberate spend guard, not a defect —
-      // but it is the mechanism, and if it is ever reworded the hazard below
-      // changes shape. Pinning it means the ruling and the instruction cannot
-      // drift apart silently.
+  describe.skipIf(pendingSlice(...MODS))('the prompt instruction — RULING 0024', () => {
+    /**
+     * The comps section of the system prompt AS ACTUALLY SENT to the model.
+     *
+     * Captured through the seam rather than imported: `compsPromptSection` is
+     * private, and what matters is the text the model receives, not the text a
+     * helper returns.
+     *
+     * MY EARLIER PIN HERE WAS FALSE. It asserted `SYSTEM_PROMPT` matched
+     * /do not re-?run|already ran/ and passed — but it was matching
+     * `systemPrompt.ts:117`, "Do not re-run the tool", which is the CALCULATOR
+     * follow-up rule and is still correct. The comps instruction lives in
+     * `agent.ts` and had been flipped by ruling 0024 underneath it. The test
+     * would have passed whatever happened to the instruction it claimed to pin.
+     *
+     * Third instance tonight of an assertion passing on the wrong thing, and
+     * the first one in my own work that a real change walked straight past. The
+     * fix is to scope to the section that owns the rule.
+     */
+    async function compsSectionAsSent(): Promise<string> {
+      const openai = makeFakeOpenAI([say('hi')]);
+      const supabase = makeCompsSupabase({});
+      const app = buildApp(config, {
+        openai: openai.client, supabase: supabase.client,
+        propertyProvider: makeProviderSpy({}).provider,
+      } as never);
+      await app.inject({
+        method: 'POST', url: '/chat',
+        headers: { origin: ALLOWED, 'content-type': 'application/json' },
+        payload: { message: 'hello', session_id: 'prompt-pin' },
+      });
+      await app.close();
+
+      const system = String(
+        ((openai.calls[0].messages as Array<Record<string, unknown>>) ?? [])
+          .find((m) => m.role === 'system')?.content ?? '',
+      );
+      const start = system.indexOf('## Comps and ARV');
+      expect(start, 'the comps prompt section is not being sent to the model').toBeGreaterThan(-1);
+      const rest = system.slice(start + 1);
+      const nextHeading = rest.indexOf('\n## ');
+      return nextHeading === -1 ? rest : rest.slice(0, nextHeading);
+    }
+
+    it('instructs a RE-RUN on a repeat address, per the ruling', async () => {
+      const comps = (await compsSectionAsSent()).toLowerCase();
+      expect(comps, 'the repeat-address instruction is missing').toMatch(/already ran/);
+      expect(comps, 'the model is not told to call run_comps again').toMatch(/again/);
+    });
+
+    it('forbids answering a comps request from memory', async () => {
+      // The guarantee that replaces the structural gap: if every ARV must come
+      // from a run_comps result in THIS turn, the transcript-recall path is
+      // closed by instruction rather than left to the model's discretion.
+      const comps = (await compsSectionAsSent()).toLowerCase();
+      expect(comps, 'nothing forbids summarising an earlier result').toMatch(
+        /never answer .* summaris|summarising an earlier result|from memory/,
+      );
+      expect(comps, 'the this-turn requirement is missing').toMatch(/this turn/);
+    });
+
+    it('REGRESSION: the old "do not re-run" spend guard has NOT come back', async () => {
+      // This is the assertion my false pin should have been. Scoped to the
+      // comps section, so `systemPrompt.ts`'s legitimate calculator rule
+      // ("Do not re-run the tool" for follow-ups) cannot satisfy it.
+      const comps = (await compsSectionAsSent()).toLowerCase();
       expect(
-        SYSTEM_PROMPT.toLowerCase(),
-        'the no-re-run instruction is gone — 0023\'s root cause has changed',
-      ).toMatch(/do not re-?run|already ran/);
+        comps,
+        'the "do not re-run comps" guard is back — it manufactures the ' +
+          'transcript-recall path FINDING-004 documents',
+      ).not.toMatch(/do not re-?run comps|don't re-?run comps|never re-?run comps/);
+      // The word appears in the ruling's own explanation, so a bare
+      // /do not re-run/ would false-positive. Assert the RULE, not the word.
+      expect(comps).toMatch(/call run_comps again/);
     });
   });
 
@@ -194,6 +263,76 @@ describe(`the transcript-recall path${sliceNote(...MODS)}`, () => {
       const out = String(body.output);
       expect(out.toLowerCase()).not.toMatch(/not a formal appraisal|automated estimate/);
       expect(out.toLowerCase()).not.toMatch(/confidence/);
+    });
+
+    it('qa_logs now persists tool_calls — the forensics become one query', async () => {
+      // The observability half of ruling 0024. FINDING-004 needed
+      // session_state timestamps and token-shape triangulation to establish
+      // that no tool ran; that is a diagnosis nobody repeats under pressure.
+      // With this column the same question is a SELECT.
+      const supabase = makeCompsSupabase({});
+      const openai = makeFakeOpenAI([
+        runComps('765 N Don Frank Ln'),
+        say('Here are the comps — ARV $403,000.'),
+      ]);
+      const app = buildApp(config, {
+        openai: openai.client, supabase: supabase.client,
+        propertyProvider: makeProviderSpy({ subject: SUBJ_A, comps: FRESH }).provider,
+      } as never);
+      await app.inject({
+        method: 'POST', url: '/chat',
+        headers: { origin: ALLOWED, 'content-type': 'application/json' },
+        payload: {
+          message: 'run a comp for 765 N Don Frank Ln',
+          session_id: 'qa-toolcalls', member_email: 'member@example.com',
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      await app.close();
+
+      const qa = supabase.inserts.find((i) => i.table === 'qa_logs');
+      expect(qa, 'nothing was written to qa_logs').toBeDefined();
+      const calls = (qa!.payload as { tool_calls?: Array<Record<string, unknown>> }).tool_calls;
+
+      expect(calls, 'qa_logs.tool_calls is not being written').toBeDefined();
+      expect(Array.isArray(calls), 'tool_calls is not an array').toBe(true);
+      const runCompsEntry = calls!.find((c) => c.name === 'run_comps');
+      expect(runCompsEntry, 'a run_comps turn logged no run_comps call').toBeDefined();
+      expect(runCompsEntry!.ok, 'the call outcome is not recorded').toBe(true);
+      expect(runCompsEntry!.args, 'the call args are not recorded').toBeDefined();
+    });
+
+    it('a turn with NO tool call logs an empty tool_calls, not a missing one', async () => {
+      // The distinction the whole diagnosis turned on. If a tool-free turn
+      // wrote null or omitted the key, "no tool ran" and "we didn't log it"
+      // would look identical in the table — and the next investigation lands
+      // back in forensics.
+      const supabase = makeCompsSupabase({});
+      const openai = makeFakeOpenAI([say('You ran that one already — about $403,000.')]);
+      const app = buildApp(config, {
+        openai: openai.client, supabase: supabase.client,
+        propertyProvider: makeProviderSpy({}).provider,
+      } as never);
+      await app.inject({
+        method: 'POST', url: '/chat',
+        headers: { origin: ALLOWED, 'content-type': 'application/json' },
+        payload: {
+          message: 'what was that ARV again?',
+          session_id: 'qa-notool', member_email: 'member@example.com',
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      await app.close();
+
+      const qa = supabase.inserts.find((i) => i.table === 'qa_logs');
+      expect(qa, 'nothing was written to qa_logs').toBeDefined();
+      const calls = (qa!.payload as { tool_calls?: unknown }).tool_calls;
+      expect(calls, 'a tool-free turn is indistinguishable from an unlogged one')
+        .toBeDefined();
+      expect(Array.isArray(calls)).toBe(true);
+      expect((calls as unknown[]).length, 'a tool-free turn logged a tool call').toBe(0);
     });
 
     it('THE HAZARD: state still binds B while the member is told A\'s number', async () => {

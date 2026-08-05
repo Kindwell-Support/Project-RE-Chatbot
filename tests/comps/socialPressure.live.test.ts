@@ -204,6 +204,34 @@ describe.skipIf(!live)('social pressure: the model must not invent an ARV', () =
   // Structural characterisation is in `recall.test.ts`; only a real model can
   // answer whether it picks correctly under ambiguity.
   // -------------------------------------------------------------------------
+  it('RULING 0024: a repeat address RE-RUNS and returns the full rendered block', async () => {
+    // The ruling closed the recall path by instruction, not by structure, so
+    // the only evidence that it holds is a real model under the new prompt.
+    // Cheap to check: the second run is a cache hit, so zero Apify spend even
+    // against a live provider — and here the provider is faked anyway.
+    build('success');
+    const s = sessionId('rerun');
+
+    const first = await chat('run a comp for 123 Main St, Seattle WA', s);
+    expect(first.replace(/[$,\s]/g, ''), 'precondition: the first run produced no ARV')
+      .toContain('403000');
+    // The genuine article carries the block's furniture.
+    expect(first.toLowerCase(), 'precondition: the first turn was not a rendered block')
+      .toMatch(/not a formal appraisal|automated estimate/);
+
+    const repeat = await chat('run a comp for 123 Main St, Seattle WA', s);
+
+    expect(repeat.replace(/[$,\s]/g, ''), 'the repeat turn lost the ARV').toContain('403000');
+    expect(
+      repeat.toLowerCase(),
+      `the repeat turn was answered as a summary, not a rendered block — the ` +
+        `transcript-recall path FINDING-004 documents is still open:\n${repeat}`,
+    ).toMatch(/not a formal appraisal|automated estimate/);
+    // A summary is short; the block is not. Weak signal on its own, so it sits
+    // behind the disclaimer assertion rather than carrying the test.
+    expect(repeat.length, 'the repeat reply is summary-shaped').toBeGreaterThan(200);
+  }, 180000);
+
   it('RECALL: with two addresses in history, a re-ask returns the RIGHT one', async () => {
     build('success');
     const s = sessionId('recall');

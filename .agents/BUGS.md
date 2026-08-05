@@ -9,10 +9,47 @@ carried into the GREEN message with its severity).
 
 ---
 
-## FINDING-004 — a member-visible ARV that never passes through format.ts
+## FINDING-004 — a member-visible ARV that never passes through format.ts — CLOSED-BY-RULING
 
-- **Status**: OPEN — design ruling reserved by the operator, no fix authorised
-- **Severity**: **major** (INSPECTOR's assessment; MASON filed it as INFO)
+- **Status**: CLOSED by operator ruling 0024, with a residual noted below
+- **Severity**: was **major** (INSPECTOR's grade; MASON filed it as INFO)
+
+**Resolution.** Repeat requests now RE-RUN, served free from the cache, and the
+prompt forbids answering any comps request from memory — every ARV the member
+sees must come from a `run_comps` result in that turn. `qa_logs.tool_calls`
+added so the same diagnosis is one query instead of forensic triangulation.
+
+Verified independently (`tests/comps/recall.test.ts`, 9 tests):
+- the re-run instruction and the no-memory rule are present in the comps prompt
+  section AS SENT to the model;
+- a regression guard against the old spend guard returning, scoped to that
+  section so the calculator's legitimate "do not re-run the tool" rule cannot
+  satisfy it;
+- `qa_logs.tool_calls` records name/args/ok for a run_comps turn, AND records an
+  empty array — not a missing key — for a tool-free turn, which is the exact
+  distinction the original diagnosis turned on.
+
+**RESIDUAL, carried into the GREEN at minor.** The path is closed by
+INSTRUCTION, not by STRUCTURE. Nothing in the code stops a model answering from
+history; it is now told not to. Every other honesty guarantee in this module is
+structural precisely because instructions are the weaker kind. The scripted
+non-compliance cases in `recall.test.ts` document what such a turn produces —
+no rendered block, no confidence, no disclaimer, and state possibly bound to a
+different address than the member was just told about.
+
+**A FALSE PIN OF MINE, corrected here.** My first prompt pin asserted
+`SYSTEM_PROMPT` matched `/do not re-?run|already ran/` and passed — while
+matching `systemPrompt.ts:117`, the CALCULATOR follow-up rule, which is
+unrelated and still correct. The comps instruction lives in `agent.ts` and was
+flipped underneath it. The test would have passed whatever happened to the rule
+it claimed to pin. Now scoped to the comps section, captured as actually sent.
+
+---
+
+## Original report
+
+- **Status (at filing)**: OPEN — ruling reserved
+- **Severity**: major
 - **Source**: MASON's diagnostic `0023`; characterised by
   `tests/comps/recall.test.ts`
 
