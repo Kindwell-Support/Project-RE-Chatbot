@@ -198,6 +198,44 @@ describe(`service: retry policy and the honesty contract${sliceNote(...MODS)}`, 
       expect(text).not.toMatch(/at .*\(.*:\d+:\d+\)|ProviderHttpError|ProviderTimeoutError/);
     });
 
+    it('the unit_mismatch branch is REACHABLE, not just correct', async () => {
+      // `format.test.ts` proves the branch renders honestly. That is worth
+      // nothing if no provider outcome ever sets `detail.resolution`, which is
+      // the difference between a verified branch and dead code with a passing
+      // test. Driven through the seam: a provider reporting a resolution
+      // mismatch must produce the unit copy, not the spelling copy.
+      const spy = makeProviderSpy({
+        subject: { miss: 'RESOLUTION_MISMATCH', guard: 'hasBadGeocode' } as never,
+      });
+      const openai = makeFakeOpenAI([runComps(), { content: 'ok' }]);
+      const supabase = makeCompsSupabase({});
+      const app = buildApp(config, {
+        openai: openai.client, supabase: supabase.client, propertyProvider: spy.provider,
+      } as never);
+      await app.inject({
+        method: 'POST', url: '/chat',
+        headers: { origin: ALLOWED, 'content-type': 'application/json' },
+        payload: { message: 'run comps on 4425 N 24th St #429, Phoenix AZ', session_id: 'unit-mm' },
+      });
+      await app.close();
+
+      const shown = openai.calls
+        .flatMap((c) => ((c.messages as Array<Record<string, unknown>>) ?? []))
+        .filter((m) => m.role === 'tool' && m.tool_call_id === 'rc1')
+        .map((m) => String(m.content))
+        .join('\n');
+
+      expect(shown.length, 'the run_comps result never reached the model').toBeGreaterThan(0);
+      expect(
+        shown.toLowerCase(),
+        'a resolution mismatch rendered the generic not-found copy — the unit ' +
+          'branch is unreachable and blames the member for Zillow\'s index',
+      ).toMatch(/unit/);
+      expect(shown.toLowerCase()).not.toMatch(/spelling/);
+      expect(shown, 'the mismatch branch leaked a figure').not.toMatch(DOLLAR_FIGURE);
+      expect(offersManualArv(shown), 'no manual-ARV offer on the mismatch branch').toBe(true);
+    });
+
     it('each code produces DISTINCT copy — not one generic apology', async () => {
       // Six codes rendering the same sentence would technically satisfy every
       // assertion above while telling the member nothing about what to do next.

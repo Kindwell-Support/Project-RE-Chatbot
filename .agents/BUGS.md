@@ -9,10 +9,18 @@ carried into the GREEN message with its severity).
 
 ---
 
-## BUG-008 — the widget pre-fills without a label, contradicting its own stated invariant
+## BUG-008 — the widget pre-filled without a label — CLOSED
 
-- **Status**: OPEN
-- **Severity**: minor (not reachable through today's server; defence-in-depth)
+- **Status**: CLOSED (repro re-run and confirmed)
+- **Severity**: minor
+- **Fix**: `a90b811` — the condition now also requires `field.prefill.label`,
+  the exact clause the report proposed. A labelless prefill is DECLINED
+  outright: no value in the box, nothing rendered, nothing to submit. Value and
+  provenance render together or not at all, so the guarantee is structural
+  rather than positional.
+
+Original report follows.
+
 - **Reported**: msg `0014-inspector-form-surface-verified.md`
 
 ```

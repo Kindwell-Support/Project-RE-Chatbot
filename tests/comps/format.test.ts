@@ -226,6 +226,146 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
   });
 
   // =========================================================================
+  // EVERY COPY BRANCH — CONTRACT_CHANGE 0019 + the TOO_FEW_COMPS pool branch.
+  //
+  // Six codes, but two of them BRANCH on `detail`, so the delivered surface is
+  // eight distinct member-facing strings. The failure matrix elsewhere covers
+  // the default branch of each; a branch nobody exercises is a branch nobody
+  // has read, and these are the sentences a member sees at the exact moment
+  // the feature has failed them.
+  //
+  // MASON reports both ADDRESS_NOT_FOUND branches clean. That is his account;
+  // this is the evidence.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('all eight failure copy branches', () => {
+    const BRANCHES: Array<[string, CompsFailureCode, Record<string, unknown> | undefined]> = [
+      ['ADDRESS_NOT_FOUND / not_found', 'ADDRESS_NOT_FOUND', { resolution: 'not_found' }],
+      ['ADDRESS_NOT_FOUND / unit_mismatch', 'ADDRESS_NOT_FOUND', { resolution: 'unit_mismatch' }],
+      ['ADDRESS_NOT_FOUND / no detail', 'ADDRESS_NOT_FOUND', undefined],
+      ['SUBJECT_SQFT_UNKNOWN', 'SUBJECT_SQFT_UNKNOWN', undefined],
+      ['TOO_FEW_COMPS / thin market', 'TOO_FEW_COMPS', { kept: 2, needed: 3, radiusTierMi: 2 }],
+      ['TOO_FEW_COMPS / no_type_match', 'TOO_FEW_COMPS', { pool: 'no_type_match' }],
+      ['TOO_FEW_COMPS / no detail', 'TOO_FEW_COMPS', undefined],
+      ['PROVIDER_TIMEOUT', 'PROVIDER_TIMEOUT', undefined],
+      ['PROVIDER_ERROR', 'PROVIDER_ERROR', undefined],
+      ['RATE_LIMITED', 'RATE_LIMITED', undefined],
+    ];
+
+    /**
+     * Any figure a member could read as a property value.
+     *
+     * Deliberately NOT "contains a digit": TOO_FEW_COMPS is required by §10 to
+     * state its counts ("2 usable sold comps within 2 mi ... at least 3"), and
+     * those are the honest part of the message. What must never appear is a
+     * VALUE — a dollar amount, a k/m-suffixed figure, or any bare number large
+     * enough to read as a price.
+     */
+    function valueShapedFigures(text: string): string[] {
+      const hits: string[] = [];
+      for (const m of text.matchAll(/\$\s?[\d,]*\d(?:\.\d+)?/g)) hits.push(m[0]);
+      for (const m of text.matchAll(/\b\d[\d,]*(?:\.\d+)?\s*[km]\b/gi)) hits.push(m[0]);
+      for (const m of text.matchAll(/\b\d[\d,]*\b/g)) {
+        if (Number(m[0].replace(/,/g, '')) >= 1000) hits.push(m[0]);
+      }
+      return hits;
+    }
+
+    it('the value-figure detector actually detects — it is not a rubber stamp', () => {
+      // A guard that never fires proves nothing about the copy it guards.
+      for (const bad of ['$403,000', 'about 450k', '1.2m', 'roughly 403000', '$0']) {
+        expect(valueShapedFigures(bad).length, `missed a figure in "${bad}"`).toBeGreaterThan(0);
+      }
+      // ...and does not fire on the counts §10 requires.
+      for (const ok of ['2 usable sold comps within 2 mi', 'at least 3', '12 months']) {
+        expect(valueShapedFigures(ok), `false positive on "${ok}"`).toEqual([]);
+      }
+    });
+
+    it.each(BRANCHES)('%s: carries no value-shaped figure', (_label, code, detail) => {
+      const text = renderCompsForChat(
+        failure(code, detail as Record<string, number> | undefined) as never,
+      );
+      expect(text.trim().length, 'rendered empty').toBeGreaterThan(0);
+      expect(
+        valueShapedFigures(text),
+        `a member could read a property value out of this failure copy:\n${text}`,
+      ).toEqual([]);
+      expect(text).not.toMatch(/NaN|Infinity|undefined|\bnull\b/);
+    });
+
+    it.each(BRANCHES)('%s: offers manual ARV entry', (_label, code, detail) => {
+      const text = renderCompsForChat(
+        failure(code, detail as Record<string, number> | undefined) as never,
+      );
+      const t = text.toLowerCase();
+      const mentionsArv = t.includes('arv') || t.includes('after-repair') || t.includes('after repair');
+      const invites = ['tell me', 'give me', 'your own', 'you have', 'already have',
+        'manual', 'supply', 'enter', 'provide', 'with yours', 'with it'].some((p) => t.includes(p));
+      expect(mentionsArv, `no ARV offer in:\n${text}`).toBe(true);
+      expect(invites, `no invitation to supply one in:\n${text}`).toBe(true);
+    });
+
+    it('the two ADDRESS_NOT_FOUND branches say genuinely different things', () => {
+      // The point of the operator's ruling: a wrong-property match means the
+      // address may be perfectly real, so "check the spelling" blames the
+      // member for Zillow's index.
+      const notFound = renderCompsForChat(
+        failure('ADDRESS_NOT_FOUND', { resolution: 'not_found' } as never) as never,
+      );
+      const mismatch = renderCompsForChat(
+        failure('ADDRESS_NOT_FOUND', { resolution: 'unit_mismatch' } as never) as never,
+      );
+      expect(mismatch).not.toBe(notFound);
+      expect(notFound.toLowerCase(), 'the not-found branch should ask about spelling')
+        .toMatch(/spelling|city and state/);
+      expect(mismatch.toLowerCase(), 'the mismatch branch should name the unit problem')
+        .toMatch(/unit/);
+      expect(
+        mismatch.toLowerCase(),
+        'the mismatch branch blames the member for spelling when the address may be fine',
+      ).not.toMatch(/spelling/);
+    });
+
+    it('an unknown detail value falls back to the default branch, not to nothing', () => {
+      // Defensive: a future `resolution` value must not render an empty block.
+      const odd = renderCompsForChat(
+        failure('ADDRESS_NOT_FOUND', { resolution: 'something_new' } as never) as never,
+      );
+      const base = renderCompsForChat(
+        failure('ADDRESS_NOT_FOUND', { resolution: 'not_found' } as never) as never,
+      );
+      expect(odd).toBe(base);
+    });
+
+    it('no two branches collapse into the same copy, except the one pair that should', () => {
+      const rendered = new Map(
+        BRANCHES.map(([label, code, detail]) => [
+          label,
+          renderCompsForChat(failure(code, detail as Record<string, number> | undefined) as never).trim(),
+        ]),
+      );
+
+      // The ONE legitimate coincidence: `not_found` IS the default branch, so
+      // passing it explicitly and passing no detail must render identically.
+      expect(rendered.get('ADDRESS_NOT_FOUND / not_found'))
+        .toBe(rendered.get('ADDRESS_NOT_FOUND / no detail'));
+
+      // TOO_FEW_COMPS with and without detail must NOT coincide — the counts
+      // are the honest part of that message, and a version that drops them
+      // tells the member nothing about how hard we looked.
+      expect(
+        rendered.get('TOO_FEW_COMPS / thin market'),
+        'the counted and uncounted TOO_FEW_COMPS copy are identical — the ' +
+          'detail fields are being ignored',
+      ).not.toBe(rendered.get('TOO_FEW_COMPS / no detail'));
+
+      // Everything else distinct: 10 branches, exactly 1 intended duplicate.
+      expect(new Set(rendered.values()).size, 'two branches share copy unexpectedly')
+        .toBe(BRANCHES.length - 1);
+    });
+  });
+
+  // =========================================================================
   // FAILURE PATH — what format.ts actually owns.
   //
   // Established by probe: `renderCompsForChat` RELAYS `outcome.message` for
