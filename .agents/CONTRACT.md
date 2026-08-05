@@ -448,6 +448,41 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
 - State read/write failures degrade to no-prefill + warn log, never a blocked
   reply.
 
+### 8.1 The calculator FORM surface (scope amendment, operator-directed)
+
+The inline form is a second entry point into the same calculators and carries
+the SAME guarantees as the chat surface — a guard existing on one path and not
+the other is worse than no guard, because the tests look green.
+
+- **Server-side state read only.** The form descriptor is enriched inside
+  `executeTool('request_calculator_form')` via the existing Fastify path; the
+  widget never talks to Supabase and no new widget→Supabase path exists.
+- **Editable default shape**: the ARV field (flip/brrrr only; land never) may
+  carry `prefill: { value, subjectAddress, arvSource, confidence, label }` —
+  attached by the pure `applyFormArvPrefill(form, block, userMessage)`
+  (src/features/comps/formPrefill.ts) on a CLONE; the static
+  `CALCULATOR_FORMS` never carry session data.
+- **Label copy**: `Pre-filled from your comps on <subjectAddress> — edit to
+  override.` (manual-source variant names the manual entry). Label and value
+  live in ONE object — **no label means no pre-fill, by construction**.
+- **Mismatch ⇒ blank**: if the member's current message names a different
+  property (same `findConflictingAddress` discriminator as chat), the form
+  renders WITHOUT a default — never a silent carry.
+- **No block ⇒ no default, ever.** State read failure ⇒ plain form.
+- **Widget obligations**: render `prefill.value` into the control, render
+  `prefill.label` visibly beside it, do NOT mark it as an omittable sheet
+  default — an untouched pre-filled ARV SUBMITS its value (it is a required
+  field), so the submission carries an explicit ARV.
+- **Submitted path**: form submissions seed through the SAME `executeTool`
+  switch, so a submitted ARV passes through `applyArvPrefill`'s explicit-ARV
+  rule like any model call — equal to the block ⇒ relay echo; edited ⇒
+  override echo (the form's transcript line states the number, satisfying
+  `messageStatesNumber`). No second calculation path, no guard bypass.
+- **The model cannot populate the form.** `request_calculator_form` accepts
+  `{ calculator }` with `additionalProperties: false`; the prefill value comes
+  from `session_state` server-side. The model-facing payload carries
+  `arv_prefilled_from` (the ADDRESS only, never the value).
+
 ## 9. LLM tools
 
 ```jsonc

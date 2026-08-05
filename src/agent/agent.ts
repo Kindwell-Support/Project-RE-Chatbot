@@ -22,6 +22,7 @@ import {
   type CompsToolContext,
 } from '../features/comps/tools.js';
 import { normalizeAddress } from '../features/comps/normalize.js';
+import { applyFormArvPrefill } from '../features/comps/formPrefill.js';
 
 const MAX_TOOL_ROUNDS = 6;
 
@@ -540,11 +541,26 @@ async function executeTool(
           error: `Unknown calculator "${String(calculator)}". Valid: flip, brrrr, land_purchase.`,
         };
       }
-      const form = CALCULATOR_FORMS[calculator as CalculatorKey];
+      // CONTRACT §8.1: the ARV field picks up the session's comps block as an
+      // editable, LABELLED default — server-side state read only; the model's
+      // args carry nothing but the calculator key (additionalProperties:
+      // false), so no model output can place a value into a form field. The
+      // same §8 guards apply: no block -> no default; a message naming a
+      // different property -> blank. State read failure degrades to the
+      // plain form. applyFormArvPrefill clones — CALCULATOR_FORMS stay pristine.
+      let form = CALCULATOR_FORMS[calculator as CalculatorKey];
+      if (ctx.comps?.stateStore) {
+        const block = await ctx.comps.stateStore.getCompsBlock(ctx.comps.sessionId);
+        form = applyFormArvPrefill(form, block, ctx.userMessage);
+      }
       ctx.formRequest.form = form;
       // The model gets the labels (so it can write a natural one-liner) but not
       // the defaults — it must not recite them as if they were the member's.
+      const arvPrefill = [...form.required, ...form.optional].find((f) => f.prefill)?.prefill;
       return {
+        // Address only, never the value: the binding is worth mentioning in
+        // the one-liner; the number must come from the form, not the model.
+        ...(arvPrefill ? { arv_prefilled_from: arvPrefill.subjectAddress } : {}),
         form_rendered: true,
         // Named form_calculator, NOT `calculator`: that key is the calculator
         // RESULT discriminator (runFlipTool et al.), and a form directive
