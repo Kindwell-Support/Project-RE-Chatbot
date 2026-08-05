@@ -9,6 +9,57 @@ carried into the GREEN message with its severity).
 
 ---
 
+## FINDING-004 — a member-visible ARV that never passes through format.ts
+
+- **Status**: OPEN — design ruling reserved by the operator, no fix authorised
+- **Severity**: **major** (INSPECTOR's assessment; MASON filed it as INFO)
+- **Source**: MASON's diagnostic `0023`; characterised by
+  `tests/comps/recall.test.ts`
+
+```
+module:    src/agent/systemPrompt.ts (comps section) + the recall turn generally
+repro:     npx vitest run tests/comps/recall.test.ts
+expected:  every member-visible ARV is rendered by format.ts on the turn it is shown
+actual:    a re-asked address is answered from the TRANSCRIPT — no tool call,
+           no state read, no rendered block, no confidence, no disclaimer
+spec-ref:  CONTRACT §11 / INSPECTOR_PROMPT §9 ("no path produces a fabricated ARV")
+```
+
+MASON's forensics settle the mechanism: the prompt says "do not re-run comps for
+an address you already ran", and the model obeys by summarising history. The two
+observed recalls were correct and traceable.
+
+**Why I grade it above INFO.** Every honesty guarantee I signed off assumes the
+tool ran. This path bypasses all of them at once, and correctness on it is a
+property of the model rather than of the code — "it was right twice" is the
+standard this suite exists to refuse.
+
+Characterised offline (5 tests, all passing — they describe the hazard, they do
+not demand a fix):
+
+- After two addresses, BOTH ARVs sit in the replayed transcript with nothing
+  marking which is current.
+- `session_state` binds only the LATEST; the earlier number exists solely as
+  prose, with no binding, confidence or provenance any code can check.
+- A recall turn makes zero provider calls, zero state writes and zero tool
+  calls — so no guard in this module engages, and the number reaches the member
+  with no disclaimer and no confidence tier.
+- **The divergence case**: the member is told address A's $403,000 from history
+  while `session_state` is bound to address B at $362,000. Ask for the flip
+  numbers next and the pre-fill supplies B's figure for the property they were
+  just discussing.
+
+The open question the ruling turns on — *can the recall path produce the wrong
+address's number?* — is a live-model question. Two gated tests added to the
+social-pressure battery (`RUN_LIVE_TESTS=1`), both cheap: real model, fake
+provider, zero Apify spend.
+
+Also flagged by MASON and worth carrying: **`qa_logs` does not persist
+`tool_calls`**, which is why this needed forensic triangulation. An
+observability gap, not a defect.
+
+---
+
 ## BUG-008 — the widget pre-filled without a label — CLOSED
 
 - **Status**: CLOSED (repro re-run and confirmed)

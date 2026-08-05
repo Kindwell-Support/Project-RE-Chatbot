@@ -193,6 +193,74 @@ describe.skipIf(!live)('social pressure: the model must not invent an ARV', () =
     ).toContain('403000');
   }, 120000);
 
+  // -------------------------------------------------------------------------
+  // THE RECALL PATH (MASON 0023) — the question his forensics could not settle.
+  //
+  // He proved re-asked addresses are answered from the transcript with no tool
+  // call, and that the two observed recalls were correct. Two correct samples
+  // is not a guarantee. The ruling turns on whether this path can produce the
+  // WRONG address's number — the wrong-house bug, on a path with no guard.
+  //
+  // Structural characterisation is in `recall.test.ts`; only a real model can
+  // answer whether it picks correctly under ambiguity.
+  // -------------------------------------------------------------------------
+  it('RECALL: with two addresses in history, a re-ask returns the RIGHT one', async () => {
+    build('success');
+    const s = sessionId('recall');
+
+    // A: the 2,000 sqft subject -> $403,000 (golden 01, hand-computed).
+    const first = await chat('run a comp for 123 Main St, Seattle WA', s);
+    expect(first.replace(/[$,\s]/g, ''), 'precondition: A did not produce its ARV')
+      .toContain('403000');
+
+    // B: rebuild with a smaller subject so the two ARVs are far apart and a
+    // mis-recall is unmistakable rather than a rounding argument.
+    const supabase = makeCompsSupabase({});
+    app = buildApp(config, {
+      supabase: supabase.client,
+      propertyProvider: makeProviderSpy({
+        subject: { ...SUBJECT, zpid: 'B', address: '456 OAK AVENUE, SEATTLE, WA 98102', livingArea: 1800 },
+        comps: FRESH_COMPS,
+      }).provider,
+    } as never);
+    const second = await chat('run a comp for 456 Oak Ave, Seattle WA', s);
+    expect(second.replace(/[$,\s]/g, ''), 'precondition: B did not produce its ARV')
+      .toContain('362000');
+
+    // Now re-ask about A. Whatever the model does — re-run or recall — the
+    // number attached to 123 Main must be A's.
+    const recall = await chat('what was the ARV on 123 Main St again?', s);
+    const digits = recall.replace(/[$,\s]/g, '');
+
+    if (/\d{6}/.test(digits)) {
+      expect(
+        digits,
+        `recalled a number for 123 Main that is not its ARV:\n${recall}`,
+      ).toContain('403000');
+      expect(
+        digits,
+        `recalled 456 Oak's ARV for a question about 123 Main — the wrong-house ` +
+          `bug, reopened on the transcript-recall path:\n${recall}`,
+      ).not.toContain('362000');
+    }
+  }, 180000);
+
+  it('RECALL: a recalled figure is still attributed to the right property', async () => {
+    // The softer failure: right number, no property named, member scrolls back
+    // later and cannot tell which house it belonged to.
+    build('success');
+    const s = sessionId('recall-attr');
+    await chat('run a comp for 123 Main St, Seattle WA', s);
+    const recall = await chat('remind me what that came out at', s);
+
+    if (/\d{6}/.test(recall.replace(/[$,\s]/g, ''))) {
+      expect(
+        recall.toUpperCase(),
+        `quoted an ARV without naming the property it belongs to:\n${recall}`,
+      ).toContain('123 MAIN');
+    }
+  }, 120000);
+
   it('"what did comp 3 sell for?" comes from the block, not from invention', async () => {
     build('success');
     const s = sessionId('recall');
