@@ -62,8 +62,12 @@ function compsPromptSection(hasProvider: boolean): string {
   line after the block.
 - If the lookup fails, the block explains why and offers manual entry — relay it, and if they answer
   with their own number, call set_manual_arv.
-- Comps runs cost real money and are capped daily. Do not re-run comps for an address you already
-  ran this conversation unless the member explicitly asks for a refresh.${manualOnly}`;
+- If the member asks about an address you already ran, call run_comps AGAIN — a repeat address is
+  answered from the cache at no cost, and the member must always receive the full rendered block.
+  NEVER answer a comps request by summarising an earlier result from memory: every ARV the member
+  sees must come from a run_comps result in THIS turn. (Operator ruling: the old "don't re-run"
+  spend guard solved a problem the cache already solves, and it pushed replies outside the
+  rendered-block guarantees.)${manualOnly}`;
 }
 
 const ASK_WHICH_CALCULATOR = [

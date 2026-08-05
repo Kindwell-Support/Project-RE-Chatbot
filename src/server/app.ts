@@ -320,6 +320,7 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
         retrievedChunkIds: result.retrievedChunkIds,
         similarityScores: result.similarityScores,
         tokenUsage: result.usage,
+        toolCalls: result.toolCalls,
       },
       request.log,
     ).catch((err) => {

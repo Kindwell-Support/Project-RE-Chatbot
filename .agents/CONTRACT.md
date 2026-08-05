@@ -510,6 +510,23 @@ Registration gate (change log #11): `run_comps` appears in `TOOL_DEFINITIONS`
 even attempt a comps run, and the prompt must not advertise it.
 `set_manual_arv` is always registered.
 
+**Repeat requests (operator ruling, 2026-08-06):** a comps request for an
+address already run this conversation is RE-RUN through `run_comps` — a
+repeat is a cache hit and costs nothing, and the member gets the full
+rendered block again, inside every guarantee. The prompt forbids answering a
+comps request by summarising an earlier result from memory: every ARV the
+member sees must come from a `run_comps` result in that turn. (The previous
+"don't re-run" spend guard solved a problem the cache already solves, and
+pushed replies onto a transcript-recall path outside `format.ts` — see
+mailbox 0023 for the evidence.) No recall-with-constraints path exists or is
+planned.
+
+**Observability (operator-approved, same ruling):** `qa_logs.tool_calls`
+(jsonb, `[{ name, args, ok }]` in call order — migration
+`sql/add_qa_logs_tool_calls.sql`, applied live). The response always carried
+the trace; the log now keeps it, so "did this turn invoke a tool?" is one
+query, not forensics.
+
 Rate cap: the **daily** cap only (per-session cap cut). Checked before provider
 work; cache hits bypass it entirely; breach ⇒ `RATE_LIMITED`.
 
