@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { loadConfig, assertRuntimeConfig } from '../config.js';
 import { buildApp } from './app.js';
-import { ensureChatMessagesTable } from './migrate.js';
+import { ensureChatMessagesTable, ensureCompsTables } from './migrate.js';
 
 const config = loadConfig();
 assertRuntimeConfig(config);
@@ -11,6 +11,7 @@ const supabase = createClient(config.supabaseUrl, config.supabaseServiceKey, {
 });
 
 await ensureChatMessagesTable(supabase);
+await ensureCompsTables(supabase);
 
 const app = buildApp(config, { supabase });
 
