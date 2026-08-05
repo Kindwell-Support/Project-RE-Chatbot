@@ -26,6 +26,11 @@
  * ---------------------------------------------------------------------------
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  ProviderTimeoutError,
+  ProviderHttpError,
+  ProviderNetworkError,
+} from '../../src/features/comps/providers/types.js';
 
 // ===========================================================================
 // Provider spy — CONTRACT §6
@@ -70,30 +75,33 @@ export interface ProviderSpy {
   reset(): void;
 }
 
+/**
+ * Throws the REAL error classes from `providers/types.ts`, not look-alikes.
+ *
+ * The first version of this fabricated errors by setting `.name` on a plain
+ * `Error`. Every retry test then failed — and the failure looked exactly like
+ * "retry is not implemented". It wasn't: the service maps errors by
+ * `instanceof`, so a hand-rolled look-alike is simply an unknown error and
+ * falls through the transient check.
+ *
+ * Same lesson as narrowing the Supabase double, from the other direction: a
+ * fake that diverges from the real contract doesn't just miss bugs, it invents
+ * them. Importing the real classes is what makes the retry assertions mean
+ * anything.
+ */
 function providerError(f: ProviderFailure): Error {
-  // Named to match CONTRACT §6's error taxonomy. The real provider throws its
-  // own classes; the service maps on name/status, so these stand in.
   switch (f.kind) {
-    case 'timeout': {
-      const e = new Error('provider timed out');
-      e.name = 'ProviderTimeoutError';
-      return e;
-    }
-    case 'http': {
-      const e = new Error(`provider returned HTTP ${f.status}`) as Error & { status: number };
-      e.name = 'ProviderHttpError';
-      e.status = f.status;
-      return e;
-    }
-    case 'network': {
-      const e = new Error('socket hang up');
-      e.name = 'ProviderNetworkError';
-      return e;
-    }
-    case 'malformed': {
-      const e = new SyntaxError('Unexpected token < in JSON at position 0');
-      return e;
-    }
+    case 'timeout':
+      return new ProviderTimeoutError('spy', 90_000);
+    case 'http':
+      return new ProviderHttpError('spy', f.status);
+    case 'network':
+      return new ProviderNetworkError('spy', new Error('socket hang up'));
+    case 'malformed':
+      // NOT a provider error class on purpose: a malformed JSON body surfaces
+      // as a SyntaxError from the parse, and the service has to cope with an
+      // error type it did not define.
+      return new SyntaxError('Unexpected token < in JSON at position 0');
   }
 }
 

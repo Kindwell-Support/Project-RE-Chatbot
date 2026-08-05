@@ -9,78 +9,33 @@ carried into the GREEN message with its severity).
 
 ---
 
-## BUG-006 — mapped `soldDate` is a timestamp, so today's comps are rejected as future-dated
+## BUG-006 — mapped `soldDate` was a timestamp, not a date — CLOSED
 
-- **Status**: OPEN
+- **Status**: CLOSED (repro re-run and confirmed)
 - **Severity**: major
-- **Reported**: msg `0011-inspector-bug006-timestamp-vs-date.md`
+- **Fix**: adapter emits the calendar date; `soldDate` is `YYYY-MM-DD` again.
 
-```
-module:    src/features/comps/providers/apifyZillow.ts (soldDate mapping)
-repro:     npx vitest run tests/comps/filter.test.ts -t "regardless of what hour"
-expected:  a comp sold today is kept at every hour of the UTC day
-actual:    FUTURE_SOLD_DATE for any `now` between 00:00Z and 07:00Z
-spec-ref:  CONTRACT §4 (`soldDate: string | null;  // ISO date`)
-```
+Was: `"2026-08-03T07:00:00.000Z"` (Phoenix local midnight in UTC). Rule 12
+rejects `soldDate` strictly after `now`, so between 00:00Z and 07:00Z a sale
+that closed TODAY was dropped as future-dated — seven hours of every UTC day,
+which is evening in the client's own market, eating the freshest comps, with a
+plausible-looking reason in the rejection table.
 
-The epoch-ms -> ISO mapping preserved the time component:
-`"2026-08-03T07:00:00.000Z"` is Phoenix local midnight in UTC (Arizona = UTC-7,
-no DST). §4 says ISO *date*; `monthsBetween`, the 12-month wall, rule 12 and the
-whole golden set assume date-only.
+Verified: the comp is kept at 02:00Z, 06:59Z, 07:01Z and 18:00Z; the same
+address returns the same comps at every hour; all four mapped fixtures now pass
+§4 conformance.
 
-Measured with a comp identical to the subject in every filterable way, so only
-rule 12 can fire:
-
-```
-now = 2026-08-05T02:00:00.000Z  ->  FUTURE_SOLD_DATE
-now = 2026-08-05T06:59:00.000Z  ->  FUTURE_SOLD_DATE
-now = 2026-08-05T07:01:00.000Z  ->  KEPT
-```
-
-Seven hours of every UTC day — 5pm-midnight Phoenix, prime usage hours in the
-client's own market. It eats the FRESHEST comps, it is nondeterministic across
-runs, and results cache for 14 days so the first computed set is frozen in. The
-symptom is invisible: `FUTURE_SOLD_DATE` reads plausible in the rejection table.
-
-Fix: `new Date(epochMs).toISOString().slice(0, 10)`. Pinned by a third test that
-already passes with the date-only form.
-
-Found by the conformance harness on the first real mapped fixtures.
+Found by the conformance harness on the first real mapped payload — which is
+exactly the reconcile-before-you-trust-anything step paying for itself.
 
 ---
 
-## BUG-005 — `renderCompsForChat` returns `undefined` for a failure with no message
+## BUG-005 — `renderCompsForChat` returned `undefined` for a message-less failure — CLOSED
 
-- **Status**: OPEN
+- **Status**: CLOSED (repro re-run and confirmed)
 - **Severity**: minor
-- **Reported**: msg `0011`
-
-```
-module:    src/features/comps/format.ts
-repro:     npx vitest run tests/comps/format.test.ts -t "BUG-005"
-expected:  returns a string, per §4's declared signature
-actual:    `undefined` when `message` is absent; `''` when empty
-spec-ref:  CONTRACT §4 / §11
-```
-
-Reaches the chat layer as the literal word "undefined" or throws on `.length`.
-TypeScript can't catch it — `CompsFailure.message` is declared required, so the
-guarantee is only as strong as every service call site remembering to set it.
-
----
-
-## FINDING-002 — §11 attributes the §10 failure copy to the wrong module
-
-- **Status**: OPEN (documentation)
-- **Severity**: minor
-
-§11 says "Failures render their §10 copy" under the `format.ts` heading, but the
-renderer never reads `code` or `detail` — it relays `outcome.message`, which
-`service.ts` composes. The architecture is fine; the contract points at the wrong
-module, which is where a future reader will look for the manual-entry guarantee.
-
-§10 property assertions accordingly live in `service.test.ts`; `format.test.ts`
-tests only the passthrough contract.
+- **Fix**: falls back to copy keyed off `code`, so the declared `: string`
+  signature holds regardless of what the service passes.
 
 ---
 

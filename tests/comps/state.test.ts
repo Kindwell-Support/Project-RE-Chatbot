@@ -118,6 +118,19 @@ const runFlip = (args: Record<string, unknown> = {}): FakeCompletion => ({
 });
 const say = (content: string): FakeCompletion => ({ content });
 
+/**
+ * golden01's comps are dated against its injected `now` (2025-07-15), but the
+ * live service runs on the real clock — replayed verbatim they are all
+ * STALE_SALE, every run ends TOO_FEW_COMPS, and every state assertion below
+ * would fail for a reason that has nothing to do with state. Re-dated relative
+ * to today; $/sqft, sqft and coordinates untouched, so golden 01's
+ * hand-computed $403,000 still holds.
+ */
+const FRESH_COMPS = golden01.comps.map((c, i) => ({
+  ...c,
+  soldDate: new Date(Date.now() - (30 + i * 10) * 86_400_000).toISOString().slice(0, 10),
+}));
+
 const SUBJECT_A = { ...golden01.subject, address: '123 MAIN STREET, SEATTLE, WA 98101' };
 const SUBJECT_B = {
   ...golden01.subject,
@@ -134,7 +147,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // the calculator, which type-rejects non-numbers (tests/agent.test.ts).
       const { app, supabase } = buildCompsApp({
         script: [runComps('123 Main St, Seattle WA'), say('Here are the comps.')],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
       return chat(app, 'run comps on 123 Main St, Seattle WA', 's1').then(() => {
         const state = supabase.compsBlockFor('s1');
@@ -165,7 +178,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           runComps('123 Main St, Seattle WA'), say('Comps for 123 Main.'),
           runComps('456 Oak Ave, Seattle WA'), say('That one did not work.'),
         ],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
 
       await chat(app, 'run comps on 123 Main St, Seattle WA', 's-clear');
@@ -218,7 +231,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
 
       let stateAtProviderCall: Record<string, unknown> | undefined;
       let providerWasCalled = false;
-      const spy = makeProviderSpy({ subject: SUBJECT_B, comps: golden01.comps });
+      const spy = makeProviderSpy({ subject: SUBJECT_B, comps: FRESH_COMPS });
       const watching = {
         name: 'watching',
         async lookupSubject(addr: string) {
@@ -250,8 +263,8 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       ['network', { failSubject: { kind: 'network' as const } }],
       ['malformed JSON', { failSubject: { kind: 'malformed' as const } }],
       ['address not found', { subject: null }],
-      ['no subject sqft', { subject: { ...SUBJECT_B, livingArea: null }, comps: golden01.comps }],
-      ['too few comps', { subject: SUBJECT_B, comps: golden01.comps.slice(0, 2) }],
+      ['no subject sqft', { subject: { ...SUBJECT_B, livingArea: null }, comps: FRESH_COMPS }],
+      ['too few comps', { subject: SUBJECT_B, comps: FRESH_COMPS.slice(0, 2) }],
     ])('every failure mode clears: %s', async (_label, provider) => {
       const supabase = makeCompsSupabase({
         sessionState: {
@@ -286,7 +299,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     it('no observable write has `arv` without `subjectAddress`, or the reverse', async () => {
       const { app, supabase } = buildCompsApp({
         script: [runComps('123 Main St'), say('done')],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
       await chat(app, 'run comps on 123 Main St', 's-atomic');
 
@@ -309,7 +322,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     it('the ARV band is never partially written', async () => {
       const { app, supabase } = buildCompsApp({
         script: [runComps('123 Main St'), say('done')],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
       await chat(app, 'run comps on 123 Main St', 's-band');
 
@@ -342,7 +355,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // reply MUST echo the injection visibly" — that has to be structural.
       const { app, openai } = buildCompsApp({
         script: [runComps('123 Main St'), say('Comps done.'), runFlip(), say('Net profit is $88,000.')],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
         supabase: {},
       });
       await chat(app, 'run comps on 123 Main St', 's-echo');
@@ -373,7 +386,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           runComps('123 Main St'), say('Comps done.'),
           runFlip({ after_repair_value: 500000 }), say('Net profit is $140,000.'),
         ],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
       await chat(app, 'run comps on 123 Main St', 's-explicit');
 
@@ -409,7 +422,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       const app1 = buildApp(config, {
         openai: makeFakeOpenAI([runComps('123 Main St'), say('A done')]).client,
         supabase: supabase.client,
-        propertyProvider: makeProviderSpy({ subject: SUBJECT_A, comps: golden01.comps }).provider,
+        propertyProvider: makeProviderSpy({ subject: SUBJECT_A, comps: FRESH_COMPS }).provider,
       } as never);
       await chat(app1, 'run comps on 123 Main St', 's-ab');
       expect(supabase.compsBlockFor('s-ab')!.arv).toBe(403000);
@@ -422,7 +435,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       const app2 = buildApp(config, {
         openai: openai2.client,
         supabase: supabase.client,
-        propertyProvider: makeProviderSpy({ subject: SUBJECT_B, comps: golden01.comps }).provider,
+        propertyProvider: makeProviderSpy({ subject: SUBJECT_B, comps: FRESH_COMPS }).provider,
       } as never);
       await chat(app2, 'run comps on 456 Oak Ave', 's-ab');
       const reply = await chat(app2, 'run the flip numbers', 's-ab');
@@ -444,6 +457,74 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
   });
 
   // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('BRRRR pre-fills identically to Flip', () => {
+    it('brrrr_calculator receives the comps ARV and echoes the bound address', async () => {
+      // §8 names both calculators. Flip is covered above; BRRRR has to behave
+      // the same or the guarantee is half a guarantee — and BRRRR is the tool a
+      // long-term-hold member reaches for, so a stale ARV there is just as
+      // expensive.
+      const { app, openai, supabase } = buildCompsApp({
+        script: [
+          runComps('123 Main St'), say('Comps done.'),
+          {
+            toolCalls: [{
+              id: 'brrrr-1', name: 'brrrr_calculator',
+              args: { purchase_price: 250000, rehab_budget: 60000, monthly_rent: 3000 },
+            }],
+          },
+          say('Here is the BRRRR.'),
+        ],
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+      });
+      await chat(app, 'run comps on 123 Main St', 's-brrrr');
+      expect(supabase.compsBlockFor('s-brrrr')?.arv, 'no comps ARV to pre-fill from').toBe(403000);
+
+      const reply = await chat(app, 'now run the BRRRR numbers', 's-brrrr');
+
+      const brrrr = toolResults(openai.calls).find(
+        (r) => (r as { calculator?: string }).calculator === 'brrrr',
+      ) as { inputs_used?: Record<string, unknown> } | undefined;
+      expect(brrrr, 'brrrr_calculator never ran').toBeDefined();
+      expect(brrrr!.inputs_used!.after_repair_value, 'the comps ARV did not reach BRRRR')
+        .toBe(403000);
+
+      const digits = reply.output.replace(/[$,\s]/g, '');
+      expect(digits, 'the pre-filled ARV is not visible in the BRRRR reply').toContain('403000');
+      expect(reply.output.toUpperCase(), 'the BRRRR echo does not name the bound address')
+        .toContain('123 MAIN');
+    });
+
+    it('an explicit ARV beats the pre-fill for BRRRR too', async () => {
+      const { app, openai, supabase } = buildCompsApp({
+        script: [
+          runComps('123 Main St'), say('Comps done.'),
+          {
+            toolCalls: [{
+              id: 'brrrr-2', name: 'brrrr_calculator',
+              args: {
+                purchase_price: 250000, rehab_budget: 60000, monthly_rent: 3000,
+                after_repair_value: 520000,
+              },
+            }],
+          },
+          say('Here is the BRRRR.'),
+        ],
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+      });
+      await chat(app, 'run comps on 123 Main St', 's-brrrr-x');
+      expect(supabase.compsBlockFor('s-brrrr-x')?.arv).toBe(403000);
+      await chat(app, 'run the BRRRR with a 520k ARV', 's-brrrr-x');
+
+      const brrrr = toolResults(openai.calls).find(
+        (r) => (r as { calculator?: string }).calculator === 'brrrr',
+      ) as { inputs_used?: Record<string, unknown> } | undefined;
+      expect(brrrr, 'brrrr_calculator never ran').toBeDefined();
+      expect(brrrr!.inputs_used!.after_repair_value, 'the pre-fill overrode an explicit ARV')
+        .toBe(520000);
+    });
+  });
+
+  // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('the stated address must match the bound one', () => {
     it('asks instead of pre-filling when the member names a different property', async () => {
       // "run comps on 123 Main" then "run the flip on 456 Oak" must NOT quietly
@@ -454,7 +535,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           runComps('123 Main St'), say('Comps done.'),
           say('Which ARV should I use for 456 Oak Ave?'),
         ],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
       await chat(app, 'run comps on 123 Main St', 's-mismatch');
       const reply = await chat(app, 'run the flip numbers on 456 Oak Ave', 's-mismatch');
@@ -481,7 +562,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       const appA = buildApp(config, {
         openai: makeFakeOpenAI([runComps('123 Main St'), say('A done')]).client,
         supabase: supabase.client,
-        propertyProvider: makeProviderSpy({ subject: SUBJECT_A, comps: golden01.comps }).provider,
+        propertyProvider: makeProviderSpy({ subject: SUBJECT_A, comps: FRESH_COMPS }).provider,
       } as never);
       await chat(appA, 'run comps on 123 Main St', 'session-alice');
 
@@ -518,7 +599,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
           say('Using your ARV of $450,000.'),
         ],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
       await chat(app, 'run comps on 123 Main St', 's-manual');
       await chat(app, 'actually use 450k as the ARV', 's-manual');
@@ -597,7 +678,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     it('a state WRITE failure still returns the comps', async () => {
       const { app, openai, spy } = buildCompsApp({
         script: [runComps('123 Main St'), say('Here are the comps.')],
-        provider: { subject: SUBJECT_A, comps: golden01.comps },
+        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
         supabase: { failStateWrites: true },
       });
       const reply = await chat(app, 'run comps on 123 Main St', 's-writefail');
