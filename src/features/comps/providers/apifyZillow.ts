@@ -90,6 +90,10 @@ function mapSoldDate(value: unknown): string | null {
  */
 export function mapSubjectItem(item: Record<string, unknown>, requestedAddress: string): SubjectProperty | null {
   if (item.isValid === false) return null;
+  // The provider's own miss signal (INSPECTOR 0009): the fuzzy wrong-property
+  // match carried hasBadGeocode: true, the genuine subject false. First-line
+  // check ALONGSIDE the street-prefix guard below, not instead of it.
+  if (item.hasBadGeocode === true) return null;
 
   const streetAddress = String(
     item.streetAddress ?? (item.address as Record<string, unknown> | undefined)?.streetAddress ?? '',

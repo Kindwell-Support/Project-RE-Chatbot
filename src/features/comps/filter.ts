@@ -78,6 +78,15 @@ export function applyHardFilters(
 
   for (const comp of comps) {
     // Contract order, first match wins.
+    // Rule 0 (BUG-004): the subject is inside its own search box and comes
+    // back as a flawless comp — distance 0, deltas 0, sold yesterday. Kept,
+    // it anchors the ARV to the member's own purchase price. Prepended (not
+    // appended) so the reject table names the real reason rather than
+    // whatever rule 1-12 happens to also match.
+    if (comp.zpid !== '' && subject.zpid !== '' && comp.zpid === subject.zpid) {
+      rejected.push({ comp, reason: 'SUBJECT_PROPERTY' });
+      continue;
+    }
     if (comp.status.toUpperCase() !== 'SOLD') {
       rejected.push({ comp, reason: 'NOT_SOLD' });
       continue;

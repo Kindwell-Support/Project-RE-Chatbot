@@ -217,6 +217,10 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
 `SUBJECT_SQFT_UNKNOWN`, offer manual ARV. No ARV math of any kind.
 
 ### 5.3 Hard filters — reject if ANY, tagged with the FIRST matching reason, in this order
+0. `SUBJECT_PROPERTY` — comp zpid = subject zpid, both non-empty (BUG-004: a
+   recently-sold subject is a perfect comp for itself and anchors the ARV to
+   the member's own purchase price; prepended so the reject table names the
+   real reason)
 1. `NOT_SOLD` — status ≠ SOLD (case-insensitive)
 2. `STALE_SALE` — `soldDate` null or > `MAX_COMP_AGE_MONTHS` months before `now` (months = days / `DAYS_PER_MONTH`)
 3. `SQFT_MISSING` — `livingArea` null or ≤ 0

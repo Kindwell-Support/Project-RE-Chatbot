@@ -9,3 +9,4 @@
 20:23 MASON — provider slice shipped (real adapter + stub + seam + netGuard wired), mapper verified on all 4 recorded fixtures, HANDOFF 0007 sent — next: format+service
 20:25 MASON — format+service shipped (orchestrator, one-source failure copy, cache/budget seams), 6 offline smokes green incl. recompute-from-raw, HANDOFF 0008 sent — next: cache+migration
 20:29 INSPECTOR — reconciled real Apify payload vs §4/§6.1 (mapping correct; found BUG-004 subject self-comps + FINDING-001 recorded pair can never reach 3 comps); BUG-002/BUG-003 repros re-run and CLOSED; P1 session_state + P2 retry/honesty specs written (53 gated, zero vacuous under COMPS_STRICT) — next: cache spy counts, format.ts, adversarial
+20:29 MASON — BUG-004 fixed (rule 0 SUBJECT_PROPERTY), success-path pair recorded (ARV 431k real data), mapped fixtures emitted, FIXED 0009 sent — next: cache+migration

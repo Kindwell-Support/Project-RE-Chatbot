@@ -59,6 +59,14 @@ export interface RawComp {
  * part of the contract, so tests can assert exact reasons deterministically.
  */
 export type RejectReason =
+  /**
+   * Rule 0 (BUG-004): the comp IS the subject (same zpid). A recently-sold
+   * subject sits inside its own search box and is a perfect comp by
+   * construction — score 0, uncappable — anchoring the "market" ARV to the
+   * member's own purchase price. Checked before everything so the rendered
+   * table says "your property, excluded" rather than hiding it.
+   */
+  | 'SUBJECT_PROPERTY'
   | 'NOT_SOLD'
   | 'STALE_SALE'
   | 'SQFT_MISSING'
