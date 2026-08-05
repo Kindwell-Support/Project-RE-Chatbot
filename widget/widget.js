@@ -210,6 +210,9 @@
     'border-radius:10px;padding:11px 16px;font-size:14px;font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-calc-cancel:hover{border-color:var(--jb-text-secondary);color:var(--jb-text-primary);}',
     '.jb-calc-error{color:var(--jb-danger);font-size:12.5px;margin-top:10px;}',
+    /* Session ARV pre-fill note — amber-tinted so it reads as the system
+       having done work for you, with the bound address always visible. */
+    '.jb-prefill-note{margin-top:5px;font-size:12px;line-height:1.45;color:var(--jb-accent);opacity:0.92;}',
     /* Disabled controls during a run: readable, obviously inert, not greyed to
        the point the member thinks the card broke. */
     '.jb-calc[data-busy="true"] .jb-control{opacity:0.55;cursor:default;}',
@@ -722,6 +725,21 @@
 
         wrap.appendChild(label);
         wrap.appendChild(control);
+
+        // Session pre-fill (CONTRACT §8.1) — the ARV bound to this session's
+        // comps run. DELIBERATELY NOT data-default: this is a required
+        // field's value, and an untouched pre-fill must SUBMIT so the server
+        // sees an explicit ARV (and runs its relay/override guards on it).
+        // The label is the guarantee, enforced structurally: a prefill with
+        // NO label is DECLINED outright — a bare number with no provenance
+        // reads as something the member typed, which is the §8 bug in
+        // miniature. Value and label render together or not at all.
+        if (field.prefill && field.prefill.value !== undefined && field.prefill.label) {
+          control.value = String(field.prefill.value);
+          var note = el('div', 'jb-prefill-note');
+          note.textContent = field.prefill.label; // textContent — never markup
+          wrap.appendChild(note);
+        }
         return wrap;
       }
 

@@ -14,6 +14,12 @@ import {
 } from '../agent/formSubmission.js';
 import { getHistory, appendExchange } from './memory.js';
 import { logExchange } from './logging.js';
+import type { PropertyDataProvider } from '../features/comps/providers/types.js';
+import { ApifyZillowProvider } from '../features/comps/providers/apifyZillow.js';
+import { createCompsCache } from '../features/comps/cache/compsCache.js';
+import { createDailyRunBudget, type CompsCacheLike, type RunBudgetLike } from '../features/comps/service.js';
+import { createSessionStateStore } from '../features/comps/sessionState.js';
+import type { SessionStateStore } from '../features/comps/tools.js';
 
 interface FormSubmissionBody {
   calculator?: string;
@@ -35,6 +41,13 @@ interface HistoryQuery {
 export interface AppDeps {
   openai?: OpenAI;
   supabase?: SupabaseClient;
+  /**
+   * Comps data provider (CONTRACT §6 seam, BLOCKED-0008). Tests inject a fake
+   * here exactly like the two clients above; production leaves it undefined
+   * and buildApp constructs the Apify provider lazily — never at module
+   * scope, so importing the app can never touch the network.
+   */
+  propertyProvider?: PropertyDataProvider;
 }
 
 /**
@@ -60,6 +73,23 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     (supabase ??= createClient(config.supabaseUrl, config.supabaseServiceKey, {
       auth: { persistSession: false },
     }));
+  // Same lazy pattern as the two clients above (CONTRACT §6): constructed on
+  // first use, never at module scope. Returns undefined without a token —
+  // the comps tools are gated out of TOOL_DEFINITIONS in that case, so
+  // nothing downstream ever calls a missing provider.
+  let propertyProvider = deps.propertyProvider;
+  const getPropertyProvider = (): PropertyDataProvider | undefined =>
+    (propertyProvider ??= config.apifyToken
+      ? new ApifyZillowProvider(config.apifyToken)
+      : undefined);
+  let compsCache: CompsCacheLike | undefined;
+  const getCompsCache = () => (compsCache ??= createCompsCache(getSupabase()));
+  let sessionStateStore: SessionStateStore | undefined;
+  const getSessionStateStore = () => (sessionStateStore ??= createSessionStateStore(getSupabase()));
+  // One budget per app instance: the daily Apify spend cap. In-memory (resets
+  // on deploy), which can only under-count — it can never wrongly lock a
+  // member out.
+  const compsBudget: RunBudgetLike = createDailyRunBudget(config.compsDailyRunCap);
 
   // --- CORS -----------------------------------------------------------------
   // Explicit, allow-listed. Never "*" — the widget runs on the GHL membership
@@ -243,7 +273,17 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
 
     let result;
     try {
-      result = await runAgent(oa, sb, config, history, userMessage, { seedToolCall });
+      result = await runAgent(oa, sb, config, history, userMessage, {
+        seedToolCall,
+        comps: {
+          sessionId: session_id,
+          provider: getPropertyProvider(),
+          cache: getCompsCache(),
+          budget: compsBudget,
+          stateStore: getSessionStateStore(),
+          logger: request.log,
+        },
+      });
     } catch (err) {
       // request.log is silenced under NODE_ENV=test, which made live-test 502s
       // undiagnosable — the reason was swallowed entirely. Always surface the
@@ -280,6 +320,7 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
         retrievedChunkIds: result.retrievedChunkIds,
         similarityScores: result.similarityScores,
         tokenUsage: result.usage,
+        toolCalls: result.toolCalls,
       },
       request.log,
     ).catch((err) => {

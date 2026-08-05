@@ -1,0 +1,1624 @@
+[{
+  "zpid": 2069102645,
+  "maloneId": "2549305136",
+  "city": "Phoenix",
+  "state": "AZ",
+  "homeStatus": "OTHER",
+  "address": {
+    "streetAddress": "319 E Coronado Rd #1234",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipcode": "85004"
+  },
+  "isListingClaimedByCurrentSignedInUser": false,
+  "isCurrentSignedInAgentResponsible": false,
+  "bedrooms": null,
+  "price": 0,
+  "yearBuilt": null,
+  "streetAddress": "319 E Coronado Rd #1234",
+  "zipcode": "85004",
+  "isCurrentSignedInUserVerifiedOwner": false,
+  "isVerifiedClaimedByCurrentSignedInUser": false,
+  "listingDataSource": "Legacy",
+  "responsivePhotos": [
+    {
+      "caption": "",
+      "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=400x300&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=6aFAbSGSqKgYXS4IHcKgAyZZYI4=",
+      "mixedSources": {
+        "jpeg": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=192x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=746w-dDxKx34R6c4LEFV1NpnEBg=",
+            "width": 192
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=384x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=gLx1lepJhrifBze-dD8d8--6YVg=",
+            "width": 384
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=576x432&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Fi7lQrDKtp0Sopj3EqewgTAAFjs=",
+            "width": 576
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=768x576&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=N6p4qdEqty0rly5qqO9-nf27fGg=",
+            "width": 768
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=960x720&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=n4ZJ5plCU33gsTqKN52IfC5jI04=",
+            "width": 960
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1152x864&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=VuPTIUGVELkDBqgxA6BNVyQsUgA=",
+            "width": 1152
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1344x1008&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=v94B84GlygjIJmjjImPzmZk7WOk=",
+            "width": 1344
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Vi108lF0drlrsMHkTuDuCUbUag8=",
+            "width": 1536
+          }
+        ],
+        "webp": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=192x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=746w-dDxKx34R6c4LEFV1NpnEBg=",
+            "width": 192
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=384x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=gLx1lepJhrifBze-dD8d8--6YVg=",
+            "width": 384
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=576x432&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Fi7lQrDKtp0Sopj3EqewgTAAFjs=",
+            "width": 576
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=768x576&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=N6p4qdEqty0rly5qqO9-nf27fGg=",
+            "width": 768
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=960x720&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=n4ZJ5plCU33gsTqKN52IfC5jI04=",
+            "width": 960
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1152x864&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=VuPTIUGVELkDBqgxA6BNVyQsUgA=",
+            "width": 1152
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1344x1008&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=v94B84GlygjIJmjjImPzmZk7WOk=",
+            "width": 1344
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Vi108lF0drlrsMHkTuDuCUbUag8=",
+            "width": 1536
+          }
+        ]
+      }
+    }
+  ],
+  "longitude": -112.0684,
+  "latitude": 33.467354,
+  "hasBadGeocode": true,
+  "listing_sub_type": {
+    "is_FSBA": false,
+    "is_newHome": false,
+    "is_FSBO": false,
+    "is_pending": false,
+    "is_bankOwned": false,
+    "is_openHouse": false,
+    "is_forAuction": false,
+    "is_comingSoon": false,
+    "is_foreclosure": false
+  },
+  "streetViewMetadataUrlMediaWallLatLong": "https://maps.googleapis.com/maps/api/streetview/metadata?location=33.467354,-112.068400&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=sSRkO6VWjkIYReBXNVRPyzM2yFY=",
+  "streetViewMetadataUrlMediaWallAddress": "https://maps.googleapis.com/maps/api/streetview/metadata?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=1SunBhVnbvcyNGgQEXG_9FuDHbA=",
+  "streetViewServiceUrl": "https://street-view-url.prod.zgk-partner.zillowapi.com?zpid=2069102645&address=319%20E%20Coronado%20Rd%2C%20Phoenix%2C%20AZ%2085004&width=512&height=234&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&maxdistance=5280&lat=33.467354&lon=-112.0684&ttloverrides=%7B%22yesAddressSeconds%22:604800%7D&signature=z2gcQb4JV997BsGgfKKWfmxhcso=",
+  "streetView": {
+    "addressSources": [
+      {
+        "width": 192,
+        "url": "https://maps.googleapis.com/maps/api/streetview?location=319%20E%20Coronado%20Rd%2C%20Phoenix%2C%20AZ%2085004&size=192x72&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=-qrz97KpLcEJUeKlyqmuDBPZolw="
+      },
+      {
+        "width": 384,
+        "url": "https://maps.googleapis.com/maps/api/streetview?location=319%20E%20Coronado%20Rd%2C%20Phoenix%2C%20AZ%2085004&size=384x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=oz8MLLOkK3QN6gUCSzgL1D8V46Q="
+      },
+      {
+        "width": 768,
+        "url": "https://maps.googleapis.com/maps/api/streetview?location=319%20E%20Coronado%20Rd%2C%20Phoenix%2C%20AZ%2085004&size=768x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=LD1tj7_YtA14JRVImv2WCrI9Acs="
+      }
+    ],
+    "latLongSources": [
+      {
+        "width": 192,
+        "url": "https://maps.googleapis.com/maps/api/streetview?location=33.467354,-112.0684&size=192x72&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=u5W9HJfR62guJIr0nU77sU8fcdg="
+      },
+      {
+        "width": 384,
+        "url": "https://maps.googleapis.com/maps/api/streetview?location=33.467354,-112.0684&size=384x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=nqascfqSoLu65rtZqStpFw5FUJ8="
+      },
+      {
+        "width": 768,
+        "url": "https://maps.googleapis.com/maps/api/streetview?location=33.467354,-112.0684&size=768x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=-40Gs4pERQPxDasO9xJuGuz1ta4="
+      }
+    ]
+  },
+  "staticMap": {
+    "sources": [
+      {
+        "width": 192,
+        "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.467354,-112.0684&zoom=12&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=kxKtU8nbNR1F3KAlrB8TRaoX0Lo="
+      },
+      {
+        "width": 192,
+        "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.467354,-112.0684&zoom=12&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=ylyo0qrsBlOwZlQP7t8Q1FbMzQQ=",
+        "isHighResolutionStaticMap": true
+      },
+      {
+        "width": 384,
+        "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.467354,-112.0684&zoom=12&size=384x288&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=kiaiNULBhXwnlUimH-WN19ympLg="
+      },
+      {
+        "width": 384,
+        "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.467354,-112.0684&zoom=12&size=384x288&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=ZSEn-U0XdDZWVNgPdolVUHRqfSY=",
+        "isHighResolutionStaticMap": true
+      },
+      {
+        "width": 768,
+        "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.467354,-112.0684&zoom=12&size=768x576&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=eOoah6gEIHgC8aTZfY0FwR100-8="
+      },
+      {
+        "width": 768,
+        "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.467354,-112.0684&zoom=12&size=768x576&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=fl76ySsHCjTQ1bN3kjtu2HeOGHk=",
+        "isHighResolutionStaticMap": true
+      }
+    ]
+  },
+  "livingArea": null,
+  "homeType": "HOME_TYPE_UNKNOWN",
+  "lotAreaUnits": "sqft",
+  "resoFacts": {
+    "associations": [],
+    "appliances": [],
+    "atAGlanceFacts": [
+      {
+        "factLabel": "Type",
+        "factValue": "Unknown"
+      },
+      {
+        "factLabel": "Year Built"
+      },
+      {
+        "factLabel": "Heating"
+      },
+      {
+        "factLabel": "Cooling"
+      },
+      {
+        "factLabel": "Parking",
+        "factValue": "No Data"
+      },
+      {
+        "factLabel": "Offer Review Date"
+      }
+    ],
+    "canRaiseHorses": false,
+    "cityRegion": "Phoenix",
+    "communityFeatures": [],
+    "cooling": [],
+    "feesAndDues": [],
+    "flooring": [],
+    "furnished": false,
+    "hasAttachedProperty": false,
+    "hasCooling": false,
+    "hasGarage": false,
+    "hasHeating": false,
+    "hasLandLease": false,
+    "hasSpa": false,
+    "hasView": false,
+    "heating": [],
+    "homeType": "Unknown",
+    "livingQuarters": [],
+    "otherFacts": [],
+    "parkingCapacity": 0,
+    "parkingFeatures": [],
+    "rooms": [],
+    "view": [],
+    "waterView": "",
+    "constructionMaterials": [],
+    "exteriorFeatures": [],
+    "foundationDetails": [],
+    "hasAdditionalParcels": false,
+    "hasHomeWarranty": false
+  },
+  "isUndisclosedAddress": false,
+  "formattedChip": {
+    "location": [
+      {
+        "fullValue": "319 E Coronado Rd #1234"
+      },
+      {
+        "fullValue": "Phoenix, AZ 85004"
+      }
+    ]
+  },
+  "zestimate": null,
+  "rentZestimate": 1852,
+  "currency": "USD",
+  "hideZestimate": false,
+  "dateSoldString": "",
+  "taxAssessedValue": null,
+  "attributionInfo": {
+    "listingOffices": [],
+    "listingAgents": []
+  },
+  "country": "USA",
+  "monthlyHoaFee": null,
+  "propertyTaxRate": 0.41,
+  "listingMetadata": {
+    "FlexibleLayoutAB": true,
+    "mustAttributeOfficeNameBeforeAgentName": false,
+    "mustDisplayAttributionListAgentEmail": false,
+    "mustDisplayAttributionListAgentPhone": false,
+    "mustDisplayAttributionListingOfficePhone": false,
+    "mustDisplayDisclaimerBelowAttribution": false,
+    "mustHighlightListOfficeName": false,
+    "mustMakeListingAgentContactable": false,
+    "FlexibleLayoutB": true,
+    "FlexibleLayoutC": true,
+    "FlexibleLayoutD": true,
+    "FlexibleLayoutE": true,
+    "FlexibleLayoutF": false,
+    "FlexibleLayoutG": false,
+    "FlexibleLayoutH": true,
+    "FlexibleLayoutI": true,
+    "FlexibleLayoutJ": false,
+    "FlexibleLayoutK": false,
+    "FlexibleLayoutL": false,
+    "FlexibleLayoutM": true,
+    "FlexibleLayoutN": true,
+    "FlexibleLayoutO": false,
+    "FlexibleLayoutP": false,
+    "FlexibleLayoutQ": false,
+    "FlexibleLayoutR": false,
+    "FlexibleLayoutS": false,
+    "FlexibleLayoutT": false,
+    "FlexibleLayoutU": false,
+    "FlexibleLayoutV": false,
+    "FlexibleLayoutW": false,
+    "FlexibleLayoutX": false,
+    "FlexibleLayoutY": false,
+    "FlexibleLayoutZ": false,
+    "FlexibleLayoutAA": true,
+    "passwordRequiredForZestimateMarketAnalysis": false,
+    "canShowAutomatedValuationDisplay": true,
+    "canShowTaxHistory": true,
+    "canShowPriceHistory": true,
+    "canShowUserGeneratedContent": true,
+    "isAdsRestricted": false,
+    "hidePriceAdjustmentFlexField": false,
+    "canCommingleComparables": true,
+    "canShowComparables": true,
+    "isSuperTrafficOptimized": false,
+    "mustDisplayFeedLogoInContactBox": false,
+    "canShowCroppedPhotos": true,
+    "canShowNonIDXMedia": true,
+    "canShowOnMap": false,
+    "comminglingCategory": true,
+    "mustDisplayAttributionAboveLocalFacts": false,
+    "mustDisplayAuctionStatusAsSold": false,
+    "mustHighlightMlsStatus": false,
+    "mustHighlightMarketingType": false,
+    "canShowZillowLogoInHeader": true,
+    "canShowPrequalifiedLinkInChip": true,
+    "comminglingCategoryIsRulesApplicable": false,
+    "mustPreferMlsPhotos": false
+  },
+  "photoCount": 1,
+  "isPremierBuilder": false,
+  "isShowcaseListing": false,
+  "listingSubType": {
+    "isFSBA": false,
+    "isPending": false,
+    "isNewHome": false,
+    "isForeclosure": false,
+    "isBankOwned": false,
+    "isForAuction": false,
+    "isOpenHouse": false,
+    "isComingSoon": false,
+    "isFSBO": false
+  },
+  "hdpUrl": "/homedetails/319-E-Coronado-Rd-1234-Phoenix-AZ-85004/2069102645_zpid/",
+  "tourViewCount": 0,
+  "postingContact": {},
+  "vrModel": {},
+  "isZillowOwned": false,
+  "hasPublicVideo": false,
+  "lastSoldPrice": null,
+  "isHousingConnector": false,
+  "responsivePhotosOriginalRatio": [
+    {
+      "caption": "",
+      "mixedSources": {
+        "jpeg": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=800x600&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=LE9coCV9fYm5S_nx1-A_j1OiowM=",
+            "width": 800
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1024x768&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=EpiyyMaqNOFub843oSosk2SoWf0=",
+            "width": 1024
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1344x1008&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=v94B84GlygjIJmjjImPzmZk7WOk=",
+            "width": 1344
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Vi108lF0drlrsMHkTuDuCUbUag8=",
+            "width": 1536
+          }
+        ],
+        "webp": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=800x600&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=LE9coCV9fYm5S_nx1-A_j1OiowM=",
+            "width": 800
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1024x768&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=EpiyyMaqNOFub843oSosk2SoWf0=",
+            "width": 1024
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1344x1008&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=v94B84GlygjIJmjjImPzmZk7WOk=",
+            "width": 1344
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Vi108lF0drlrsMHkTuDuCUbUag8=",
+            "width": 1536
+          }
+        ]
+      }
+    }
+  ],
+  "streetViewTileImageUrlMediumLatLong": "https://maps.googleapis.com/maps/api/streetview?location=33.467354,-112.068400&size=400x250&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=HebhG3Zy5JU_qzhLCSHRpZy-wUo=",
+  "streetViewTileImageUrlMediumAddress": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=400x250&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=QI-GgKkRuO41lJyoHmYw0583PPM=",
+  "streetViewMetadataUrlMapLightboxAddress": "https://maps.googleapis.com/maps/api/streetview/metadata?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&key=AIzaSyBV4lXhV-qzQOegyA3m0_AvGy9F21HIyOQ&source=outdoor&signature=6hiELJh9JL3bvEklngBNJTlAeEk=",
+  "thumb": [
+    {
+      "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=46x46&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=aYBBUKwj3TfL08vK0YTWbiguLK4="
+    }
+  ],
+  "neighborhoodMapThumb": [
+    {
+      "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=316x234&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=uInevwzk0yLjtpMzbyTmzfA1mEU="
+    }
+  ],
+  "stateId": 8,
+  "countyId": 2402,
+  "cityId": 40326,
+  "isNonOwnerOccupied": false,
+  "restimateMinus30": "0",
+  "adTargets": {
+    "listtp": "not_for_sale",
+    "dma": "24",
+    "cnty": "Maricopa",
+    "hood": "Encanto",
+    "bd": "0",
+    "ba": "0",
+    "aamgnrc1": "319 E Coronado Rd #1234",
+    "aamgnrc2": "1234",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zip": "85004",
+    "pid": "2069102645",
+    "premieragent": "no",
+    "service_version": "9d5f2ce5",
+    "env": "prod",
+    "guid": "6e362548-dda1-46ce-b9da-13bf7d8a073e"
+  },
+  "description": " This home is located at 319 E Coronado Rd #1234, Phoenix, AZ 85004.",
+  "pals": [],
+  "listedBy": [],
+  "parcelId": null,
+  "taxHistory": [],
+  "priceHistory": [],
+  "parentRegion": {
+    "name": "Encanto"
+  },
+  "nearbyHomes": [
+    {
+      "zpid": 7537267,
+      "miniCardPhotos": [
+        {
+          "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.46735382080078,-112.06839752197266&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=65NhrmW9VuiMnS54TTIPysFr14s="
+        }
+      ],
+      "price": 293400,
+      "currency": "USD",
+      "bathrooms": 2,
+      "livingArea": 1331,
+      "livingAreaValue": 1331,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 936,
+      "lotAreaValue": 936,
+      "lotAreaUnits": "Square Feet",
+      "address": {
+        "streetAddress": "319 E Coronado Rd UNIT 1",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "319 E Coronado Rd UNIT 1"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.467354,
+      "longitude": -112.0684,
+      "homeStatus": "OTHER",
+      "homeType": "CONDO",
+      "hdpUrl": "/homedetails/319-E-Coronado-Rd-UNIT-1-Phoenix-AZ-85004/7537267_zpid/",
+      "hdpTypeDimension": "Zestimate",
+      "propertyTypeDimension": "Condo",
+      "listingTypeDimension": "Unknown Listed By",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": false
+      },
+      "attributionInfo": {},
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    },
+    {
+      "zpid": 7537268,
+      "miniCardPhotos": [
+        {
+          "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.46735382080078,-112.06839752197266&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=65NhrmW9VuiMnS54TTIPysFr14s="
+        }
+      ],
+      "price": 303900,
+      "currency": "USD",
+      "bathrooms": 2,
+      "livingArea": 1331,
+      "livingAreaValue": 1331,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 914,
+      "lotAreaValue": 914,
+      "lotAreaUnits": "Square Feet",
+      "address": {
+        "streetAddress": "319 E Coronado Rd UNIT 2",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "319 E Coronado Rd UNIT 2"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.467354,
+      "longitude": -112.0684,
+      "homeStatus": "OTHER",
+      "homeType": "CONDO",
+      "hdpUrl": "/homedetails/319-E-Coronado-Rd-UNIT-2-Phoenix-AZ-85004/7537268_zpid/",
+      "hdpTypeDimension": "Zestimate",
+      "propertyTypeDimension": "Condo",
+      "listingTypeDimension": "Unknown Listed By",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": false
+      },
+      "attributionInfo": {},
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    },
+    {
+      "zpid": 7537269,
+      "miniCardPhotos": [
+        {
+          "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.46735382080078,-112.06839752197266&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=65NhrmW9VuiMnS54TTIPysFr14s="
+        }
+      ],
+      "price": 303500,
+      "currency": "USD",
+      "bathrooms": 2,
+      "livingArea": 1331,
+      "livingAreaValue": 1331,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 873,
+      "lotAreaValue": 873,
+      "lotAreaUnits": "Square Feet",
+      "address": {
+        "streetAddress": "319 E Coronado Rd UNIT 3",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "319 E Coronado Rd UNIT 3"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.467354,
+      "longitude": -112.0684,
+      "homeStatus": "OTHER",
+      "homeType": "CONDO",
+      "hdpUrl": "/homedetails/319-E-Coronado-Rd-UNIT-3-Phoenix-AZ-85004/7537269_zpid/",
+      "hdpTypeDimension": "Zestimate",
+      "propertyTypeDimension": "Condo",
+      "listingTypeDimension": "Unknown Listed By",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": false
+      },
+      "attributionInfo": {},
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    },
+    {
+      "zpid": 7537270,
+      "miniCardPhotos": [
+        {
+          "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.46735382080078,-112.06839752197266&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=65NhrmW9VuiMnS54TTIPysFr14s="
+        }
+      ],
+      "price": 313600,
+      "currency": "USD",
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "livingArea": 1331,
+      "livingAreaValue": 1331,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 918,
+      "lotAreaValue": 918,
+      "lotAreaUnits": "Square Feet",
+      "address": {
+        "streetAddress": "319 E Coronado Rd UNIT 4",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "319 E Coronado Rd UNIT 4"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.467354,
+      "longitude": -112.0684,
+      "homeStatus": "OTHER",
+      "homeType": "TOWNHOUSE",
+      "hdpUrl": "/homedetails/319-E-Coronado-Rd-UNIT-4-Phoenix-AZ-85004/7537270_zpid/",
+      "hdpTypeDimension": "Zestimate",
+      "propertyTypeDimension": "Townhouse",
+      "listingTypeDimension": "Unknown Listed By",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": false
+      },
+      "attributionInfo": {},
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    },
+    {
+      "zpid": 125120287,
+      "miniCardPhotos": [
+        {
+          "url": "https://photos.zillowstatic.com/fp/dce003cc648bf5188bfb307a3f6f95e8-p_c.jpg"
+        }
+      ],
+      "price": 543000,
+      "currency": "USD",
+      "bedrooms": 2,
+      "bathrooms": 3,
+      "livingArea": 1718,
+      "livingAreaValue": 1718,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 940,
+      "lotAreaValue": 940,
+      "lotAreaUnits": "Square Feet",
+      "address": {
+        "streetAddress": "325 E Coronado Rd UNIT 3",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "325 E Coronado Rd UNIT 3"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.46737,
+      "longitude": -112.06809,
+      "homeStatus": "SOLD",
+      "homeType": "TOWNHOUSE",
+      "hdpUrl": "/homedetails/325-E-Coronado-Rd-UNIT-3-Phoenix-AZ-85004/125120287_zpid/",
+      "hdpTypeDimension": "RecentlySold",
+      "propertyTypeDimension": "Townhouse",
+      "listingTypeDimension": "Unknown Listed By",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": false
+      },
+      "attributionInfo": {
+        "mlsId": "6657413"
+      },
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    },
+    {
+      "zpid": 7537229,
+      "miniCardPhotos": [
+        {
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=317+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=316x234&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=C1ZboLCdf_rhdhQ2YU9GI0xX1gg="
+        }
+      ],
+      "price": 858100,
+      "currency": "USD",
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "livingArea": 2281,
+      "livingAreaValue": 2281,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 21780,
+      "lotAreaValue": 0.5,
+      "lotAreaUnits": "Acres",
+      "address": {
+        "streetAddress": "317 E Coronado Rd",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "317 E Coronado Rd"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.467236,
+      "longitude": -112.06868,
+      "homeStatus": "OTHER",
+      "homeType": "SINGLE_FAMILY",
+      "hdpUrl": "/homedetails/317-E-Coronado-Rd-Phoenix-AZ-85004/7537229_zpid/",
+      "hdpTypeDimension": "Zestimate",
+      "propertyTypeDimension": "Single Family",
+      "listingTypeDimension": "Unknown Listed By",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": false
+      },
+      "attributionInfo": {},
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    },
+    {
+      "zpid": 125107618,
+      "miniCardPhotos": [
+        {
+          "url": "https://photos.zillowstatic.com/fp/641ea4495633761a694ab407bc8b2272-p_c.jpg"
+        }
+      ],
+      "price": 524999,
+      "currency": "USD",
+      "bedrooms": 2,
+      "bathrooms": 3,
+      "livingArea": 1718,
+      "livingAreaValue": 1718,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 940,
+      "lotAreaValue": 940,
+      "lotAreaUnits": "Square Feet",
+      "address": {
+        "streetAddress": "325 E Coronado Rd UNIT 20",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "325 E Coronado Rd UNIT 20"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.466972,
+      "longitude": -112.06833,
+      "homeStatus": "PENDING",
+      "homeType": "TOWNHOUSE",
+      "hdpUrl": "/homedetails/325-E-Coronado-Rd-UNIT-20-Phoenix-AZ-85004/125107618_zpid/",
+      "hdpTypeDimension": "Pending",
+      "propertyTypeDimension": "Townhouse",
+      "listingTypeDimension": "For Sale by Agent",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": true
+      },
+      "attributionInfo": {
+        "mlsId": "7012697"
+      },
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    },
+    {
+      "zpid": 125117988,
+      "miniCardPhotos": [
+        {
+          "url": "https://photos.zillowstatic.com/fp/332ee56b5d6c6b0840729e616da75ef9-p_c.jpg"
+        }
+      ],
+      "price": 615000,
+      "currency": "USD",
+      "bedrooms": 3,
+      "bathrooms": 4,
+      "livingArea": 2150,
+      "livingAreaValue": 2150,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 1128,
+      "lotAreaValue": 1128,
+      "lotAreaUnits": "Square Feet",
+      "address": {
+        "streetAddress": "325 E Coronado Rd UNIT 19",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "325 E Coronado Rd UNIT 19"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.46691,
+      "longitude": -112.06833,
+      "homeStatus": "RECENTLY_SOLD",
+      "homeType": "TOWNHOUSE",
+      "hdpUrl": "/homedetails/325-E-Coronado-Rd-UNIT-19-Phoenix-AZ-85004/125117988_zpid/",
+      "hdpTypeDimension": "RecentlySold",
+      "propertyTypeDimension": "Townhouse",
+      "listingTypeDimension": "Unknown Listed By",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": false
+      },
+      "attributionInfo": {
+        "mlsId": "6909853"
+      },
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    },
+    {
+      "zpid": 7537230,
+      "miniCardPhotos": [
+        {
+          "url": "https://photos.zillowstatic.com/fp/e415c652cbae80631ae8fffb2a4feadf-p_c.jpg"
+        }
+      ],
+      "price": 1039400,
+      "currency": "USD",
+      "bedrooms": 4,
+      "bathrooms": 2,
+      "livingArea": 2600,
+      "livingAreaValue": 2600,
+      "livingAreaUnits": "Square Feet",
+      "livingAreaUnitsShort": "sqft",
+      "listingMetadata": {
+        "comminglingCategoryIsRulesApplicable": false
+      },
+      "lotSize": 12632,
+      "lotAreaValue": 0.28999081726354453,
+      "lotAreaUnits": "Acres",
+      "address": {
+        "streetAddress": "309 E Coronado Rd",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipcode": "85004"
+      },
+      "formattedChip": {
+        "location": [
+          {
+            "fullValue": "309 E Coronado Rd"
+          },
+          {}
+        ]
+      },
+      "latitude": 33.46724,
+      "longitude": -112.06893,
+      "homeStatus": "OTHER",
+      "homeType": "SINGLE_FAMILY",
+      "hdpUrl": "/homedetails/309-E-Coronado-Rd-Phoenix-AZ-85004/7537230_zpid/",
+      "hdpTypeDimension": "Zestimate",
+      "propertyTypeDimension": "Single Family",
+      "listingTypeDimension": "Unknown Listed By",
+      "listing_sub_type": {
+        "is_newHome": false,
+        "is_forAuction": false,
+        "is_bankOwned": false,
+        "is_foreclosure": false,
+        "is_FSBO": false,
+        "is_comingSoon": false,
+        "is_FSBA": false
+      },
+      "attributionInfo": {},
+      "isShowcaseListing": false,
+      "isPremierBuilder": false,
+      "state": "AZ"
+    }
+  ],
+  "schools": [
+    {
+      "distance": 0.3,
+      "name": "Ralph Waldo Emerson Elementary School",
+      "rating": 8,
+      "level": "Primary",
+      "grades": "PK-8",
+      "link": "https://www.greatschools.org/arizona/phoenix/1129-Ralph-Waldo-Emerson-Elementary-School/",
+      "type": "Public"
+    },
+    {
+      "distance": 2.4,
+      "name": "Central High School",
+      "rating": 3,
+      "level": "High",
+      "grades": "9-12",
+      "link": "https://www.greatschools.org/arizona/phoenix/514-Central-High-School/",
+      "type": "Public"
+    }
+  ],
+  "citySearchUrl": {
+    "text": "Homes in Phoenix",
+    "path": "/phoenix-az/"
+  },
+  "isInstantOfferEnabled": false,
+  "dateSold": null,
+  "county": "Maricopa County",
+  "isRentalListingOffMarket": false,
+  "nearbyCities": [
+    {
+      "regionUrl": {
+        "path": "/chandler-az/"
+      },
+      "name": "Chandler"
+    },
+    {
+      "regionUrl": {
+        "path": "/gilbert-az/"
+      },
+      "name": "Gilbert"
+    },
+    {
+      "regionUrl": {
+        "path": "/glendale-az/"
+      },
+      "name": "Glendale"
+    },
+    {
+      "regionUrl": {
+        "path": "/goodyear-az/"
+      },
+      "name": "Goodyear"
+    },
+    {
+      "regionUrl": {
+        "path": "/mesa-az/"
+      },
+      "name": "Mesa"
+    },
+    {
+      "regionUrl": {
+        "path": "/peoria-az/"
+      },
+      "name": "Peoria"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az/"
+      },
+      "name": "Phoenix"
+    },
+    {
+      "regionUrl": {
+        "path": "/scottsdale-az/"
+      },
+      "name": "Scottsdale"
+    },
+    {
+      "regionUrl": {
+        "path": "/surprise-az/"
+      },
+      "name": "Surprise"
+    },
+    {
+      "regionUrl": {
+        "path": "/tempe-az/"
+      },
+      "name": "Tempe"
+    }
+  ],
+  "nearbyNeighborhoods": [
+    {
+      "regionUrl": {
+        "path": "/ahwatukee-foothills-phoenix-az/"
+      },
+      "name": "Ahwatukee Foothills"
+    },
+    {
+      "regionUrl": {
+        "path": "/alhambra-phoenix-az/"
+      },
+      "name": "Alhambra"
+    },
+    {
+      "regionUrl": {
+        "path": "/camelback-east-phoenix-az/"
+      },
+      "name": "Camelback East"
+    },
+    {
+      "regionUrl": {
+        "path": "/deer-valley-phoenix-az/"
+      },
+      "name": "Deer Valley"
+    },
+    {
+      "regionUrl": {
+        "path": "/estrella-phoenix-az/"
+      },
+      "name": "Estrella"
+    },
+    {
+      "regionUrl": {
+        "path": "/laveen-phoenix-az/"
+      },
+      "name": "Laveen"
+    },
+    {
+      "regionUrl": {
+        "path": "/maryvale-phoenix-az/"
+      },
+      "name": "Maryvale"
+    },
+    {
+      "regionUrl": {
+        "path": "/north-mountain-phoenix-az/"
+      },
+      "name": "North Mountain"
+    },
+    {
+      "regionUrl": {
+        "path": "/paradise-valley-phoenix-az/"
+      },
+      "name": "Paradise Valley"
+    },
+    {
+      "regionUrl": {
+        "path": "/south-mountain-phoenix-az/"
+      },
+      "name": "South Mountain"
+    }
+  ],
+  "nearbyZipcodes": [
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85008/"
+      },
+      "name": "85008"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85009/"
+      },
+      "name": "85009"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85032/"
+      },
+      "name": "85032"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85033/"
+      },
+      "name": "85033"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85035/"
+      },
+      "name": "85035"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85037/"
+      },
+      "name": "85037"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85041/"
+      },
+      "name": "85041"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85308/"
+      },
+      "name": "85308"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85339/"
+      },
+      "name": "85339"
+    },
+    {
+      "regionUrl": {
+        "path": "/phoenix-az-85383/"
+      },
+      "name": "85383"
+    }
+  ],
+  "zipcodeSearchUrl": {
+    "path": "/phoenix-az-85004/"
+  },
+  "apartmentsForRentInZipcodeSearchUrl": {
+    "path": "/phoenix-az-85004/apartments/"
+  },
+  "housesForRentInZipcodeSearchUrl": {
+    "path": "/phoenix-az-85004/rent-houses/"
+  },
+  "abbreviatedAddress": "319 E Coronado Rd #1234",
+  "neighborhoodRegion": {
+    "name": "Encanto"
+  },
+  "neighborhoodSearchUrl": {
+    "path": "/encanto-phoenix-az/"
+  },
+  "stateSearchUrl": {
+    "path": "/az/"
+  },
+  "countySearchUrl": {
+    "text": "Homes in Maricopa County",
+    "path": "/maricopa-county-az/"
+  },
+  "homeValuation": {},
+  "daysOnZillow": null,
+  "compsCarouselPropertyPhotos": [
+    {
+      "mixedSources": {
+        "jpeg": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=192x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=746w-dDxKx34R6c4LEFV1NpnEBg="
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=384x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=gLx1lepJhrifBze-dD8d8--6YVg="
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=576x432&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Fi7lQrDKtp0Sopj3EqewgTAAFjs="
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=768x576&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=N6p4qdEqty0rly5qqO9-nf27fGg="
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=960x720&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=n4ZJ5plCU33gsTqKN52IfC5jI04="
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1152x864&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=VuPTIUGVELkDBqgxA6BNVyQsUgA="
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1344x1008&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=v94B84GlygjIJmjjImPzmZk7WOk="
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Vi108lF0drlrsMHkTuDuCUbUag8="
+          }
+        ]
+      }
+    }
+  ],
+  "isConfirmedClaimedByCurrentSignedInUser": false,
+  "isRecentStatusChange": false,
+  "buildingId": "2112682726",
+  "foreclosureTypes": {
+    "isBankOwned": false,
+    "wasNonRetailAuction": false
+  },
+  "isFeatured": false,
+  "rentalApplicationsAcceptedType": "REQUEST_TO_APPLY",
+  "propertyTypeDimension": "Home Type Unknown",
+  "hdpTypeDimension": "NoZestimate",
+  "listingTypeDimension": "Unknown Listed By",
+  "featuredListingTypeDimension": "organic",
+  "brokerIdDimension": "Unknown Listed By",
+  "keystoneHomeStatus": "NotForSale",
+  "pageUrlFragment": "NoZestimate",
+  "isRentalsLeadCapMet": false,
+  "isPaidMultiFamilyBrokerId": false,
+  "timeZone": "America/Phoenix",
+  "tourEligibility": {
+    "isPropertyTourEligible": false
+  },
+  "virtualTourUrl": null,
+  "selfTour": {
+    "hasSelfTour": false
+  },
+  "originalPhotos": [
+    {
+      "caption": "",
+      "mixedSources": {
+        "jpeg": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=800x600&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=LE9coCV9fYm5S_nx1-A_j1OiowM=",
+            "width": 800
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1024x768&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=EpiyyMaqNOFub843oSosk2SoWf0=",
+            "width": 1024
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1344x1008&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=v94B84GlygjIJmjjImPzmZk7WOk=",
+            "width": 1344
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Vi108lF0drlrsMHkTuDuCUbUag8=",
+            "width": 1536
+          }
+        ],
+        "webp": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=800x600&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=LE9coCV9fYm5S_nx1-A_j1OiowM=",
+            "width": 800
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1024x768&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=EpiyyMaqNOFub843oSosk2SoWf0=",
+            "width": 1024
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1344x1008&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=v94B84GlygjIJmjjImPzmZk7WOk=",
+            "width": 1344
+          },
+          {
+            "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Vi108lF0drlrsMHkTuDuCUbUag8=",
+            "width": 1536
+          }
+        ]
+      }
+    }
+  ],
+  "addressOrUrlFromInput": "123 E Coronado Rd, Phoenix, AZ",
+  "priceChange": null,
+  "pageViewCount": null,
+  "favoriteCount": null,
+  "annualHomeownersInsurance": null,
+  "listingProvider": null,
+  "buildingAttributes": null,
+  "listingPrice": {
+    "amount": 0,
+    "currency": "USD",
+    "formatted": "$0"
+  },
+  "listingAddress": {
+    "street": "319 E Coronado Rd #1234",
+    "unit": null,
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85004",
+    "county": "Maricopa County",
+    "country": "USA",
+    "neighborhood": "Encanto",
+    "subdivision": null,
+    "communityName": null,
+    "timeZone": "America/Phoenix",
+    "full": "319 E Coronado Rd #1234, Phoenix, AZ 85004"
+  },
+  "coordinates": {
+    "latitude": 33.467354,
+    "longitude": -112.0684
+  },
+  "listingStatus": "other",
+  "propertyUrl": "https://www.zillow.com/homedetails/319-E-Coronado-Rd-1234-Phoenix-AZ-85004/2069102645_zpid/",
+  "listingType": {
+    "isFSBA": false,
+    "isFSBO": false,
+    "isComingSoon": false,
+    "isPending": false,
+    "isOpenHouse": false,
+    "isNewHome": false,
+    "isForAuction": false,
+    "isForeclosure": false,
+    "isBankOwned": false,
+    "contingencyType": null
+  },
+  "bathroomsDetail": null,
+  "lotArea": {
+    "value": null,
+    "unit": "sqft",
+    "formatted": null
+  },
+  "pricePerSquareFoot": null,
+  "datePosted": null,
+  "onMarketDate": null,
+  "priceChangedAt": null,
+  "taxAnnualAmount": null,
+  "parking": {
+    "totalSpaces": 0,
+    "garageSpaces": null,
+    "hasGarage": false,
+    "hasAttachedGarage": null,
+    "features": []
+  },
+  "agent": null,
+  "broker": null,
+  "mls": null,
+  "mainImage": {
+    "thumbnail": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=46x46&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=aYBBUKwj3TfL08vK0YTWbiguLK4=",
+    "medium": null,
+    "hiRes": null
+  },
+  "staticMapUrl": "https://maps.googleapis.com/maps/api/staticmap?center=33.467354,-112.0684&zoom=12&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=kxKtU8nbNR1F3KAlrB8TRaoX0Lo=",
+  "propertyFeatures": {
+    "appliances": [],
+    "heating": [],
+    "cooling": [],
+    "flooring": [],
+    "exteriorFeatures": [],
+    "interiorFeatures": [],
+    "view": [],
+    "waterSource": [],
+    "sewer": [],
+    "utilities": [],
+    "constructionMaterials": [],
+    "roofType": null,
+    "architecturalStyle": null,
+    "basement": null,
+    "levels": null,
+    "stories": null
+  },
+  "atAGlanceFacts": [
+    {
+      "factLabel": "Type",
+      "factValue": "Unknown"
+    },
+    {
+      "factLabel": "Year Built",
+      "factValue": null
+    },
+    {
+      "factLabel": "Heating",
+      "factValue": null
+    },
+    {
+      "factLabel": "Cooling",
+      "factValue": null
+    },
+    {
+      "factLabel": "Parking",
+      "factValue": "No Data"
+    },
+    {
+      "factLabel": "Offer Review Date",
+      "factValue": null
+    }
+  ],
+  "schoolDistricts": null,
+  "hoa": null,
+  "listingPriceHistory": [],
+  "listingTaxHistory": [],
+  "nearbySchools": [
+    {
+      "name": "Ralph Waldo Emerson Elementary School",
+      "rating": 8,
+      "distance": 0.3,
+      "level": "Primary",
+      "type": "Public",
+      "grades": "PK-8",
+      "link": "https://www.greatschools.org/arizona/phoenix/1129-Ralph-Waldo-Emerson-Elementary-School/"
+    },
+    {
+      "name": "Central High School",
+      "rating": 3,
+      "distance": 2.4,
+      "level": "High",
+      "type": "Public",
+      "grades": "9-12",
+      "link": "https://www.greatschools.org/arizona/phoenix/514-Central-High-School/"
+    }
+  ],
+  "nearbyProperties": [
+    {
+      "zpid": 7537267,
+      "propertyUrl": "https://www.zillow.com/homedetails/319-E-Coronado-Rd-UNIT-1-Phoenix-AZ-85004/7537267_zpid/",
+      "address": {
+        "street": "319 E Coronado Rd UNIT 1",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.467354,
+        "longitude": -112.0684
+      },
+      "price": 293400,
+      "bedrooms": null,
+      "bathrooms": 2,
+      "livingArea": 1331,
+      "homeType": "CONDO",
+      "homeStatus": "other",
+      "mainImage": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.46735382080078,-112.06839752197266&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=65NhrmW9VuiMnS54TTIPysFr14s="
+    },
+    {
+      "zpid": 7537268,
+      "propertyUrl": "https://www.zillow.com/homedetails/319-E-Coronado-Rd-UNIT-2-Phoenix-AZ-85004/7537268_zpid/",
+      "address": {
+        "street": "319 E Coronado Rd UNIT 2",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.467354,
+        "longitude": -112.0684
+      },
+      "price": 303900,
+      "bedrooms": null,
+      "bathrooms": 2,
+      "livingArea": 1331,
+      "homeType": "CONDO",
+      "homeStatus": "other",
+      "mainImage": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.46735382080078,-112.06839752197266&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=65NhrmW9VuiMnS54TTIPysFr14s="
+    },
+    {
+      "zpid": 7537269,
+      "propertyUrl": "https://www.zillow.com/homedetails/319-E-Coronado-Rd-UNIT-3-Phoenix-AZ-85004/7537269_zpid/",
+      "address": {
+        "street": "319 E Coronado Rd UNIT 3",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.467354,
+        "longitude": -112.0684
+      },
+      "price": 303500,
+      "bedrooms": null,
+      "bathrooms": 2,
+      "livingArea": 1331,
+      "homeType": "CONDO",
+      "homeStatus": "other",
+      "mainImage": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.46735382080078,-112.06839752197266&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=65NhrmW9VuiMnS54TTIPysFr14s="
+    },
+    {
+      "zpid": 7537270,
+      "propertyUrl": "https://www.zillow.com/homedetails/319-E-Coronado-Rd-UNIT-4-Phoenix-AZ-85004/7537270_zpid/",
+      "address": {
+        "street": "319 E Coronado Rd UNIT 4",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.467354,
+        "longitude": -112.0684
+      },
+      "price": 313600,
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "livingArea": 1331,
+      "homeType": "TOWNHOUSE",
+      "homeStatus": "other",
+      "mainImage": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.46735382080078,-112.06839752197266&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=65NhrmW9VuiMnS54TTIPysFr14s="
+    },
+    {
+      "zpid": 125120287,
+      "propertyUrl": "https://www.zillow.com/homedetails/325-E-Coronado-Rd-UNIT-3-Phoenix-AZ-85004/125120287_zpid/",
+      "address": {
+        "street": "325 E Coronado Rd UNIT 3",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.46737,
+        "longitude": -112.06809
+      },
+      "price": 543000,
+      "bedrooms": 2,
+      "bathrooms": 3,
+      "livingArea": 1718,
+      "homeType": "TOWNHOUSE",
+      "homeStatus": "sold",
+      "mainImage": "https://photos.zillowstatic.com/fp/dce003cc648bf5188bfb307a3f6f95e8-p_c.jpg"
+    },
+    {
+      "zpid": 7537229,
+      "propertyUrl": "https://www.zillow.com/homedetails/317-E-Coronado-Rd-Phoenix-AZ-85004/7537229_zpid/",
+      "address": {
+        "street": "317 E Coronado Rd",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.467236,
+        "longitude": -112.06868
+      },
+      "price": 858100,
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "livingArea": 2281,
+      "homeType": "SINGLE_FAMILY",
+      "homeStatus": "other",
+      "mainImage": "https://maps.googleapis.com/maps/api/streetview?location=317+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=316x234&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=C1ZboLCdf_rhdhQ2YU9GI0xX1gg="
+    },
+    {
+      "zpid": 125107618,
+      "propertyUrl": "https://www.zillow.com/homedetails/325-E-Coronado-Rd-UNIT-20-Phoenix-AZ-85004/125107618_zpid/",
+      "address": {
+        "street": "325 E Coronado Rd UNIT 20",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.466972,
+        "longitude": -112.06833
+      },
+      "price": 524999,
+      "bedrooms": 2,
+      "bathrooms": 3,
+      "livingArea": 1718,
+      "homeType": "TOWNHOUSE",
+      "homeStatus": "pending",
+      "mainImage": "https://photos.zillowstatic.com/fp/641ea4495633761a694ab407bc8b2272-p_c.jpg"
+    },
+    {
+      "zpid": 125117988,
+      "propertyUrl": "https://www.zillow.com/homedetails/325-E-Coronado-Rd-UNIT-19-Phoenix-AZ-85004/125117988_zpid/",
+      "address": {
+        "street": "325 E Coronado Rd UNIT 19",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.46691,
+        "longitude": -112.06833
+      },
+      "price": 615000,
+      "bedrooms": 3,
+      "bathrooms": 4,
+      "livingArea": 2150,
+      "homeType": "TOWNHOUSE",
+      "homeStatus": "sold",
+      "mainImage": "https://photos.zillowstatic.com/fp/332ee56b5d6c6b0840729e616da75ef9-p_c.jpg"
+    },
+    {
+      "zpid": 7537230,
+      "propertyUrl": "https://www.zillow.com/homedetails/309-E-Coronado-Rd-Phoenix-AZ-85004/7537230_zpid/",
+      "address": {
+        "street": "309 E Coronado Rd",
+        "city": "Phoenix",
+        "state": "AZ",
+        "zipCode": "85004"
+      },
+      "coordinates": {
+        "latitude": 33.46724,
+        "longitude": -112.06893
+      },
+      "price": 1039400,
+      "bedrooms": 4,
+      "bathrooms": 2,
+      "livingArea": 2600,
+      "homeType": "SINGLE_FAMILY",
+      "homeStatus": "other",
+      "mainImage": "https://photos.zillowstatic.com/fp/e415c652cbae80631ae8fffb2a4feadf-p_c.jpg"
+    }
+  ],
+  "listingMortgageRates": null,
+  "listingPhotos": [
+    {
+      "url": "https://maps.googleapis.com/maps/api/streetview?location=319+E+Coronado+Rd%2C+Phoenix%2C+AZ+85004&size=1536x1152&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&&signature=Vi108lF0drlrsMHkTuDuCUbUag8=",
+      "caption": null
+    }
+  ],
+  "isValid": true,
+  "scrapedAt": "2026-08-05T15:08:11.236Z"
+}]

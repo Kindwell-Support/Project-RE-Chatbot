@@ -42,6 +42,22 @@ export interface FormField {
   options?: string[];
   /** The sheet default. Absent for required fields, which never have one. */
   default?: number | string;
+  /**
+   * Session-derived editable default (CONTRACT §8.1) — today only the ARV
+   * field, from the session's comps block. NOT a sheet default: the widget
+   * must render `label` visibly next to the value ("Pre-filled from your
+   * comps on … — edit to override") and must SUBMIT the value even when
+   * untouched (it is a required field's value, not an omittable default).
+   * Attached at request time by applyFormArvPrefill on a CLONE — the static
+   * CALCULATOR_FORMS never carry it.
+   */
+  prefill?: {
+    value: number;
+    subjectAddress: string;
+    arvSource: 'comps' | 'manual';
+    confidence: string | null;
+    label: string;
+  };
 }
 
 export interface CalculatorForm {

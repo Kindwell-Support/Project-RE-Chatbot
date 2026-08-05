@@ -13,6 +13,16 @@ import {
   type CalculatorKey,
 } from './formSchema.js';
 import { routeCalculatorIntent } from './calculatorIntent.js';
+import {
+  addressConflict,
+  buildCompsToolDefinitions,
+  findConflictingAddress,
+  runCompsToolHandler,
+  setManualArvToolHandler,
+  type CompsToolContext,
+} from '../features/comps/tools.js';
+import { normalizeAddress } from '../features/comps/normalize.js';
+import { applyFormArvPrefill } from '../features/comps/formPrefill.js';
 
 const MAX_TOOL_ROUNDS = 6;
 
@@ -21,6 +31,45 @@ const MAX_TOOL_ROUNDS = 6;
  * calculator intent with no calculator named. The route is decided in code; the
  * wording is left to the model so it still sounds like James.
  */
+/**
+ * Comps prompt section, appended to SYSTEM_PROMPT only when the comps context
+ * exists — and mentioning run_comps only when the provider (token) does. The
+ * prompt is the BACKUP for behaviour the tool layer already enforces in code:
+ * rendered-block relay, the pre-fill echo, and the mismatch ask.
+ */
+function compsPromptSection(hasProvider: boolean): string {
+  const manualOnly = `
+
+## ARV for Flip/BRRRR
+- If the member states their own ARV ("use 450k as the ARV"), call set_manual_arv to store it.
+- A stored ARV pre-fills the Flip and BRRRR calculators; they then only need the remaining inputs.
+- When a tool result carries "arv_prefill", its echo_instruction is MANDATORY: the first line of
+  your reply states the ARV used and where it came from, with the override offer. Never present a
+  pre-filled ARV as if the member supplied it this turn.
+- If the member is analyzing a DIFFERENT property than the stored one, do not reuse the stored ARV —
+  ask which deal they mean.`;
+
+  if (!hasProvider) return manualOnly;
+
+  return `
+
+## Comps and ARV (run_comps)
+- When the member asks to run comps / find comps / estimate ARV and gives a street address, call
+  run_comps with the full address (street, city, state). If the address is partial, ask for the rest
+  first — one question.
+- The result contains "rendered_block": relay it VERBATIM. Never re-derive, summarise, or adjust its
+  numbers, and NEVER invent a comp, an address, or an ARV yourself. You may add one short coaching
+  line after the block.
+- If the lookup fails, the block explains why and offers manual entry — relay it, and if they answer
+  with their own number, call set_manual_arv.
+- If the member asks about an address you already ran, call run_comps AGAIN — a repeat address is
+  answered from the cache at no cost, and the member must always receive the full rendered block.
+  NEVER answer a comps request by summarising an earlier result from memory: every ARV the member
+  sees must come from a run_comps result in THIS turn. (Operator ruling: the old "don't re-run"
+  spend guard solved a problem the cache already solves, and it pushed replies outside the
+  rendered-block guarantees.)${manualOnly}`;
+}
+
 const ASK_WHICH_CALCULATOR = [
   'ROUTING (this turn): the member signalled they want a deal analysed but did NOT say which',
   'calculator. Ask which one in ONE short line — flip, BRRRR, or land / new construction — and',
@@ -74,6 +123,13 @@ export interface SeedToolCall {
 
 export interface RunAgentOptions {
   seedToolCall?: SeedToolCall;
+  /**
+   * Comps feature context (CONTRACT §6/§8/§9). When absent, or when
+   * `provider` is undefined (no APIFY_TOKEN), run_comps is NOT registered —
+   * the model cannot offer a lookup the backend can't perform.
+   * set_manual_arv registers whenever comps context exists at all.
+   */
+  comps?: CompsToolContext;
 }
 
 export async function runAgent(
@@ -84,8 +140,13 @@ export async function runAgent(
   userMessage: string,
   options: RunAgentOptions = {},
 ): Promise<AgentResult> {
+  const comps = options.comps;
+  const toolDefinitions = comps
+    ? [...TOOL_DEFINITIONS, ...buildCompsToolDefinitions(!!comps.provider)]
+    : TOOL_DEFINITIONS;
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: SYSTEM_PROMPT + (comps ? compsPromptSection(!!comps.provider) : '') },
     ...history,
     { role: 'user', content: userMessage },
   ];
@@ -109,6 +170,8 @@ export async function runAgent(
     similarityScores,
     usage,
     formRequest,
+    comps,
+    userMessage,
   };
 
   // Form submission: run the calculator first, then let the model narrate it.
@@ -179,9 +242,58 @@ export async function runAgent(
     }
   }
 
+  /**
+   * Structural pre-fill echo (CONTRACT §8): "the reply MUST echo the
+   * injection visibly" cannot be a prompt instruction alone — a model under
+   * pressure drops it, and a correct state field with a missing echo still
+   * ships the wrong-house bug. If a calculator ran on a pre-filled ARV and
+   * the final text is missing the amount, the bound address, or the override
+   * offer, the echo line is PREPENDED here, in code.
+   */
+  const ensurePrefillEcho = (output: string): string => {
+    const prefill = ctx.lastArvPrefill;
+    if (!prefill || !output) return output;
+    const digits = output.replace(/[$,\s]/g, '');
+    const arvDigits = String(prefill.arv);
+    const addressHead = prefill.subjectAddress.split(',')[0].trim().toUpperCase();
+    const hasArv = digits.includes(arvDigits);
+    const hasAddress = addressHead.length > 0 && output.toUpperCase().includes(addressHead);
+    const hasOverride = /change arv|override|different arv/i.test(output);
+    if (hasArv && hasAddress && hasOverride) return output;
+    if (prefill.source === 'override') {
+      // BUG-007 (operator ruling): an override on a DIFFERENT property must
+      // name BOTH the property being analysed and the ARV's provenance —
+      // the member's stated number, with the comps on file bound elsewhere.
+      // Naming the property alone leaves state.comps silently bound to the
+      // old address on the next turn.
+      if (prefill.staleCompsAddress) {
+        return (
+          `Running this on ${prefill.subjectAddress} using YOUR stated ARV of $${prefill.arv.toLocaleString('en-US')} — ` +
+          `note: the comps on file are for ${prefill.staleCompsAddress}, not this property. ` +
+          `Say "run comps on ${prefill.subjectAddress}" for fresh ones, or "change ARV" to adjust.\n\n${output}`
+        );
+      }
+      // Same property: the member's own number replacing a stored estimate —
+      // the echo names BOTH, so a mistaken override is visible immediately.
+      const replaced =
+        prefill.overridden !== undefined
+          ? ` (overriding the $${prefill.overridden.toLocaleString('en-US')} estimate stored for ${prefill.subjectAddress})`
+          : ` for ${prefill.subjectAddress}`;
+      return `Using YOUR ARV $${prefill.arv.toLocaleString('en-US')}${replaced} — say "change ARV" to switch back or set another.\n\n${output}`;
+    }
+    const source =
+      prefill.source === 'comps'
+        ? `the comps on ${prefill.subjectAddress}`
+        : `your manual entry for ${prefill.subjectAddress}`;
+    return (
+      `Using ARV $${prefill.arv.toLocaleString('en-US')} from ${source} — say "change ARV" to override.\n\n` +
+      output
+    );
+  };
+
   /** Every exit point reports the form the same way — one place to get it right. */
   const finish = (output: string): AgentResult => ({
-    output,
+    output: ensurePrefillEcho(output),
     usage,
     retrievedChunkIds,
     similarityScores,
@@ -196,7 +308,7 @@ export async function runAgent(
       model: config.openaiModel,
       temperature: 0.3,
       messages,
-      tools: TOOL_DEFINITIONS,
+      tools: toolDefinitions,
     });
 
     if (completion.usage) {
@@ -248,6 +360,154 @@ interface ToolContext {
   similarityScores: number[];
   usage: TokenUsage;
   formRequest: { form?: CalculatorForm };
+  comps?: CompsToolContext;
+  /** The current member message — the ARV pre-fill's address-mismatch guard reads it. */
+  userMessage: string;
+  /** Set when a calculator ran on a pre-filled/bound ARV this turn; finish() enforces the echo. */
+  lastArvPrefill?: {
+    arv: number;
+    subjectAddress: string;
+    source: 'comps' | 'manual' | 'override';
+    /** For 'override': the stored comps/manual value the member's number replaced. */
+    overridden?: number;
+    /**
+     * For 'override' on a DIFFERENT property (BUG-007): the address the
+     * stored comps block is still bound to — the echo must flag it, because
+     * state.comps keeps that binding on the next turn.
+     */
+    staleCompsAddress?: string;
+  };
+}
+
+/**
+ * Did the member state this dollar amount in THIS message? The discriminator
+ * between a genuine override and a model-carried stale figure. Accepts the
+ * forms members actually type: 431000, 431,000, $431,000, 431k, 0.5m,
+ * "431 thousand". Exact value match only — current message only, because the
+ * conversation HISTORY is precisely where stale figures live.
+ */
+export function messageStatesNumber(message: string, value: number): boolean {
+  const re = /\$?\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|mm|million|thousand)?\b/gi;
+  for (const match of String(message ?? '').matchAll(re)) {
+    const base = Number(match[1].replace(/,/g, ''));
+    if (!Number.isFinite(base)) continue;
+    const suffix = (match[2] ?? '').toLowerCase();
+    const multiplier = suffix === 'k' || suffix === 'thousand' ? 1_000 : suffix ? 1_000_000 : 1;
+    if (base * multiplier === value) return true;
+  }
+  return false;
+}
+
+/**
+ * ARV pre-fill (CONTRACT §8): when Flip/BRRRR is invoked WITHOUT an ARV and
+ * the session carries a comps block, inject the stored ARV — with the
+ * bound-address echo attached to the result so the model's reply names where
+ * the number came from. An explicit ARV in the call always wins; a message
+ * naming a DIFFERENT address never pre-fills (silently pricing the wrong
+ * deal is the failure mode this guard exists for). State errors degrade to
+ * no-prefill; the calculator then asks for the ARV as it always did.
+ */
+async function applyArvPrefill(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<
+  | { args: Record<string, unknown>; prefill?: Record<string, unknown> }
+  | { error: string }
+> {
+  const store = ctx.comps?.stateStore;
+  if (!store || !ctx.comps) return { args };
+
+  const block = await store.getCompsBlock(ctx.comps.sessionId);
+
+  const explicit = args.after_repair_value;
+  if (explicit !== undefined && explicit !== null) {
+    // No stored block ⇒ nothing to conflict with; the plain pre-comps
+    // behaviour (explicit value, assertRequired, prompt rules) applies.
+    if (!block || !(block.arv > 0)) return { args };
+
+    // A stored block EXISTS, so an explicit ARV is one of three things, and
+    // the tool call alone cannot distinguish them — the discriminator is
+    // whether the MEMBER said the number this turn:
+    //
+    //  1. explicit == block.arv — the model relaying the current block
+    //     (observed live). Same value ⇒ same guarantees: echo + guard.
+    //  2. explicit != block.arv and the number IS in the member's message —
+    //     a genuine override. Runs, but never silently: the echo names both
+    //     the override and the stored estimate it replaces.
+    //  3. explicit != block.arv and the number is NOT in the member's message
+    //     — the model carried a stale figure (address A's ARV after B was
+    //     bound — the wrong-house leak reopened through history). Ambiguity
+    //     is a QUESTION, not an assumption: refuse and ask.
+    if (typeof explicit !== 'number' || !Number.isFinite(explicit)) return { args };
+
+    if (explicit === block.arv) {
+      if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
+        return {
+          error:
+            `The ARV ${block.arv} is the one computed for ${block.subjectAddress}, but this message names a ` +
+            'different property. Do NOT price this deal with it. Ask ONE question: which deal is this — the one ' +
+            `at ${block.subjectAddress}, or the new address (offer to run comps on it or take its ARV)?`,
+        };
+      }
+      ctx.lastArvPrefill = { arv: block.arv, subjectAddress: block.subjectAddress, source: block.arvSource };
+      return { args };
+    }
+
+    if (messageStatesNumber(ctx.userMessage, explicit)) {
+      // Member named BOTH a different property and a number — coherent input,
+      // so it RUNS (refusing here would be obtuse; operator ruling on
+      // BUG-007). But never unlabelled: the number may be a purchase price
+      // the model mistook for an ARV ("456 Oak, purchase 400000" vs a stored
+      // $403k), and state.comps stays bound to the OLD address afterwards.
+      // The echo therefore names the property being analysed AND flags that
+      // the comps on file belong elsewhere.
+      const newAddress = findConflictingAddress(ctx.userMessage, block.subjectAddress, normalizeAddress);
+      if (newAddress) {
+        ctx.lastArvPrefill = {
+          arv: explicit,
+          subjectAddress: newAddress,
+          source: 'override',
+          staleCompsAddress: block.subjectAddress,
+        };
+        return { args };
+      }
+      ctx.lastArvPrefill = { arv: explicit, subjectAddress: block.subjectAddress, source: 'override', overridden: block.arv };
+      return { args };
+    }
+
+    return {
+      error:
+        `ARV mismatch: you passed ${explicit}, but the stored ARV for ${block.subjectAddress} is ${block.arv}, ` +
+        `and the member did not state ${explicit} in this message — so that number is likely carried from an ` +
+        'earlier deal. Do NOT run the calculator. Ask ONE question: should this deal use the stored ' +
+        `${block.arv} ARV for ${block.subjectAddress}, or a different number (have them state it)?`,
+    };
+  }
+
+  if (!block || !(block.arv > 0)) return { args };
+
+  if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
+    return {
+      error:
+        `No ARV was given, and the stored ARV belongs to ${block.subjectAddress} while this message names a ` +
+        'different property. Do NOT reuse the stored ARV. Ask ONE question: which deal is this — the one at ' +
+        `${block.subjectAddress}, or the new address (in which case ask for its ARV or offer to run comps on it)?`,
+    };
+  }
+
+  ctx.lastArvPrefill = { arv: block.arv, subjectAddress: block.subjectAddress, source: block.arvSource };
+  return {
+    args: { ...args, after_repair_value: block.arv },
+    prefill: {
+      arv: block.arv,
+      arv_source: block.arvSource,
+      subject_address: block.subjectAddress,
+      echo_instruction:
+        `REQUIRED: your reply's first line must state the pre-fill, e.g. "using ARV ` +
+        `$${block.arv.toLocaleString('en-US')} from ${block.arvSource === 'comps' ? 'the comps on' : 'your manual entry for'} ` +
+        `${block.subjectAddress} — say 'change ARV' to override." Never present a pre-filled ARV as if the member typed it.`,
+    },
+  };
 }
 
 async function executeTool(
@@ -256,12 +516,28 @@ async function executeTool(
   ctx: ToolContext,
 ): Promise<unknown> {
   switch (name) {
-    case 'flip_calculator':
-      return runFlipTool(args);
-    case 'brrrr_calculator':
-      return runBrrrrTool(args);
+    case 'flip_calculator': {
+      const prefilled = await applyArvPrefill(args, ctx);
+      if ('error' in prefilled) return prefilled;
+      const result = runFlipTool(prefilled.args);
+      return prefilled.prefill ? { ...result, arv_prefill: prefilled.prefill } : result;
+    }
+    case 'brrrr_calculator': {
+      const prefilled = await applyArvPrefill(args, ctx);
+      if ('error' in prefilled) return prefilled;
+      const result = runBrrrrTool(prefilled.args);
+      return prefilled.prefill ? { ...result, arv_prefill: prefilled.prefill } : result;
+    }
     case 'land_purchase_calculator':
       return runLandTool(args);
+    case 'run_comps': {
+      if (!ctx.comps) return { error: 'Comps are not configured on this deployment.' };
+      return runCompsToolHandler(args, ctx.comps);
+    }
+    case 'set_manual_arv': {
+      if (!ctx.comps) return { error: 'Comps state is not configured on this deployment.' };
+      return setManualArvToolHandler(args, ctx.comps);
+    }
     case 'request_calculator_form': {
       const calculator = args.calculator;
       if (!isCalculatorKey(calculator)) {
@@ -269,13 +545,31 @@ async function executeTool(
           error: `Unknown calculator "${String(calculator)}". Valid: flip, brrrr, land_purchase.`,
         };
       }
-      const form = CALCULATOR_FORMS[calculator as CalculatorKey];
+      // CONTRACT §8.1: the ARV field picks up the session's comps block as an
+      // editable, LABELLED default — server-side state read only; the model's
+      // args carry nothing but the calculator key (additionalProperties:
+      // false), so no model output can place a value into a form field. The
+      // same §8 guards apply: no block -> no default; a message naming a
+      // different property -> blank. State read failure degrades to the
+      // plain form. applyFormArvPrefill clones — CALCULATOR_FORMS stay pristine.
+      let form = CALCULATOR_FORMS[calculator as CalculatorKey];
+      if (ctx.comps?.stateStore) {
+        const block = await ctx.comps.stateStore.getCompsBlock(ctx.comps.sessionId);
+        form = applyFormArvPrefill(form, block, ctx.userMessage);
+      }
       ctx.formRequest.form = form;
       // The model gets the labels (so it can write a natural one-liner) but not
       // the defaults — it must not recite them as if they were the member's.
+      const arvPrefill = [...form.required, ...form.optional].find((f) => f.prefill)?.prefill;
       return {
+        // Address only, never the value: the binding is worth mentioning in
+        // the one-liner; the number must come from the form, not the model.
+        ...(arvPrefill ? { arv_prefilled_from: arvPrefill.subjectAddress } : {}),
         form_rendered: true,
-        calculator: form.calculator,
+        // Named form_calculator, NOT `calculator`: that key is the calculator
+        // RESULT discriminator (runFlipTool et al.), and a form directive
+        // claiming it makes "find the flip result" match the form instead.
+        form_calculator: form.calculator,
         title: form.title,
         required_fields: form.required.map((f) => f.label),
         instruction:

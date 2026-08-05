@@ -1,0 +1,6 @@
+[{
+  "addressOrUrlFromInput": "99999 Zzyzx Qwvortex Blvd, Nowhereville, ZZ 00000",
+  "invalidReason": "Invalid address or Zillow has no data for this address",
+  "isValid": false,
+  "scrapedAt": "2026-08-05T15:10:22.622Z"
+}]

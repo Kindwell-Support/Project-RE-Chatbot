@@ -5,6 +5,29 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+/**
+ * Same zero-cost existence probe for the comps tables (sql/add_comps_tables.sql).
+ * Missing tables warn loudly but never block boot: the comps feature degrades
+ * (cache misses -> live runs; state writes warn) rather than taking the whole
+ * mentor down with it.
+ */
+export async function ensureCompsTables(supabase: SupabaseClient): Promise<boolean> {
+  let ok = true;
+  for (const table of ['comps_cache', 'session_state'] as const) {
+    const { error } = await supabase.from(table).select('*', { head: true, count: 'exact' }).limit(0);
+    if (error) {
+      ok = false;
+      console.warn(
+        `[migrate] ${table} table not found. Run sql/add_comps_tables.sql in the Supabase SQL editor. ` +
+          'Comps will work but degrade: no caching (every run bills Apify) and no ARV pre-fill.',
+      );
+    } else {
+      console.log(`[migrate] ${table} table exists`);
+    }
+  }
+  return ok;
+}
+
 export async function ensureChatMessagesTable(supabase: SupabaseClient): Promise<boolean> {
   // Test if the table already exists by trying a zero-cost read
   const { error } = await supabase
