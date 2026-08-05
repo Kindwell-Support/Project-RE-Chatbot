@@ -20,6 +20,11 @@ import type { RawComp, ScoredComp, SubjectProperty } from './types.js';
 
 export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): ScoredComp {
   const distanceMi = haversineMiles(subject.lat, subject.lng, comp.lat, comp.lng);
+  // Raw, deliberately: a negative value is the EVIDENCE that a comp is
+  // future-dated, and hiding it here would mask what rule 12 rejects. The
+  // BUG-003 clamp lives in the recency TERM below (and in calculateArv's
+  // median input) — the score range holds structurally while the field stays
+  // honest.
   const monthsAgo = monthsBetween(comp.soldDate, now);
   const subjectSqft = subject.livingArea ?? 0;
 
@@ -43,7 +48,12 @@ export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): S
   const parts = {
     distance: Math.min(distanceMi / DISTANCE_NORM_MI, 1) * WEIGHT_DISTANCE,
     sqft: Math.min(sqftFrac, 1) * WEIGHT_SQFT,
-    recency: Math.min(monthsAgo / RECENCY_NORM_MONTHS, 1) * WEIGHT_RECENCY,
+    // max(…, 0) is BUG-003's defensive half: min() alone only capped the TOP
+    // of the range, so a future-dated comp scored NEGATIVE and sorted ahead of
+    // flawless comps — bad data promoted, not just tolerated. Rule 12 rejects
+    // such comps at the filter; this keeps §5.4's 0-100 range structural no
+    // matter what reaches the function.
+    recency: Math.min(Math.max(monthsAgo, 0) / RECENCY_NORM_MONTHS, 1) * WEIGHT_RECENCY,
     bedbath: Math.min((Math.abs(dBeds) + Math.abs(dBaths)) / 2, 1) * WEIGHT_BEDBATH,
   };
 

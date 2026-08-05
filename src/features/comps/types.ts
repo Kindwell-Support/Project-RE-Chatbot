@@ -69,7 +69,9 @@ export type RejectReason =
   | 'TOO_FAR'
   | 'PRICE_MISSING'
   | 'NON_ARMS_LENGTH'
-  | 'LOT_ANOMALY';
+  | 'LOT_ANOMALY'
+  /** Rule 12 (BUG-003): dated after `now` — a sale that hasn't happened is not a comp. */
+  | 'FUTURE_SOLD_DATE';
 
 export interface RejectedComp {
   comp: RawComp;

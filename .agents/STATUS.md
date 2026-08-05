@@ -5,3 +5,4 @@
 19:22 INSPECTOR — golden dataset (7 cases) run against slice 2: 25/25 pass, ARV core scoped-GREEN; filed BUG-001 (materialBudget suite has never executed, shebang+CRLF, 17 tests absent, npm test red) — next: unit specs for normalize/haversine/trimmedMean/filter/rank
 19:42 INSPECTOR — slice 1+2 unit specs landed (235 tests: normalize 78, filter 49, arv 57, rank 26, golden 25); found BUG-003 (major: future-dated comp scores negative, outranks every real comp, cannot be capped out) + BUG-002 and two CONTRACT §5.1 wording fixes (minor batch) — next: format/service specs when slice 3 lands
 20:12 MASON — spike done (4 recorded fixtures, 2 actors, miss shapes), CONTRACT amended (rulings+cuts+§6.1 mapping), ANSWER 0004 sent — next: BUG-003/BUG-002 fixes
+20:18 MASON — BUG-003 fixed (rule 12 + term clamp, field raw), BUG-002 fixed (boundary throws), seam+key rulings in contract, FIXED 0006 sent — next: provider slice

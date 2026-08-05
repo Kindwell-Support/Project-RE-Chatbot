@@ -140,6 +140,16 @@ export function applyHardFilters(
       rejected.push({ comp, reason: 'LOT_ANOMALY' });
       continue;
     }
+    // Rule 12 (BUG-003): a sale dated after `now` hasn't happened yet, so it
+    // is not a comp. Without this, a future-dated row passed every filter and
+    // its NEGATIVE recency score ranked it ahead of flawless comps — bad data
+    // promoted, not just tolerated. Zillow emits these (pending-close dates,
+    // timezone shifts). Appended as rule 12 so rules 1-11 keep their pinned
+    // first-match reasons unchanged.
+    if (monthsBetween(comp.soldDate, now) < 0) {
+      rejected.push({ comp, reason: 'FUTURE_SOLD_DATE' });
+      continue;
+    }
     kept.push(comp);
   }
 

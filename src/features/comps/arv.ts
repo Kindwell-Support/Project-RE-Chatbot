@@ -9,7 +9,17 @@ import { ARV_ROUND_TO, CONF_HIGH, CONF_MEDIUM, TRIM_FRACTION } from './config.js
 import { median } from './filter.js';
 import type { ArvConfidence, ArvResult, ScoredComp, SubjectProperty } from './types.js';
 
+/**
+ * BUG-002: throws on livingArea <= 0 rather than returning Infinity. The
+ * Infinity was the dangerous one — `Infinity < 0.4 × median` is false, so a
+ * divide-by-zero comp could never be rejected as non-arms-length and would
+ * poison the mean. Callers are gated by filter rules 3/9 today, but the guard
+ * is structural, not positional.
+ */
 export function pricePerSqft(soldPrice: number, livingArea: number): number {
+  if (!(livingArea > 0)) {
+    throw new TypeError(`pricePerSqft: livingArea must be > 0 (got ${livingArea})`);
+  }
   return soldPrice / livingArea;
 }
 
@@ -23,6 +33,12 @@ export function trimmedMean(values: number[]): {
   trimmedOut: number[];
   used: number[];
 } {
+  // BUG-002: mean([]) is NaN, which renders as "$NaN" or coerces to a $0 ARV.
+  // Unreachable through the service (min kept is 3) — but that defence is
+  // positional; this one is structural.
+  if (values.length === 0) {
+    throw new TypeError('trimmedMean: cannot take the mean of zero values');
+  }
   const sorted = [...values].sort((a, b) => a - b);
   const n = sorted.length;
   const trimCount = n >= 5 ? Math.max(1, Math.floor(n * TRIM_FRACTION)) : 0;
@@ -111,7 +127,10 @@ export function calculateArv(subject: SubjectProperty, ranked: ScoredComp[]): Ar
   // (CONTRACT §5.5) — trimming is about price outliers, not about pretending
   // the far or stale comps aren't in the set.
   const medianDistanceMi = median(ranked.map((s) => s.distanceMi));
-  const medianAgeMonths = median(ranked.map((s) => s.monthsAgo));
+  // Age clamped at 0 (BUG-003): a negative age would pull this median DOWN
+  // and make `high` confidence easier to reach — worse data producing more
+  // confidence, pointing exactly the wrong way.
+  const medianAgeMonths = median(ranked.map((s) => Math.max(s.monthsAgo, 0)));
 
   return {
     arv,

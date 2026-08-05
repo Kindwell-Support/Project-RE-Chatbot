@@ -245,8 +245,10 @@ score    = sum                                                    // 0–100, st
 ```
 The `max(monthsAgo, 0)` clamp is BUG-003's defensive half: rule 12 already
 rejects future-dated comps, but §5.4's stated 0–100 range must hold no matter
-what reaches the function. The same clamp applies to `monthsAgo` wherever it
-feeds the confidence age median.
+what reaches the function. Clamp placement is deliberate: the clamp lives in
+the recency TERM and in the confidence-median input inside `calculateArv`;
+`ScoredComp.monthsAgo` itself reports the RAW (possibly negative) value — the
+negative number is the evidence of a future date, and the field stays honest.
 Sort ascending; ties broken by `distanceMi` asc, then `zpid` asc (determinism).
 Keep top `MAX_COMPS_KEPT`. Fewer than `MIN_COMPS_TO_COMPUTE` kept ⇒ `TOO_FEW_COMPS`.
 
@@ -287,6 +289,15 @@ Errors: providers throw `ProviderTimeoutError` / `ProviderHttpError(status)` /
 `ProviderNetworkError`; `service.ts` maps them to failure codes. Retry policy:
 one retry on timeout/5xx/network, none on 4xx. `stub.ts` replays fixtures and
 is what CI runs — the default `npm test` never touches the network.
+
+**Injection seam (BLOCKED-0008 resolution, binding):**
+`AppDeps` (src/server/app.ts) gains `propertyProvider?: PropertyDataProvider`.
+buildApp threads it into `runAgent` options and from there into the comps tool
+handlers → `service.ts`. `service.ts` NEVER constructs a provider itself; the
+default `ApifyZillowProvider` is constructed lazily inside buildApp (mirroring
+the existing `getOpenAI`/`getSupabase` lazy getters — nothing network-capable
+is created at module scope). A test hands the pipeline a fake provider through
+deps with no env vars and no module-registry tricks.
 
 ### 6.1 Apify payload mapping — RECORDED FACTS (spike, 2026-08-05; fixtures in `__fixtures__/spike-*.json`)
 
@@ -337,7 +348,16 @@ cache_key text primary key, normalized_address text not null,
 raw_subject jsonb, raw_comps jsonb, result jsonb,
 algo_version int not null, provider text not null,
 created_at timestamptz not null default now(), expires_at timestamptz not null
+-- plus: create index on comps_cache (expires_at)  — operator #5, for stale-row cleanup
 ```
+
+**Supabase key (operator #6, confirmed by reading src/server/app.ts):** the
+backend's ONLY Supabase client is `createClient(supabaseUrl,
+config.supabaseServiceKey)` — the SERVICE ROLE key. `comps_cache` and
+`session_state` follow the existing `chat_messages` pattern exactly: RLS
+enabled, **no anon policies on purpose**, service role is the sole client. The
+anon key appears nowhere in this path, so the RLS-empty-result trap (silent
+cache misses re-billing Apify on every request) cannot arise.
 - TTL `CACHE_TTL_DAYS` (14). Expired rows are treated as absent.
 - Raw payload cached separately from result. Cache hit with stale
   `algo_version` ⇒ **recompute from raw, update result, do not re-hit the provider**.
@@ -352,8 +372,15 @@ Safety-by-construction rules (change log #12):
 
 ```sql
 session_id text primary key,           -- REUSES the chat_messages session_id verbatim; no new identifier
-state jsonb not null default '{}',
+state jsonb not null default '{}',     -- ONE jsonb column carrying the whole blob; atomicity comes free
 updated_at timestamptz not null default now()
+```
+
+Pinned Supabase call shapes (BLOCKED-0008; INSPECTOR's double narrows to these):
+
+```
+read   .from('session_state').select('state').eq('session_id', id).maybeSingle()
+write  .from('session_state').upsert({ session_id, state, updated_at })
 ```
 
 - The comps block is written as **ONE atomic object**, never field-by-field:
