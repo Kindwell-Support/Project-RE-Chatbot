@@ -7,3 +7,4 @@
 20:12 MASON — spike done (4 recorded fixtures, 2 actors, miss shapes), CONTRACT amended (rulings+cuts+§6.1 mapping), ANSWER 0004 sent — next: BUG-003/BUG-002 fixes
 20:18 MASON — BUG-003 fixed (rule 12 + term clamp, field raw), BUG-002 fixed (boundary throws), seam+key rulings in contract, FIXED 0006 sent — next: provider slice
 20:23 MASON — provider slice shipped (real adapter + stub + seam + netGuard wired), mapper verified on all 4 recorded fixtures, HANDOFF 0007 sent — next: format+service
+20:25 MASON — format+service shipped (orchestrator, one-source failure copy, cache/budget seams), 6 offline smokes green incl. recompute-from-raw, HANDOFF 0008 sent — next: cache+migration
