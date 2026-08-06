@@ -8,6 +8,7 @@
  * sheet's corrupted "#REF!" item names must be cleaned before import.
  */
 import { createRequire } from 'node:module';
+import { MissingRequiredInputError } from './toolRunners.js';
 
 const require = createRequire(import.meta.url);
 
@@ -31,14 +32,32 @@ const defaultTable: MaterialBudgetTable = require('../data/material_budget.json'
 export const SPEC_TIERS = ['Budget', 'Basic', 'Standard', 'Premium'] as const;
 
 /**
+ * @param item REQUIRED per toolDefs.ts. Typed `unknown` on purpose: this is a
+ *   model-supplied argument, so the guard below — not the type system — is
+ *   what actually holds at runtime.
  * @param table injectable so tests can exercise a fixture without shipping
  *   fake rates in the real data file.
+ *
+ * @throws MissingRequiredInputError when `item` is absent, not a string, or
+ *   blank. BUG-009: the old call site coerced a missing argument to `''`, and
+ *   `''` substring-matches every row — so a model that omitted the argument
+ *   got the ENTIRE rate table back as `matches` and relayed it as an answer.
+ *   That is the frozen-$148,466 shape: a required input silently defaulted
+ *   instead of rejected. "All 5 of 5 rows matched" is not a degraded answer,
+ *   it is a wrong one, so this fails the same way the calculators do.
  */
 export function lookupMaterialBudget(
-  item: string,
+  item: unknown,
   specTier?: string,
   table: MaterialBudgetTable = defaultTable,
 ) {
+  // Guard FIRST: a schema violation is a schema violation whether or not the
+  // table happens to be loaded. Ordering it after the load check would make
+  // the guard invisible today (shipped table is loaded:false) and only start
+  // biting the day the client's sheet lands.
+  if (typeof item !== 'string' || !item.trim()) {
+    throw new MissingRequiredInputError('lookup_material_budget', ['item']);
+  }
   // On any miss the model is redirected to the knowledge base, NOT dead-ended:
   // James's course material contains real narrative rates (verified live —
   // tile ~$10-11/sf installed, flooring $1.50/$2.50/$4 specs, paint $2-3/sf),

@@ -33,6 +33,11 @@ function stripUndefined(args: Record<string, unknown>): Record<string, unknown> 
  * JSON.stringify serialises to `null`, handing the model a silent blank
  * instead of an error. The old build's variant of this bug substituted sheet
  * defaults and reported the same frozen profit for every deal.
+ *
+ * Also used by non-calculator tools with required arguments — materialLookup
+ * (BUG-009) throws it for a blank `item`. The `calculator` field is really
+ * "which tool", kept under its original name so the three call sites and the
+ * tests that pin them stay untouched.
  */
 export class MissingRequiredInputError extends Error {
   constructor(

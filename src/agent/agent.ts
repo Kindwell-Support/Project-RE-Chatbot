@@ -577,7 +577,11 @@ async function executeTool(
       };
     }
     case 'lookup_material_budget':
-      return lookupMaterialBudget(String(args.item ?? ''), args.spec_tier as string | undefined);
+      // No `?? ''` and no String() coercion (BUG-009): both converted a schema
+      // violation into a plausible-looking answer — `''` matched every row,
+      // and String(undefined) would query the literal "undefined". The raw
+      // argument goes to the guard, which rejects it like the calculators do.
+      return lookupMaterialBudget(args.item, args.spec_tier as string | undefined);
     case 'search_knowledge_base': {
       const { chunks, embeddingTokens } = await searchKnowledgeBase(
         ctx.openai,
