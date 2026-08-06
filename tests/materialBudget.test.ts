@@ -81,9 +81,59 @@ describe('lookup against a loaded table', () => {
   });
 
   it('is deterministic — identical calls give identical results', () => {
-    const a = JSON.stringify(lookupMaterialBudget('Countertops', 'Premium', FIXTURE));
+    // POSITIVE PRECONDITION added during the BUG-001 audit. Without it this
+    // test survived a `lookupMaterialBudget` that returned `undefined`:
+    // JSON.stringify(undefined) === JSON.stringify(undefined) is trivially
+    // true, so the only determinism test in the suite proved nothing.
+    const first = lookupMaterialBudget('Countertops', 'Premium', FIXTURE) as any;
+    expect(first.available, 'precondition: the lookup did not succeed').toBe(true);
+    expect(first.matches).toHaveLength(1);
+
+    const a = JSON.stringify(first);
     const b = JSON.stringify(lookupMaterialBudget('Countertops', 'Premium', FIXTURE));
     expect(a).toBe(b);
+    expect(a, 'precondition: the result serialised to nothing').not.toBe(undefined);
+  });
+
+  it('substring queries match, and match only what they should', () => {
+    // Untested before the BUG-001 audit and load-bearing: the model sends
+    // free text ("flooring"), not exact item names, so substring behaviour IS
+    // the production path.
+    const flooring = lookupMaterialBudget('flooring', undefined, FIXTURE) as any;
+    expect(flooring.available).toBe(true);
+    // LVP x2 (Budget, Standard) + Hardwood x1.
+    expect(flooring.matches).toHaveLength(3);
+
+    const counter = lookupMaterialBudget('counter', undefined, FIXTURE) as any;
+    expect(counter.available).toBe(true);
+    expect(counter.matches).toHaveLength(2);
+    for (const m of counter.matches) expect(m.item).toMatch(/Countertops/i);
+  });
+
+  it('BUG-009: a blank item must not return the ENTIRE table', () => {
+    // FAILS ON PURPOSE — this is the repro.
+    //
+    // `agent.ts` calls `lookupMaterialBudget(String(args.item ?? ''), ...)`.
+    // The schema marks `item` required, but the call site coerces a missing
+    // one to `''`, and `''` substring-matches every row. So a model that omits
+    // the argument gets the whole rate table back as "matches" and relays it
+    // as though it answered the member's question.
+    //
+    // This is the frozen-$148,466 shape exactly: a missing required input
+    // silently defaulted instead of rejected. The calculators guard it with
+    // MissingRequiredInputError; this tool has no equivalent.
+    //
+    // Unreachable TODAY only because the shipped table is loaded:false. It
+    // goes live the day the client's sheet lands — which is the entire point
+    // of the feature.
+    for (const blank of ['', '   ', '\t']) {
+      const r = lookupMaterialBudget(blank, undefined, FIXTURE) as any;
+      expect(
+        r.available === false || (r.matches?.length ?? 0) < FIXTURE.items.length,
+        `a blank item (${JSON.stringify(blank)}) returned the whole table ` +
+          `(${r.matches?.length} of ${FIXTURE.items.length} rows)`,
+      ).toBe(true);
+    }
   });
 
   it('an unknown item returns unavailable with the KB-fallback instruction', () => {

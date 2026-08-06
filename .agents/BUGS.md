@@ -97,6 +97,44 @@ observability gap, not a defect.
 
 ---
 
+## BUG-009 — a blank `item` returns the ENTIRE material-budget table
+
+- **Status**: OPEN
+- **Severity**: minor today, **major the day the client's sheet lands**
+- **Reported**: msg `0019-inspector-bug001-verified-plus-audit.md`
+- Found by the BUG-001 audit, not by the 17 tests.
+
+```
+module:    src/agent/agent.ts:580 (call site) + src/agent/materialLookup.ts
+repro:     npx vitest run tests/materialBudget.test.ts -t "BUG-009"
+expected:  a blank item is rejected, or at minimum does not match every row
+actual:    lookupMaterialBudget('', undefined, FIXTURE) returns all 5 of 5 rows
+           as `matches`; same for '   ' and '	'
+spec-ref:  toolDefs.ts declares `required: ['item']`
+```
+
+The schema marks `item` required. The call site is
+`lookupMaterialBudget(String(args.item ?? ''), ...)` — it coerces a missing
+argument to `''`, and `''` substring-matches every row. A model that omits the
+argument gets the whole rate table back as `matches` and relays it as though it
+answered the member's question.
+
+**This is the frozen-$148,466 shape exactly**: a missing required input silently
+defaulted instead of rejected. The calculators guard precisely this with
+`MissingRequiredInputError` (`tests/agent.test.ts` §3.2 pins it); this tool has
+no equivalent, and the `?? ''` actively converts a schema violation into a
+plausible-looking answer.
+
+Unreachable **today** only because the shipped table is `loaded: false`, so every
+lookup returns the KB-redirect regardless. It goes live the day the client's
+sheet is ingested — which is the entire purpose of the feature, and the moment
+nobody will be re-auditing this path.
+
+Fix: reject a blank/whitespace `item` the way the calculators reject a missing
+required field, rather than coercing it.
+
+---
+
 ## BUG-008 — the widget pre-filled without a label — CLOSED
 
 - **Status**: CLOSED (repro re-run and confirmed)
@@ -272,12 +310,35 @@ a zero PRICE is rule 9's business and not a programmer error.
 
 ---
 
-## BUG-001 — `tests/materialBudget.test.ts` has never run; 17 tests silently absent
+## BUG-001 — `tests/materialBudget.test.ts` had never run — CLOSED
 
-- **Status**: OPEN
+- **Status**: CLOSED (fix verified on a real fresh clone, 2026-08-06)
 - **Severity**: major
+- **Fix**: `614308b` — shebang removed from `tools/ingest_material_budget.mjs`
+  (options 1 + 3), plus `.gitattributes` with `* text=auto eol=lf` repo-wide.
+
+Verified, four checks:
+
+1. **All 17 collect and execute.** Was 0 collected.
+2. **`npm test` exits 0** — the first time in this repo's history. 30 files,
+   1,277 passing.
+3. **The CRLF class is dead, not just this instance.** The three-way probe still
+   reproduces the hazard by hand (shebang+LF ok, no-shebang+CRLF ok,
+   shebang+CRLF SyntaxError), so the diagnosis holds — but `.gitattributes`
+   normalises CRLF to LF on `git add`, so the bad combination cannot ENTER the
+   repo. Proved on a real `git clone`: every file checks out LF, the stored blob
+   is LF, and a deliberately CRLF-authored shebang file is normalised on add.
+   `.gitattributes` is committed, so it travels with the repo.
+4. **`node tools/ingest_material_budget.mjs <sheet.xlsx>` still runs.** No args
+   prints usage and exits 0; a real workbook parses and fails with its own
+   informative column error. Nothing referenced the file as a `bin` or npm
+   script, and its own usage line documents `node tools/…`, so the shebang was
+   decorative.
+
+Original report follows.
+
 - **Reported**: msg `0004-inspector-bug-materialbudget-suite-never-runs.md`
-- **Pre-existing** — present since `ed61772`, unrelated to `feat/comps-lookup`.
+- **Was pre-existing** — present since `ed61772`.
 
 ```
 module:    tools/ingest_material_budget.mjs (line 1)
