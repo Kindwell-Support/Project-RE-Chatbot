@@ -587,7 +587,9 @@ async function executeTool(
         ctx.openai,
         ctx.supabase,
         ctx.config,
-        String(args.query ?? ''),
+        // Raw, uncoerced (FINDING-005): `?? ''` embedded a void query and
+        // returned arbitrary passages the model would then quote as an answer.
+        args.query,
       );
       ctx.usage.embedding_tokens += embeddingTokens;
       for (const chunk of chunks) {

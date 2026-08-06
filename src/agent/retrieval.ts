@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppConfig } from '../config.js';
 import type { Logger } from '../server/logger.js';
 import { consoleLogger } from '../server/logger.js';
+import { MissingRequiredInputError } from './toolRunners.js';
 
 export interface RetrievedChunk {
   id: string | number;
@@ -98,13 +99,31 @@ export function alarmOnDuplication(
   return ratio;
 }
 
+/**
+ * @param query REQUIRED per toolDefs.ts. Typed `unknown` because it arrives
+ *   from the model; the guard, not the type system, is what holds at runtime.
+ *
+ * @throws MissingRequiredInputError when `query` is absent, not a string, or
+ *   blank. FINDING-005, and the highest-consequence instance of the pattern:
+ *   an empty embedding is a valid vector, so the search does not fail — it
+ *   returns ARBITRARY passages. That matters because the material-budget
+ *   fallback instructs the model to "quote ONLY dollar figures that appear in
+ *   the retrieved passages". Handed passages retrieved for no question, a
+ *   COMPLIANT model quotes those figures as an answer: the instruction that
+ *   normally prevents invention becomes the thing that launders it. Guarded
+ *   ahead of the embeddings call, so a void query also never bills one.
+ */
 export async function searchKnowledgeBase(
   openai: OpenAI,
   supabase: SupabaseClient,
   config: AppConfig,
-  query: string,
+  query: unknown,
   logger: Logger = consoleLogger,
 ): Promise<RetrievalResult> {
+  if (typeof query !== 'string' || !query.trim()) {
+    throw new MissingRequiredInputError('search_knowledge_base', ['query']);
+  }
+
   const embeddingResponse = await openai.embeddings.create({
     model: config.embeddingModel,
     input: query,
