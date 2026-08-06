@@ -1,8 +1,12 @@
-#!/usr/bin/env node
 /**
  * Ingestion script for the client's material-allowance / spec-tier sheet.
  *
  *   node tools/ingest_material_budget.mjs <sheet.xlsx> [--sheet "Tab Name"] [--dry-run]
+ *
+ * NO SHEBANG, deliberately (BUG-001): shebang + CRLF line endings breaks
+ * vitest's loader, which silently benched this file's test suite — 17 tests
+ * that had never executed. The script is always invoked via `node tools/...`
+ * (see usage above); nothing execs it directly.
  *
  * Emits src/data/material_budget.json in the shape materialLookup.ts expects:
  *   { loaded, source, items: [{ category, item, spec_tier, unit, low, high }] }

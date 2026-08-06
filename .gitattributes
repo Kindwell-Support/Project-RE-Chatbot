@@ -1,0 +1,13 @@
+# Normalize all text files to LF, everywhere — including Windows checkouts.
+#
+# Added with BUG-001: this is a Windows working tree, and without this file
+# autocrlf manufactures CRLF on checkout. CRLF + a shebang broke vitest's
+# loader on tools/ingest_material_budget.mjs, silently benching an entire
+# test suite for weeks (the suite "failed to parse" and collected 0 tests,
+# which reads like one flaky file rather than a feature with no coverage).
+# Repo-wide on purpose — the class dies here, not just the one instance.
+* text=auto eol=lf
+
+# Binary assets — never touch line endings.
+*.xlsx binary
+*.png binary
