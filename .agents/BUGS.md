@@ -97,9 +97,72 @@ observability gap, not a defect.
 
 ---
 
-## BUG-009 — a blank `item` returns the ENTIRE material-budget table
+## FINDING-005 — the silent-default shape is a pattern, not two instances
 
-- **Status**: OPEN
+- **Status**: OPEN (one live instance), reported not fixed per operator scope
+- **Severity**: minor
+- **Reported**: msg `0020-inspector-bug009-closed-plus-pattern-sweep.md`
+
+Swept `src/` for silent defaults on tool arguments after finding this shape
+twice (frozen-$148,466, then BUG-009). Three call sites use the coercion:
+
+| site | shape | verdict |
+| --- | --- | --- |
+| `comps/tools.ts:118` | `String(args.address ?? '').trim()` | **SAFE** — guarded on the very next line, returns an honest error |
+| calculators (`toolRunners.ts`) | `assertRequired` | **SAFE** — throws `MissingRequiredInputError` |
+| `agent.ts:590` | `String(args.query ?? '')` -> `searchKnowledgeBase` | **UNGUARDED** |
+
+`search_knowledge_base` declares `required: ['query']`, but a missing one is
+coerced to `''` and passed straight through. `searchKnowledgeBase` embeds it
+unconditionally — no guard — so an empty query is embedded (spending an
+embedding call) and vector-searched, returning arbitrary nearest passages with
+no relation to any question.
+
+Worse than it first sounds because of what sits downstream: the material-budget
+fallback instructs the model to "quote ONLY dollar figures that appear in the
+retrieved passages". Faced with passages retrieved for no question at all, a
+compliant model quotes figures out of them and presents them as an answer.
+
+**The pattern, stated plainly.** The safe sites are safe by individual
+diligence, not by a shared mechanism. `assertRequired` exists for calculators
+only; every other tool hand-rolls its own guard or forgets to. Nothing —
+no lint rule, no shared helper, no test — prevents the next `?? ''`. That is
+why this shape has now appeared three times in a codebase that already had one
+famous incident from it.
+
+Not fixed: outside BUG-009's scope by operator instruction.
+
+---
+
+## BUG-009 — a blank `item` returned the ENTIRE material-budget table — CLOSED
+
+- **Status**: CLOSED (repro re-run and confirmed, 2026-08-06)
+- **Severity**: was minor today / major on the day the sheet lands
+- **Fix**: `071903b` — the `?? ''` default dropped at the call site;
+  `lookupMaterialBudget` throws `MissingRequiredInputError` on a blank,
+  non-string or missing `item`.
+
+Verified against the ruling's gate:
+
+- **Every blank shape rejected** — `''`, spaces, tab, newline, `undefined`,
+  `null`, and (belt and braces) a number and an object. The old `?? ''` masked
+  several distinct inputs, so a guard on `''` alone would have left the others.
+- **No result set on any of them.** Not empty, not partial — the call throws
+  and returns nothing.
+- **Same convention as the calculators**, not a second one: identical error
+  CLASS (asserted by comparing constructors against `runFlipTool({})`), and
+  identical SURFACING — both go through `runAgent`'s shared catch and reach the
+  model carrying the "do not invent numbers" instruction, with no `matches` and
+  no `outputs` alongside.
+- **The guard fires even when the table is `loaded:false`.** MASON ordered it
+  before the load check; had it come after, it would have been invisible today
+  and only started biting the day the client's sheet landed.
+- **A real item still works** — positive precondition, so the guard is a guard
+  and not a blanket refusal.
+
+Original report follows.
+
+- **Status (at filing)**: OPEN
 - **Severity**: minor today, **major the day the client's sheet lands**
 - **Reported**: msg `0019-inspector-bug001-verified-plus-audit.md`
 - Found by the BUG-001 audit, not by the 17 tests.

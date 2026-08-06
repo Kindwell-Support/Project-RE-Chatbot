@@ -11,6 +11,17 @@ import {
   lookupMaterialBudget,
   type MaterialBudgetTable,
 } from '../src/agent/materialLookup.js';
+import { MissingRequiredInputError, runFlipTool } from '../src/agent/toolRunners.js';
+import { runAgent } from '../src/agent/agent.js';
+import { loadConfig } from '../src/config.js';
+import { makeFakeOpenAI, makeFakeSupabase } from './helpers/fakes.js';
+
+const agentConfig = loadConfig({
+  ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
+  OPENAI_API_KEY: 'test-not-a-real-key',
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: 'test-not-a-real-key',
+} as NodeJS.ProcessEnv);
 // @ts-expect-error — plain .mjs helper, no types
 import { buildTable, isCorrupt, recoverItemName, normalizeTier, parseMoney } from '../tools/ingest_material_budget.mjs';
 
@@ -110,30 +121,125 @@ describe('lookup against a loaded table', () => {
     for (const m of counter.matches) expect(m.item).toMatch(/Countertops/i);
   });
 
-  it('BUG-009: a blank item must not return the ENTIRE table', () => {
-    // FAILS ON PURPOSE — this is the repro.
+  describe('BUG-009: a blank or missing item is a schema violation, not a query', () => {
+    // The old call site was `lookupMaterialBudget(String(args.item ?? ''), ...)`.
+    // `''` substring-matches every row, so a model that omitted the argument
+    // got the ENTIRE rate table back as `matches` and relayed it as an answer.
+    // The frozen-$148,466 shape: a required input silently defaulted instead of
+    // rejected. Ruling: drop the default, reject the way the calculators do.
     //
-    // `agent.ts` calls `lookupMaterialBudget(String(args.item ?? ''), ...)`.
-    // The schema marks `item` required, but the call site coerces a missing
-    // one to `''`, and `''` substring-matches every row. So a model that omits
-    // the argument gets the whole rate table back as "matches" and relays it
-    // as though it answered the member's question.
-    //
-    // This is the frozen-$148,466 shape exactly: a missing required input
-    // silently defaulted instead of rejected. The calculators guard it with
-    // MissingRequiredInputError; this tool has no equivalent.
-    //
-    // Unreachable TODAY only because the shipped table is loaded:false. It
-    // goes live the day the client's sheet lands — which is the entire point
-    // of the feature.
-    for (const blank of ['', '   ', '\t']) {
-      const r = lookupMaterialBudget(blank, undefined, FIXTURE) as any;
+    // The `?? ''` covered up several distinct inputs, so all of them are tested
+    // — a guard on `''` alone would leave `undefined` and `null` arriving as
+    // "undefined"/"null" strings under any future re-coercion.
+    const BLANKS: Array<[string, unknown]> = [
+      ['empty string', ''],
+      ['spaces', '   '],
+      ['tab', '\t'],
+      ['newline', '\n'],
+      ['undefined', undefined],
+      ['null', null],
+      ['a number', 42],
+      ['an object', {}],
+    ];
+
+    it.each(BLANKS)('%s is rejected, and returns NO result set', (_label, value) => {
+      let threw: unknown;
+      let returned: unknown;
+      try {
+        returned = lookupMaterialBudget(value as never, undefined, FIXTURE);
+      } catch (err) {
+        threw = err;
+      }
+
+      expect(threw, `a blank item returned instead of throwing: ${JSON.stringify(returned)}`)
+        .toBeDefined();
+      // Not empty, not partial — nothing at all.
+      expect(returned, 'a result set came back alongside the rejection').toBeUndefined();
+    });
+
+    it('rejects with the calculators\' error class, not a second convention', () => {
+      // A new error shape on this path would be its own problem: the agent's
+      // catch, the "do not invent numbers" instruction and every existing test
+      // key off MissingRequiredInputError.
+      let err: unknown;
+      try {
+        lookupMaterialBudget('', undefined, FIXTURE);
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(MissingRequiredInputError);
+      expect((err as Error).name).toBe('MissingRequiredInputError');
+      expect((err as Error).message, 'the rejection does not name the offending field')
+        .toMatch(/item/);
+
+      // Identical class to a calculator rejecting a missing required field.
+      let calcErr: unknown;
+      try {
+        runFlipTool({});
+      } catch (e) {
+        calcErr = e;
+      }
       expect(
-        r.available === false || (r.matches?.length ?? 0) < FIXTURE.items.length,
-        `a blank item (${JSON.stringify(blank)}) returned the whole table ` +
-          `(${r.matches?.length} of ${FIXTURE.items.length} rows)`,
-      ).toBe(true);
-    }
+        (err as object).constructor,
+        'material lookup and the calculators reject with different classes',
+      ).toBe((calcErr as object).constructor);
+    });
+
+    it('the guard fires even when the table is NOT loaded', () => {
+      // Ordering matters. If the blank check sat after the load check it would
+      // be invisible today — the shipped table is loaded:false, so every lookup
+      // short-circuits — and would only start biting the day the client's sheet
+      // lands, with nobody re-auditing this path.
+      expect(() => lookupMaterialBudget('', undefined, EMPTY))
+        .toThrow(MissingRequiredInputError);
+      expect(() => lookupMaterialBudget(undefined as never, undefined, EMPTY))
+        .toThrow(MissingRequiredInputError);
+    });
+
+    it('surfaces to the MODEL identically to a calculator rejection', async () => {
+      // "Same error class" is half the claim; the other half is that it reaches
+      // the model the same way. Both go through runAgent's shared catch, so a
+      // blank item and a missing purchase_price must produce the same shape —
+      // including the "do not invent numbers" instruction, which is the only
+      // thing standing between a rejected tool call and an improvised answer.
+      async function toolErrorFor(name: string, args: Record<string, unknown>) {
+        const openai = makeFakeOpenAI([
+          { toolCalls: [{ id: 'c1', name, args }] },
+          { content: 'I could not complete that.' },
+        ]);
+        const supabase = makeFakeSupabase();
+        await runAgent(openai.client, supabase.client, agentConfig, [], 'go');
+        const msg = (openai.calls[1].messages as Array<any>).find(
+          (m) => m.role === 'tool' && m.tool_call_id === 'c1',
+        );
+        return JSON.parse(msg.content);
+      }
+
+      const material = await toolErrorFor('lookup_material_budget', { item: '' });
+      const calculator = await toolErrorFor('flip_calculator', {});
+
+      for (const [label, payload] of [
+        ['material lookup', material], ['calculator', calculator],
+      ] as const) {
+        expect(payload.error, `${label} produced no error`).toBeTruthy();
+        expect(payload.error, `${label} lost the anti-invention instruction`)
+          .toMatch(/do not invent numbers/i);
+        expect(payload, `${label} returned a result alongside the error`)
+          .not.toHaveProperty('matches');
+        expect(payload).not.toHaveProperty('outputs');
+      }
+      // Same failure mode, named for the field that was missing.
+      expect(material.error).toMatch(/item/);
+      expect(calculator.error).toMatch(/purchase_price/);
+    });
+
+    it('a REAL item still works — the guard is a guard, not a blanket refusal', () => {
+      // The positive precondition for everything above. A function that threw
+      // on every input would satisfy all of it.
+      const r = lookupMaterialBudget('LVP flooring', 'Standard', FIXTURE) as any;
+      expect(r.available).toBe(true);
+      expect(r.matches).toHaveLength(1);
+    });
   });
 
   it('an unknown item returns unavailable with the KB-fallback instruction', () => {
