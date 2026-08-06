@@ -97,10 +97,43 @@ observability gap, not a defect.
 
 ---
 
-## FINDING-005 — the silent-default shape is a pattern, not two instances
+## FINDING-005 — the silent-default shape, and the one live instance — CLOSED
 
-- **Status**: OPEN (one live instance), reported not fixed per operator scope
-- **Severity**: minor
+- **Status**: CLOSED (repro verified at `9137265`)
+- **Severity**: was minor as hygiene; ruled an **honesty hole** by the operator
+- **Fix**: `9137265` — `searchKnowledgeBase` throws `MissingRequiredInputError`
+  on a blank/non-string query, guard BEFORE the embed, and the call site's
+  `String(args.query ?? '')` coercion dropped so the value arrives raw.
+
+Verified to the same shape as BUG-009:
+
+- **All eight blank forms rejected** — `''`, spaces, tab, newline, `undefined`,
+  `null`, a number, an object. Dropping the coercion is what makes the last two
+  reach the guard as their real types instead of as `"42"` / `"[object Object]"`.
+- **No result set on any of them**, and — the cost half — **zero embedding
+  calls and zero vector searches**. A rejected query must not spend money.
+- **Guard fires BEFORE the embed**, asserted directly rather than inferred.
+- **Same error class by constructor**, compared against `runFlipTool({})`.
+- **Surfaced through `runAgent`**: all six agent-level shapes come back as tool
+  errors carrying the "do not invent numbers" instruction; a valid query still
+  searches.
+- **A real query still works** — positive precondition, so the guard is a guard
+  and not a blanket refusal.
+
+Why this one mattered more than the other two sites: an empty vector search
+returns arbitrary passages, and the material-budget fallback instructs the model
+to quote ONLY dollar figures appearing in retrieved passages. Handed passages
+retrieved for no question, a compliant model quotes those figures as an answer —
+the instruction that normally prevents invention becomes the thing that launders
+it.
+
+**The pattern itself remains open as a structural observation**, not as a defect:
+all three coercion sites are now guarded, but each by its own hand-rolled check.
+`assertRequired` still covers calculators only, and nothing would catch a fourth
+`?? ''` on a required argument. Recorded for whenever the operator wants the
+class closed the way `.gitattributes` closed the CRLF class.
+
+### Original sweep
 - **Reported**: msg `0020-inspector-bug009-closed-plus-pattern-sweep.md`
 
 Swept `src/` for silent defaults on tool arguments after finding this shape

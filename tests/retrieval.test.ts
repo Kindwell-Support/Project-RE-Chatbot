@@ -18,6 +18,7 @@ import {
   DUPLICATION_ALARM_RATIO,
 } from '../src/agent/retrieval.js';
 import { loadConfig, assertRuntimeConfig, REQUIRED_EMBEDDING_MODEL } from '../src/config.js';
+import { MissingRequiredInputError, runFlipTool } from '../src/agent/toolRunners.js';
 import type { Logger } from '../src/server/logger.js';
 import type OpenAI from 'openai';
 
@@ -337,5 +338,119 @@ describe('formatting', () => {
     ]);
     expect(formatted).toContain('0.910');
     expect(formatted).toContain('A buy box is your written criteria.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FINDING-005 — a blank query is a schema violation, not a search.
+//
+// `search_knowledge_base` declares `required: ['query']`, but the call site
+// coerced a missing one to `''` and `searchKnowledgeBase` embedded it
+// unconditionally. An empty vector search returns arbitrary nearest passages,
+// and the material-budget fallback instructs the model to quote ONLY dollar
+// figures appearing in retrieved passages — so handed passages retrieved for
+// no question at all, a compliant model quotes those figures as an answer.
+// The instruction that normally prevents invention becomes the thing that
+// launders it. An honesty hole, not hygiene.
+//
+// Verified to the same shape as BUG-009.
+// ---------------------------------------------------------------------------
+describe('FINDING-005: a blank query is rejected, never embedded', () => {
+  const cfg = loadConfig({
+    ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
+    OPENAI_API_KEY: 'test-not-a-real-key',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-not-a-real-key',
+  } as NodeJS.ProcessEnv);
+
+  /** Spies on the embedding call — the thing that must NOT happen. */
+  function spyingClients() {
+    let embeddingCalls = 0;
+    let rpcCalls = 0;
+    const openai = {
+      embeddings: {
+        create: async () => {
+          embeddingCalls++;
+          return { data: [{ embedding: new Array(1536).fill(0.01) }], usage: { total_tokens: 7 } };
+        },
+      },
+    } as never;
+    const supabase = {
+      rpc: async () => {
+        rpcCalls++;
+        return { data: [], error: null };
+      },
+    } as never;
+    return { openai, supabase, counts: () => ({ embeddingCalls, rpcCalls }) };
+  }
+
+  const BLANKS: Array<[string, unknown]> = [
+    ['empty string', ''],
+    ['spaces', '   '],
+    ['tab', '\t'],
+    ['newline', '\n'],
+    ['undefined', undefined],
+    ['null', null],
+    ['a number', 42],
+    ['an object', {}],
+  ];
+
+  it.each(BLANKS)('%s is rejected, returns nothing, and never embeds', async (_label, value) => {
+    const { openai, supabase, counts } = spyingClients();
+    let threw: unknown;
+    let returned: unknown;
+    try {
+      returned = await searchKnowledgeBase(openai, supabase, cfg, value as never);
+    } catch (err) {
+      threw = err;
+    }
+
+    expect(threw, `a blank query returned instead of throwing: ${JSON.stringify(returned)}`)
+      .toBeDefined();
+    expect(returned, 'a result set came back alongside the rejection').toBeUndefined();
+    // The cost half: a rejected query must not spend an embedding call, and
+    // must never reach the vector search.
+    expect(counts().embeddingCalls, 'a blank query was embedded anyway').toBe(0);
+    expect(counts().rpcCalls, 'a blank query reached the vector search').toBe(0);
+  });
+
+  it('rejects with the calculators\' error class, not a second convention', async () => {
+    let err: unknown;
+    try {
+      const { openai, supabase } = spyingClients();
+      await searchKnowledgeBase(openai, supabase, cfg, '' as never);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(MissingRequiredInputError);
+    expect((err as Error).message).toMatch(/query/);
+
+    let calcErr: unknown;
+    try {
+      runFlipTool({});
+    } catch (e) {
+      calcErr = e;
+    }
+    expect(
+      (err as object).constructor,
+      'retrieval and the calculators reject with different classes',
+    ).toBe((calcErr as object).constructor);
+  });
+
+  it('the guard fires BEFORE the embedding, not after', async () => {
+    // Ordering is the whole point. A guard after the embed still spends the
+    // call and, worse, would leave the vector search reachable on a refactor.
+    const { openai, supabase, counts } = spyingClients();
+    await expect(searchKnowledgeBase(openai, supabase, cfg, '   ' as never)).rejects.toThrow();
+    expect(counts().embeddingCalls).toBe(0);
+  });
+
+  it('a REAL query still searches — the guard is a guard, not a blanket refusal', async () => {
+    // Positive precondition. A function that threw on everything would satisfy
+    // every assertion above.
+    const { openai, supabase, counts } = spyingClients();
+    const result = await searchKnowledgeBase(openai, supabase, cfg, 'how does James build a buy box?');
+    expect(result).toBeDefined();
+    expect(counts().embeddingCalls, 'a valid query did not embed').toBe(1);
   });
 });
