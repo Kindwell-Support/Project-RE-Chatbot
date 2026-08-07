@@ -120,7 +120,7 @@ Evidence: 73 sold comps across both recorded search runs
 | **beds** | `homeInfo.bedrooms` | 70/73 |
 | **baths** | `homeInfo.bathrooms` | 71/73 |
 | **lot size** | `homeInfo.lotAreaValue` + `lotAreaUnit` | 73/73 (68 sqft, 5 acres → normalized to sqft) |
-| **property link** | `detailUrl` | 73/73 |
+| **property link** | `detailUrl` | 73/73 — **LOAD-BEARING (§14.9)**; unbuildable ⇒ explicit "link unavailable" |
 
 **NOT buildable from the comps payload — reported, NOT built (§14.6).**
 
@@ -166,14 +166,83 @@ model-authored, not prompt-dependent), on every SUCCESSFUL comps render:
 
 The existing not-an-appraisal footer and the low-confidence warning remain.
 
-### 14.8 Out of scope (operator)
+### 14.8 ARV IS OUT — surfacing disabled, plumbing retained (client decision)
+
+Superseded the earlier "placement" question: the client has removed ARV
+**entirely** — from the comps response AND from the calculator pre-fill.
+Members enter ARV manually when running flip or BRRRR.
+
+**Chosen mechanism (the operator left it to MASON; this is the record):**
+a single config flag, **not** deletion and **not** "stop writing the block".
+
+```
+AppConfig.arvSurfacingEnabled   env ARV_SURFACING   DEFAULT false
+```
+
+**Why a flag rather than ceasing to write the block:** ceasing the write would
+red-line INSPECTOR's P1 suite — the "a successful run writes the §8 block",
+pre-fill and echo cases all require the block to exist. The flag keeps every
+one of them green by opting into `ARV_SURFACING=true`, so the whole subsystem
+stays exercised and ready for the day the client flips it back, while
+production defaults to off. A verified, expensive subsystem is not deleted
+because a client changed their mind once.
+
+**Checked in exactly THREE places — nowhere else:**
+
+1. `format.ts` — the ARV / range / confidence lines are omitted from the
+   success render.
+2. `agent.ts applyArvPrefill` — returns args untouched; no injection, no echo.
+3. `formPrefill.ts applyFormArvPrefill` — returns the form untouched; no
+   session default on the ARV field.
+
+**Explicitly UNCHANGED and still tested:** `session_state`, the atomic
+single-block write, clear-before-provider, the address echo machinery, the
+mismatch guard, the form-default plumbing, `set_manual_arv`. `runComps` still
+COMPUTES the ARV — trimmed mean, `arvLow`/`arvHigh`, `cv`, confidence — and it
+still rides on `CompsResult` and into the cache. Only the surface is gated, so
+a flip-back needs no recompute.
+
+**The §4.5 apparatus has no consumer while the flag is off.** Kept, kept
+tested, not surfaced. The §14.4 confidence rebase is therefore moot for output
+but is STILL APPLIED, so the code stays internally coherent rather than
+carrying a threshold that contradicts the cap.
+
+### 14.9 Style / condition / quality matching — FORMALLY WAIVED
+
+The client has waived, in writing: similar age, architectural style, matching
+garage/basement/ADU, similar construction quality and condition. Recorded here
+so it does not resurface as a gap. **Not a limitation — a scope decision.**
+
+**Consequence: the property link is now LOAD-BEARING.** It is the client's
+stated substitute for those three matching criteria — the member follows it to
+evaluate style, condition and quality themselves. So:
+
+- A comp whose link cannot be built (missing `zpid`/`detailUrl`) is a REAL
+  degradation, not a cosmetic gap.
+- It renders as an explicit **"link unavailable"**, never a silently omitted
+  field. Same no-fabrication rule as every other column, and here it also
+  tells the member that the thing standing in for three criteria is missing
+  for that row.
+
+### 14.10 Census demographics — IN SCOPE, SEPARATE SLICE, AFTER the parameters
+
+US Census ACS API (free, no key at light volume): median household income,
+median age, owner-vs-renter occupancy. Keyed off the subject lat/lng already
+in hand.
+
+**Sequencing is binding: parameters + fields ship and hand off FIRST. Census
+does not interleave** — the client is waiting on the parameter work and it is
+what addresses her complaint.
+
+When built: cache by tract/ZIP with its own TTL; a Census failure is
+NON-FATAL (comps still render in full, the demographics section says
+unavailable); never infer a figure the API did not return.
+
+### 14.11 Out of scope
 
 - **Neighbourhood summary** — all of it. Separate block.
-- **ARV placement** — client has not ruled whether it stays, moves, or goes.
-  Stays where it is, but its position must be **one structural change** in
-  `format.ts` (a single emit-order list), not woven through the renderer.
 
-### 14.9 Blast radius
+### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live
 ground-truth runs change. **Tests are INSPECTOR's and must be recomputed by
