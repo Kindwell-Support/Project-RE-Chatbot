@@ -16,8 +16,16 @@ const USD = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 0,
 });
 
+/**
+ * Retains all three required elements — automated estimate, public sold data,
+ * not a formal appraisal, verify before acting — with the ARV reference
+ * dropped: the client removed the ARV from this response (CONTRACT §14.8), so
+ * telling a member to "verify the ARV" pointed at something no longer on
+ * screen. Our copy, not the client's prescribed §14.7 text, so it is ours to
+ * correct.
+ */
 const FOOTER =
-  '_Automated estimate from public sold data, not a formal appraisal. Verify comps and ARV with your agent before you act._';
+  '_Automated estimate from public sold data, not a formal appraisal. Verify these comps with your agent before you act._';
 
 // Deliberately NO example dollar amount in this offer: a numeric example
 // ("use 450k as the ARV") is itself an ARV-shaped number inside a refusal —
