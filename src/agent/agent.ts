@@ -414,6 +414,13 @@ async function applyArvPrefill(
   | { args: Record<string, unknown>; prefill?: Record<string, unknown> }
   | { error: string }
 > {
+  // CONTRACT §14.8: the client removed the ARV pre-fill. Only the INJECTION is
+  // gated — session_state, the atomic write, clear-before-provider, the echo
+  // machinery and the mismatch guard all stay live and tested beneath it, so
+  // flipping ARV_SURFACING back on restores the behaviour whole rather than
+  // requiring it to be rebuilt.
+  if (ctx.comps?.arvSurfacing !== true) return { args };
+
   const store = ctx.comps?.stateStore;
   if (!store || !ctx.comps) return { args };
 
@@ -555,7 +562,7 @@ async function executeTool(
       let form = CALCULATOR_FORMS[calculator as CalculatorKey];
       if (ctx.comps?.stateStore) {
         const block = await ctx.comps.stateStore.getCompsBlock(ctx.comps.sessionId);
-        form = applyFormArvPrefill(form, block, ctx.userMessage);
+        form = applyFormArvPrefill(form, block, ctx.userMessage, ctx.comps.arvSurfacing === true);
       }
       ctx.formRequest.form = form;
       // The model gets the labels (so it can write a natural one-liner) but not

@@ -44,6 +44,12 @@ export interface SessionStateStore {
 
 export interface CompsToolContext {
   sessionId: string;
+  /**
+   * CONTRACT §14.8 — surface the ARV in the render/pre-fill. Optional and
+   * defaulting to FALSE at every use site, so forgetting to thread it cannot
+   * resurrect the surface the client removed.
+   */
+  arvSurfacing?: boolean;
   provider?: PropertyDataProvider;
   cache?: CompsCacheLike;
   budget?: RunBudgetLike;
@@ -137,7 +143,7 @@ export async function runCompsToolHandler(
     now: ctx.now,
   });
 
-  const rendered = renderCompsForChat(outcome);
+  const rendered = renderCompsForChat(outcome, { arvSurfacing: ctx.arvSurfacing === true });
 
   if (outcome.ok) {
     const block: CompsStateBlock = {

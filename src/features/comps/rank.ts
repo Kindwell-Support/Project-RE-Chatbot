@@ -7,11 +7,13 @@
  */
 import {
   DISTANCE_NORM_MI,
+  LOT_NORM_RATIO,
   MAX_COMPS_KEPT,
   RECENCY_NORM_MONTHS,
   SQFT_TOLERANCE,
   WEIGHT_BEDBATH,
   WEIGHT_DISTANCE,
+  WEIGHT_LOT,
   WEIGHT_RECENCY,
   WEIGHT_SQFT,
 } from './config.js';
@@ -45,9 +47,18 @@ export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): S
   const dBeds = comp.beds !== null && subject.beds !== null ? comp.beds - subject.beds : 0;
   const dBaths = comp.baths !== null && subject.baths !== null ? comp.baths - subject.baths : 0;
 
+  // Lot as a SOFT term (CONTRACT §14.3) — v1 rejected on it outright, which
+  // decimated thin markets. Null lot on either side scores 0, exactly as null
+  // beds/baths do: unknown is not a penalty.
+  const lotFrac =
+    (subject.lotSize ?? 0) > 0 && comp.lotSize !== null
+      ? Math.abs(comp.lotSize - (subject.lotSize as number)) / (subject.lotSize as number) / LOT_NORM_RATIO
+      : 0;
+
   const parts = {
     distance: Math.min(distanceMi / DISTANCE_NORM_MI, 1) * WEIGHT_DISTANCE,
     sqft: Math.min(sqftFrac, 1) * WEIGHT_SQFT,
+    lot: Math.min(lotFrac, 1) * WEIGHT_LOT,
     // max(…, 0) is BUG-003's defensive half: min() alone only capped the TOP
     // of the range, so a future-dated comp scored NEGATIVE and sorted ahead of
     // flawless comps — bad data promoted, not just tolerated. Rule 12 rejects
@@ -62,7 +73,7 @@ export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): S
     distanceMi,
     monthsAgo,
     pricePerSqft,
-    score: parts.distance + parts.sqft + parts.recency + parts.bedbath,
+    score: parts.distance + parts.sqft + parts.recency + parts.bedbath + parts.lot,
     parts,
   };
 }

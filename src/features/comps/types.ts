@@ -51,6 +51,13 @@ export interface RawComp {
   propertyType: PropertyType;
   lat: number;
   lng: number;
+  /**
+   * Zillow listing URL. LOAD-BEARING (CONTRACT §14.9): the client waived
+   * style/condition/quality matching in writing and named this link as the
+   * member's substitute for evaluating them. A null here is a real
+   * degradation and renders as an explicit notice, never a silent omission.
+   */
+  detailUrl: string | null;
 }
 
 /**
@@ -93,12 +100,14 @@ export interface ScoredComp {
   pricePerSqft: number;
   /** 0–100, lower is better. */
   score: number;
-  /** The four weighted components, exposed so a score is auditable, not a black box. */
+  /** The five weighted components, exposed so a score is auditable, not a black box. */
   parts: {
     distance: number;
     sqft: number;
     recency: number;
     bedbath: number;
+    /** Soft lot term (CONTRACT §14.3); 0 when either lot is unknown. */
+    lot: number;
   };
 }
 
@@ -127,6 +136,8 @@ export interface CompsResult {
   runId: string;
   subject: SubjectProperty;
   radiusTierMi: number;
+  /** Which recency rung produced this set (CONTRACT §14.2). */
+  recencyTierMonths: number;
   comps: ScoredComp[];
   rejected: RejectedComp[];
   arv: ArvResult;

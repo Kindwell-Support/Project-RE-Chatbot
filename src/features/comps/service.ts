@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { calculateArv } from './arv.js';
 import { ALGO_VERSION, MIN_COMPS_TO_COMPUTE, PROVIDER_MAX_RETRIES, RADIUS_TIERS_MI } from './config.js';
 import { FAILURE_COPY } from './format.js';
-import { selectRadiusTier } from './filter.js';
+import { selectTiers } from './filter.js';
 import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
 import { rankComps } from './rank.js';
 import type { CompsFailure, CompsFailureCode, CompsOutcome, CompsResult, RawComp, SubjectProperty } from './types.js';
@@ -137,7 +137,7 @@ function failure(code: CompsFailureCode, detail?: CompsFailure['detail']): Comps
 function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, provider: string, fromCache: boolean): CompsOutcome {
   if ((subject.livingArea ?? 0) <= 0) return failure('SUBJECT_SQFT_UNKNOWN');
 
-  const tier = selectRadiusTier(subject, comps, now);
+  const tier = selectTiers(subject, comps, now);
   if (tier.kept.length < MIN_COMPS_TO_COMPUTE) {
     // Operator ruling: when nothing was kept AND the fetched pool holds zero
     // comps of the subject's type, "the market is thin" is a claim we cannot
@@ -162,6 +162,7 @@ function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, p
     runId: randomUUID(),
     subject,
     radiusTierMi: tier.radiusTierMi,
+    recencyTierMonths: tier.recencyTierMonths,
     comps: ranked,
     rejected: tier.rejected,
     arv: calculateArv(subject, ranked),

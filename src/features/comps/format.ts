@@ -85,47 +85,102 @@ function confidenceLine(confidence: ArvConfidence): string {
   }
 }
 
+/**
+ * The client's prescribed copy (CONTRACT §14.7) — VERBATIM, emitted
+ * structurally by this renderer. Not model-authored and not prompt-dependent,
+ * because "helpful" paraphrase is exactly the failure mode: this is the
+ * client's own compliance wording.
+ */
+export const COMPS_OPENING =
+  'Sure. Here are recent comparable sales for that location and home type. Please note responses ' +
+  'are for education and based on available public data. Investors are encouraged to review each ' +
+  'address for additional information.';
+
+export const COMPS_CLOSING =
+  'Evaluate each property carefully. Current quality of home, overall appeal, lot location and ' +
+  'usability can drastically impact value. Also consider external factors such as view properties, ' +
+  'environmental concerns, powerlines and busy roads.';
+
+/**
+ * The null marker (CONTRACT §14.5). No-fabrication extends to every column: a
+ * missing field is SHOWN as missing, never omitted (which reads as "not
+ * applicable"), never inferred, never back-filled from a sibling comp or the
+ * subject.
+ */
+const NA = '—';
+
+const num = (v: number | null | undefined, suffix = ''): string =>
+  v === null || v === undefined ? NA : `${v.toLocaleString('en-US')}${suffix}`;
+
 function compLine(s: ScoredComp): string {
-  const soldDate = s.comp.soldDate ? s.comp.soldDate.slice(0, 10) : 'unknown date';
+  const c = s.comp;
+  const soldDate = c.soldDate ? c.soldDate.slice(0, 10) : NA;
+  const price = c.soldPrice === null ? NA : USD.format(c.soldPrice);
+  const ppsf = c.soldPrice !== null && (c.livingArea ?? 0) > 0 ? `${USD.format(s.pricePerSqft)}/sqft` : NA;
+  const beds = c.beds === null ? NA : String(c.beds);
+  const baths = c.baths === null ? NA : String(c.baths);
+  // The link is LOAD-BEARING (CONTRACT §14.9): the client waived
+  // style/condition/quality matching and named this as the member's substitute
+  // for judging them. Its absence is a real degradation, so it is stated, not
+  // dropped.
+  const link = c.detailUrl ? c.detailUrl : 'link unavailable';
   return (
-    `- ${s.comp.address} — sold ${USD.format(s.comp.soldPrice ?? 0)} on ${soldDate}, ` +
-    `${(s.comp.livingArea ?? 0).toLocaleString('en-US')} sqft ` +
-    `(${USD.format(s.pricePerSqft)}/sqft), ${s.distanceMi.toFixed(2)} mi away`
+    `- **${c.address}** — sold ${price} on ${soldDate}\n` +
+    `  ${num(c.livingArea, ' sqft')} · ${ppsf} · ${beds} bd / ${baths} ba · ` +
+    `lot ${num(c.lotSize, ' sqft')} · ${s.distanceMi.toFixed(2)} mi away\n` +
+    `  ${link}`
   );
 }
 
-function renderSuccess(result: CompsResult): string {
-  const { subject, comps, arv, rejected, radiusTierMi } = result;
-  const lines: string[] = [];
+/**
+ * @param arvSurfacing CONTRACT §14.8 — the client removed the ARV from the
+ *   comps response. DEFAULTS FALSE so a caller that forgets to pass config
+ *   gets the client's chosen behaviour, never the removed surface.
+ */
+function renderSuccess(result: CompsResult, arvSurfacing: boolean): string {
+  const { subject, comps, arv, rejected, radiusTierMi, recencyTierMonths } = result;
 
-  lines.push(`**Comps for ${subject.address}**`);
-  lines.push(
-    `Subject: ${subject.beds ?? '?'} bd / ${subject.baths ?? '?'} ba, ` +
-      `${(subject.livingArea ?? 0).toLocaleString('en-US')} sqft ${subject.propertyType}. ` +
-      `Search radius used: ${radiusTierMi} mi (${rejected.length} candidate(s) rejected).`,
-  );
-  lines.push('');
-  lines.push(`**${comps.length} sold comps** (best match first):`);
-  for (const comp of comps) lines.push(compLine(comp));
+  const header = [
+    `**Comps for ${subject.address}**`,
+    `Subject: ${subject.beds ?? NA} bd / ${subject.baths ?? NA} ba, ` +
+      `${num(subject.livingArea, ' sqft')} ${subject.propertyType}. ` +
+      `Searched within ${radiusTierMi} mi, sold in the last ${recencyTierMonths} months ` +
+      `(${rejected.length} candidate(s) rejected).`,
+  ].join('\n');
 
-  lines.push('');
-  if (arv.trimmedOut.length > 0) {
-    const trimmed = arv.trimmedOut
-      .map((t) => `${USD.format(t.pricePerSqft)}/sqft (${t.end} outlier)`)
-      .join(', ');
-    lines.push(`Trimmed mean: dropped ${trimmed} before averaging.`);
-  } else {
-    lines.push('Trimmed mean: set too small to trim — all comps averaged.');
-  }
-  lines.push(
+  const table = [`**${comps.length} sold comps** (best match first):`, ...comps.map(compLine)].join('\n');
+
+  // Gated block (§14.8). Kept whole and adjacent so enabling it is one flag,
+  // and MOVING it is one entry in `sections` below — not a rewrite.
+  const trimmed =
+    arv.trimmedOut.length > 0
+      ? `Trimmed mean: dropped ${arv.trimmedOut
+          .map((t) => `${USD.format(t.pricePerSqft)}/sqft (${t.end} outlier)`)
+          .join(', ')} before averaging.`
+      : 'Trimmed mean: set too small to trim — all comps averaged.';
+  const arvBlock = [
+    trimmed,
     `Math: average of the remaining $/sqft = ${USD.format(arv.arvPerSqft)}/sqft × ` +
-      `${(subject.livingArea ?? 0).toLocaleString('en-US')} sqft (subject) = **ARV ${USD.format(arv.arv)}**`,
-  );
-  lines.push(`Range: ${USD.format(arv.arvLow)} – ${USD.format(arv.arvHigh)} (±1 std dev of the trimmed set).`);
-  lines.push(confidenceLine(arv.confidence));
-  lines.push('');
-  lines.push(FOOTER);
-  return lines.join('\n');
+      `${num(subject.livingArea, ' sqft')} (subject) = **ARV ${USD.format(arv.arv)}**`,
+    `Range: ${USD.format(arv.arvLow)} – ${USD.format(arv.arvHigh)} (±1 std dev of the trimmed set).`,
+    confidenceLine(arv.confidence),
+  ].join('\n');
+
+  /**
+   * THE emit order (CONTRACT §14.8/§14.11). The client has not ruled on where
+   * the ARV lives if it ever returns, so its placement is ONE entry in this
+   * list rather than logic woven through the renderer — moving it is a
+   * one-line change, and removing it is what `arvSurfacing` already does.
+   */
+  const sections: Array<string | null> = [
+    COMPS_OPENING,
+    header,
+    table,
+    arvSurfacing ? arvBlock : null,
+    COMPS_CLOSING,
+    FOOTER,
+  ];
+  return sections.filter((s): s is string => s !== null).join('\n\n');
 }
 
 /**
@@ -145,6 +200,17 @@ function renderFailure(failure: CompsFailure): string {
     : "Something went wrong pulling comps — no estimate this time. If you have your own ARV, tell me and I'll run the numbers with it.";
 }
 
-export function renderCompsForChat(outcome: CompsOutcome): string {
-  return outcome.ok ? renderSuccess(outcome) : renderFailure(outcome);
+/**
+ * @param options.arvSurfacing CONTRACT §14.8. **Defaults to FALSE** — the
+ *   client's chosen behaviour — so a caller that forgets to thread config
+ *   through cannot accidentally resurrect the removed surface. Callers opt IN,
+ *   never out.
+ */
+export function renderCompsForChat(
+  outcome: CompsOutcome,
+  options: { arvSurfacing?: boolean } = {},
+): string {
+  return outcome.ok
+    ? renderSuccess(outcome, options.arvSurfacing === true)
+    : renderFailure(outcome);
 }

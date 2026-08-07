@@ -159,7 +159,7 @@ model-authored, not prompt-dependent), on every SUCCESSFUL comps render:
   for that location and home type. Please note responses are for education and
   based on available public data. Investors are encouraged to review each
   address for additional information."*
-- `COMPS_CLOSING` (after the ARV block): evaluate each property carefully;
+- `COMPS_CLOSING` (emitted after the comps table; when `ARV_SURFACING` is on the ARV block sits between them, so this is always the LAST content before the footer): evaluate each property carefully;
   current quality of home, overall appeal, lot location and usability can
   drastically impact value; consider external factors such as view properties,
   environmental concerns, powerlines, busy roads.
@@ -279,7 +279,7 @@ sql/add_comps_tables.sql
 
 | Export | Default | Meaning |
 | --- | --- | --- |
-| `ALGO_VERSION` | `1` | stamped on every result; cache recompute trigger |
+| `ALGO_VERSION` | `2` | stamped on every result; cache recompute trigger. **2 as of the client-spec alignment (§14)** — until the constant is 2 the recompute path never fires and cached v1 rows keep serving old-parameter results for 14 days, stamped `algoVersion: 1` and indistinguishable from fresh. |
 | `MAX_COMP_AGE_MONTHS` | `12` | hard filter |
 | `SQFT_TOLERANCE` | `0.20` | subject sqft ±20% — hard gate (§14.1) |
 | `MAX_BED_DIFF` | `1` | hard filter |

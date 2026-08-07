@@ -196,6 +196,14 @@ export function mapCompItems(items: Array<Record<string, unknown>>): RawComp[] {
       propertyType: mapHomeType(homeInfo.homeType),
       lat,
       lng,
+      // Load-bearing per CONTRACT §14.9 — prefer the card's own URL, fall back
+      // to the canonical zpid form; null only when neither exists.
+      detailUrl:
+        typeof item.detailUrl === 'string' && item.detailUrl
+          ? item.detailUrl
+          : homeInfo.zpid != null
+            ? `https://www.zillow.com/homedetails/${String(homeInfo.zpid)}_zpid/`
+            : null,
     });
   }
   return comps;

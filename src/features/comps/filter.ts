@@ -10,13 +10,12 @@
 import {
   DAYS_PER_MONTH,
   EARTH_RADIUS_MI,
-  LOT_ANOMALY_MULTIPLE,
   MAX_BATH_DIFF,
   MAX_BED_DIFF,
-  MAX_COMP_AGE_MONTHS,
   MIN_COMPS_FOR_TIER,
   NON_ARMS_LENGTH_PPSF_FRACTION,
   RADIUS_TIERS_MI,
+  RECENCY_TIERS_MONTHS,
   SQFT_TOLERANCE,
 } from './config.js';
 import type { RawComp, RejectedComp, SubjectProperty } from './types.js';
@@ -83,6 +82,7 @@ export function applyHardFilters(
   subject: SubjectProperty,
   comps: RawComp[],
   radiusMi: number,
+  maxAgeMonths: number,
   now: Date,
 ): { kept: RawComp[]; rejected: RejectedComp[] } {
   const kept: RawComp[] = [];
@@ -105,7 +105,8 @@ export function applyHardFilters(
       rejected.push({ comp, reason: 'NOT_SOLD' });
       continue;
     }
-    if (monthsBetween(comp.soldDate, now) > MAX_COMP_AGE_MONTHS) {
+    // Against the ACTIVE recency rung (CONTRACT §14.1), not a flat constant.
+    if (monthsBetween(comp.soldDate, now) > maxAgeMonths) {
       rejected.push({ comp, reason: 'STALE_SALE' });
       continue;
     }
@@ -154,15 +155,10 @@ export function applyHardFilters(
       rejected.push({ comp, reason: 'NON_ARMS_LENGTH' });
       continue;
     }
-    if (
-      comp.lotSize !== null &&
-      subject.lotSize !== null &&
-      subject.lotSize > 0 &&
-      comp.lotSize > LOT_ANOMALY_MULTIPLE * subject.lotSize
-    ) {
-      rejected.push({ comp, reason: 'LOT_ANOMALY' });
-      continue;
-    }
+    // Rule 11 LOT_ANOMALY REMOVED in v2 (CONTRACT §14.1): a hard lot gate
+    // decimated thin markets. Lot is now a soft scoring term (rank.ts). The
+    // RejectReason member survives so cached v1 results still type, but it is
+    // never emitted from here again.
     // Rule 12 (BUG-003): a sale dated after `now` hasn't happened yet, so it
     // is not a comp. Without this, a future-dated row passed every filter and
     // its NEGATIVE recency score ranked it ahead of flawless comps — bad data
@@ -179,25 +175,50 @@ export function applyHardFilters(
   return { kept, rejected };
 }
 
+export interface TierSelection {
+  kept: RawComp[];
+  rejected: RejectedComp[];
+  radiusTierMi: number;
+  recencyTierMonths: number;
+}
+
 /**
- * Radius tiers (CONTRACT §5.3): rerun the FULL filter pass at each tier, stop
- * at the first yielding >= MIN_COMPS_FOR_TIER, else return the widest tier's
- * outcome. The reported rejected list is the final tier's only — one coherent
- * story, not three overlaid ones.
+ * Walk BOTH ladders as ONE ordered sequence (CONTRACT §14.2), rerunning the
+ * full filter pass at each rung and stopping at the first yielding
+ * >= MIN_COMPS_FOR_TIER:
+ *
+ *   1mi/3mo -> 1mi/6mo -> 1mi/12mo -> 3mi/3mo -> 3mi/6mo -> 3mi/12mo
+ *
+ * Recency is the INNER loop, so time widens before distance. Rationale worth
+ * keeping next to the code: location is a stronger determinant of value than
+ * recency inside a 12-month window, so a same-neighbourhood sale from eight
+ * months ago beats one three miles out from last month.
+ *
+ * If no rung reaches MIN_COMPS_FOR_TIER the LAST rung's outcome is returned —
+ * it may still satisfy MIN_COMPS_TO_COMPUTE. The reported rejected list is
+ * that final rung's only: one coherent story, not six overlaid ones.
+ *
+ * Renamed from selectRadiusTier — there are two ladders now, and a name saying
+ * "radius" would be a lie about what it walks.
  */
-export function selectRadiusTier(
+export function selectTiers(
   subject: SubjectProperty,
   comps: RawComp[],
   now: Date,
-): { kept: RawComp[]; rejected: RejectedComp[]; radiusTierMi: number } {
-  let last = {
-    ...applyHardFilters(subject, comps, RADIUS_TIERS_MI[0], now),
-    radiusTierMi: RADIUS_TIERS_MI[0],
+): TierSelection {
+  const widestRadius = RADIUS_TIERS_MI[RADIUS_TIERS_MI.length - 1];
+  const widestAge = RECENCY_TIERS_MONTHS[RECENCY_TIERS_MONTHS.length - 1];
+  let last: TierSelection = {
+    ...applyHardFilters(subject, comps, widestRadius, widestAge, now),
+    radiusTierMi: widestRadius,
+    recencyTierMonths: widestAge,
   };
-  for (const tier of RADIUS_TIERS_MI) {
-    const pass = applyHardFilters(subject, comps, tier, now);
-    last = { ...pass, radiusTierMi: tier };
-    if (pass.kept.length >= MIN_COMPS_FOR_TIER) break;
+  for (const radiusMi of RADIUS_TIERS_MI) {
+    for (const maxAgeMonths of RECENCY_TIERS_MONTHS) {
+      const pass = applyHardFilters(subject, comps, radiusMi, maxAgeMonths, now);
+      last = { ...pass, radiusTierMi: radiusMi, recencyTierMonths: maxAgeMonths };
+      if (pass.kept.length >= MIN_COMPS_FOR_TIER) return last;
+    }
   }
   return last;
 }
