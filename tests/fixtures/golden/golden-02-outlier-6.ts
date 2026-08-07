@@ -1,91 +1,84 @@
 /**
- * GOLDEN 02 — outlier case: 6 comps, one new build at 3× the neighbourhood
- * $/sqft. The trim must neutralise it.
+ * GOLDEN 02 — outlier case, REDESIGNED for v2 (CONTRACT §14).
  *
  * ===========================================================================
- * ALL EXPECTED VALUES BELOW WERE COMPUTED BY HAND FROM CONTRACT.md §5.
+ * ALL EXPECTED VALUES COMPUTED BY HAND FROM CONTRACT §14. Verify the
+ * arithmetic, not the code.
  * ===========================================================================
  *
- * This is the case the whole trimmed-mean design exists for. G2-C2 is a
- * gut-and-rebuild that sold at $600/sqft on a street where everything else
- * trades at $180–210. It is a genuine, arms-length, recent, nearby, same-type
- * sale — it passes every one of the eleven hard filters, and it SHOULD. The
- * only thing standing between it and a $530,000 ARV on a $405,000 house is the
- * trim.
+ * WHY THIS CASE WAS REBUILT RATHER THAN RECOMPUTED
+ *
+ * The v1 version proved "the trim neutralises a 3x outlier". Under v2 the cap
+ * fell from 8 to 5, and when the v1 data was recomputed the outlier was
+ * **capped out at rank 6 — before the trim ever saw it**. The case still
+ * produced a correct ARV while no longer testing the thing its name claimed,
+ * which is precisely the failure this dataset exists to prevent.
+ *
+ * So the outlier is now built to SURVIVE ranking. G2-O is the best-scoring comp
+ * in the set: same street, identical sqft, identical lot, identical beds and
+ * baths, most recent sale. It differs on ONE dimension — price — and price is
+ * not a scored term. It cannot be capped out, so the trim is demonstrably the
+ * only thing standing between it and the ARV.
+ *
+ * That is also the more realistic scenario: a gut-and-rebuild next door is
+ * identical on every public attribute and sells for triple.
  *
  * Subject: 2,000 sqft, 3 bed / 2 bath, SFR, lot 6,000. `now` = 2025-07-15Z.
  *
  * ---------------------------------------------------------------------------
- * STEP 1 — hard filters. All six pass.
- *   sqft band [1500, 2500]: 2100, 1600, 1900, 2200, 2000, 1800 — all inside
- *   beds 2–4 vs subject 3; baths 2–2.5 vs subject 2 — all within ±1
- *   sold 210–270 days ago; the 12-month wall is 12 × 30.44 = 365.28 days
- *   lots 5,000–7,000 vs the 5 × 6,000 = 30,000 ceiling
- *   NON_ARMS_LENGTH: candidate median (n = 6, even) = mean of the middle two
- *     of [180, 195, 200, 205, 210, 600] = (200 + 205) / 2 = 202.5
- *     threshold = 0.4 × 202.5 = 81; min $/sqft is 180 > 81 -> nothing rejected.
- *     Note the outlier RAISES the median slightly and still rejects nobody.
- *   => 6 kept.
+ * STEP 1 — the ladder (§14.2). All six comps are within 1.0 mi and sold within
+ * 3 months, so rung 1 (1.0 mi / 3 mo) yields 6 kept, which is >= 5.
+ * The ladder STOPS at the first rung: radiusTierMi 1.0, recencyTierMonths 3.
  *
- * STEP 2 — radius tier. 6 ≥ MIN_COMPS_FOR_TIER (5) -> stop at 0.5 mi.
+ * STEP 2 — scoring (§14.3: 35 distance / 25 sqft / 20 recency / 10 bedbath /
+ * 10 lot). Distances are pure-latitude offsets (69.09409447 mi per degree),
+ * ages are days / 30.44.
  *
- * STEP 3 — $/sqft against each comp's own living area:
- *   G2-C1  420,000 / 2,100 = 200
- *   G2-C2  960,000 / 1,600 = 600   <- the new build
- *   G2-C3  342,000 / 1,900 = 180
- *   G2-C4  462,000 / 2,200 = 210
- *   G2-C5  390,000 / 2,000 = 195
- *   G2-C6  369,000 / 1,800 = 205
+ *   G2-O  2.4183 +  0     + 1.6426 + 0  + 0      =  4.0609   <- BEST
+ *   G2-A  4.8366 +  0     + 1.6426 + 0  + 0      =  6.4792
+ *   G2-B  4.8366 +  3.125 + 3.2852 + 0  + 0.1667 = 11.4135
+ *   G2-C  7.2549 +  3.125 + 3.2852 + 0  + 0.1667 = 13.8318
+ *   G2-D  7.2549 +  6.25  + 4.9277 + 0  + 0.5    = 18.9326
+ *   G2-E 24.5    + 21.875 + 4.9277 + 10 + 4.1667 = 65.4694   <- WORST
  *
- * STEP 4 — trim.
- *   n = 6; trimCount = max(1, floor(6 × 0.15)) = max(1, floor(0.9))
- *                    = max(1, 0) = 1
- *   ^ this is the max() doing the work. floor(0.9) is 0; without the max(),
- *     n = 6 would not trim at all and the outlier would go straight through.
- *   SORT: [180, 195, 200, 205, 210, 600]
- *   drop one from each end -> trimmedOut = 180 (low), 600 (high)
- *   used = [195, 200, 205, 210]                (4 values)
+ * STEP 3 — cap at MAX_COMPS_KEPT = 5. G2-E is dropped. **The outlier is kept.**
  *
- * STEP 5 — ARV.
- *   sum(used) = 195 + 200 + 205 + 210 = 810
- *   arvPerSqft = 810 / 4 = 202.5
- *   arv_raw    = 202.5 × 2,000 = 405,000
- *   arv        = round(405.000) × 1,000 = 405,000
+ * STEP 4 — $/sqft of the kept five, each against its own living area:
+ *   G2-A  392,000 / 2,000 = 196
+ *   G2-B  420,250 / 2,050 = 205
+ *   G2-C  419,250 / 1,950 = 215
+ *   G2-D  472,500 / 2,100 = 225
+ *   G2-O  1,200,000 / 2,000 = 600      <- the rebuild
  *
- *   WITH vs WITHOUT the trim — the number this case exists to prove:
- *     untrimmed mean = (180+195+200+205+210+600) / 6 = 1,590 / 6 = 265
- *     untrimmed ARV  = 265 × 2,000 = 530,000
- *   $530,000 against $405,000. A $125,000 error, delivered with no warning,
- *   on a house that is worth the smaller number.
+ * STEP 5 — trim. n = 5, so trimCount = max(1, floor(5 x 0.15)) = max(1, 0) = 1.
+ *   sorted [196, 205, 215, 225, 600]
+ *   drop one from each end -> trimmedOut = 196 (low), 600 (high)
+ *   used = [205, 215, 225]                (three values, per §14.4)
  *
- * STEP 6 — spread (sample, n−1).
- *   used mean 202.5; deviations −7.5, −2.5, +2.5, +7.5
- *   squares 56.25, 6.25, 6.25, 56.25  ->  Σd² = 125
- *   sample variance = 125 / (4 − 1) = 41.6666667
- *   sd = √41.6666667 = 6.4549722
- *   cv = 6.4549722 / 202.5 = 0.0318764
+ * STEP 6 — ARV.
+ *   sum 645 / 3 = 215 $/sqft
+ *   215 x 2,000 = 430,000 -> round(430.000) x 1,000 = $430,000
  *
- * STEP 7 — band.
- *   sd × 2,000 = 12,909.944 -> round(12.909944) × 1,000 = 13,000
- *   arvLow  = 405,000 − 13,000 = 392,000
- *   arvHigh = 405,000 + 13,000 = 418,000
+ *   THE NUMBER THIS CASE EXISTS FOR:
+ *     untrimmed mean = (196+205+215+225+600) / 5 = 1,441 / 5 = 288.2
+ *     untrimmed ARV  = 288.2 x 2,000 = $576,400 -> $576,000
+ *   $146,000 apart. Both are numbers a chatbot prints without blinking; only
+ *   one of them is a house on this street.
  *
- * STEP 8 — confidence.
- *   monthsAgo = days / 30.44:
- *     210 d -> 6.8988173    220 d -> 7.2273325    240 d -> 7.8843626
- *     250 d -> 8.2128778    260 d -> 8.5413929    270 d -> 8.8699080
- *   median of 6 = (7.8843626 + 8.2128778) / 2 = 8.0486202 months.
- *   That is > 6, so `high` fails its median-age clause outright — which makes
- *   this case immune to TEST_PLAN §8 Q1 (`compsUsed` = 4 post-trim or 6 kept;
- *   both clear the `medium` bar of 4, and `high` is already out).
- *   medium: compsUsed ≥ 4 ✓ and cv 0.0318764 ≤ 0.25 ✓
- *   => confidence = 'medium'
+ * STEP 7 — spread (sample, n-1 over the TRIMMED set).
+ *   mean 215; deviations -10, 0, +10; Sd2 = 200; variance 200/2 = 100; sd = 10
+ *   cv = 10 / 215 = 0.0465116
+ *   band: 10 x 2,000 = 20,000 -> arvLow 410,000 / arvHigh 450,000
  *
- * ---------------------------------------------------------------------------
- * Fixture order is [200, 600, 180, 210, 195, 205] — not sorted, so trimming
- * the array as given (dropping 200 and 205) leaves [600, 180, 210, 195],
- * mean 296.25, ARV $592,500 -> $593,000. Wrong in the loudest possible way,
- * which is the good outcome.
+ * STEP 8 — confidence (§14.4). compsUsed = 5 (kept count) >= 5;
+ *   cv 0.0465 <= 0.15; median distance 0.1381882 <= 0.75; median age
+ *   1.9710907 <= 6  =>  **high**.
+ *
+ * NON_ARMS_LENGTH check: candidate median over all six $/sqft
+ *   [196, 200, 205, 215, 225, 600] (even n) = (205 + 215) / 2 = 210;
+ *   threshold 0.4 x 210 = 84. The lowest is 196. Nothing is rejected — the
+ *   outlier is a genuine arms-length sale, which is why the trim has to handle
+ *   it rather than the filters.
  * ---------------------------------------------------------------------------
  */
 import type { GoldenCase, RawComp, SubjectProperty } from './types.js';
@@ -107,92 +100,97 @@ const subject: SubjectProperty = {
 
 const comps: RawComp[] = [
   {
-    zpid: 'G2-C1', address: '484 EAST PINE STREET', status: 'SOLD',
-    soldPrice: 420000, soldDate: '2024-12-17', // 210 d
-    beds: 3, baths: 2, livingArea: 2100, lotSize: 6200, // $/sqft 200
+    // THE REBUILD. Identical to the subject on every SCORED dimension —
+    // same sqft, same lot, same beds/baths, closest, most recent — and triple
+    // the price. Best-scoring comp in the set, so the cap cannot remove it and
+    // only the trim can.
+    zpid: 'G2-O', address: '484 EAST PINE STREET', status: 'SOLD',
+    soldPrice: 1200000, soldDate: '2025-06-15', // 30 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6000, // $/sqft 600  <- trimmed (high)
     propertyType: 'SFR', lat: 47.601, lng: -122.3, // 0.0690941 mi
   },
   {
-    // The new build. Torn to studs, rebuilt, sold at triple the street's rate.
-    // Passes every hard filter — correctly. The trim is what saves us.
-    zpid: 'G2-C2', address: '488 EAST PINE STREET', status: 'SOLD',
-    soldPrice: 960000, soldDate: '2024-12-07', // 220 d
-    beds: 3, baths: 2, livingArea: 1600, lotSize: 5000, // $/sqft 600  <- trimmed (high)
-    propertyType: 'SFR', lat: 47.599, lng: -122.3, // 0.0690941 mi
-  },
-  {
-    zpid: 'G2-C3', address: '492 EAST PINE STREET', status: 'SOLD',
-    soldPrice: 342000, soldDate: '2024-11-17', // 240 d
-    beds: 3, baths: 2, livingArea: 1900, lotSize: 6400, // $/sqft 180  <- trimmed (low)
+    zpid: 'G2-A', address: '488 EAST PINE STREET', status: 'SOLD',
+    soldPrice: 392000, soldDate: '2025-06-15', // 30 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6000, // $/sqft 196  <- trimmed (low)
     propertyType: 'SFR', lat: 47.602, lng: -122.3, // 0.1381882 mi
   },
   {
-    zpid: 'G2-C4', address: '496 EAST PINE STREET', status: 'SOLD',
-    soldPrice: 462000, soldDate: '2024-11-07', // 250 d
-    beds: 4, baths: 2.5, livingArea: 2200, lotSize: 7000, // $/sqft 210
+    zpid: 'G2-B', address: '492 EAST PINE STREET', status: 'SOLD',
+    soldPrice: 420250, soldDate: '2025-05-16', // 60 d
+    beds: 3, baths: 2, livingArea: 2050, lotSize: 6100, // $/sqft 205
     propertyType: 'SFR', lat: 47.598, lng: -122.3, // 0.1381882 mi
   },
   {
-    zpid: 'G2-C5', address: '500 EAST PINE STREET', status: 'SOLD',
-    soldPrice: 390000, soldDate: '2024-10-28', // 260 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 6000, // $/sqft 195
+    zpid: 'G2-C', address: '496 EAST PINE STREET', status: 'SOLD',
+    soldPrice: 419250, soldDate: '2025-05-16', // 60 d
+    beds: 3, baths: 2, livingArea: 1950, lotSize: 5900, // $/sqft 215
     propertyType: 'SFR', lat: 47.603, lng: -122.3, // 0.2072823 mi
   },
   {
-    zpid: 'G2-C6', address: '504 EAST PINE STREET', status: 'SOLD',
-    soldPrice: 369000, soldDate: '2024-10-18', // 270 d
-    beds: 2, baths: 2, livingArea: 1800, lotSize: 5600, // $/sqft 205
+    zpid: 'G2-D', address: '500 EAST PINE STREET', status: 'SOLD',
+    soldPrice: 472500, soldDate: '2025-04-16', // 90 d
+    beds: 3, baths: 2, livingArea: 2100, lotSize: 6300, // $/sqft 225
     propertyType: 'SFR', lat: 47.597, lng: -122.3, // 0.2072823 mi
+  },
+  {
+    // Deliberately the worst comp on every scored dimension, so the cap has
+    // something to remove that is NOT the outlier. Far, wrong size, wrong
+    // bed/bath, biggest lot delta.
+    zpid: 'G2-E', address: '504 EAST PINE STREET', status: 'SOLD',
+    soldPrice: 330000, soldDate: '2025-04-16', // 90 d
+    beds: 4, baths: 3, livingArea: 1650, lotSize: 8500, // $/sqft 200
+    propertyType: 'SFR', lat: 47.61013, lng: -122.3, // 0.7 mi
   },
 ];
 
 export const golden02: GoldenCase = {
   id: 'golden-02-outlier-6',
-  title: 'outlier case — 6 comps, one at 3x $/sqft, trim must neutralise it',
+  title: 'outlier case — a 3x rebuild that SURVIVES ranking, so only the trim can remove it',
   now: new Date('2025-07-15T00:00:00.000Z'),
   subject,
   comps,
   expected: {
     ok: true,
-    compsKept: 6,
-    keptZpids: ['G2-C1', 'G2-C2', 'G2-C3', 'G2-C4', 'G2-C5', 'G2-C6'],
+    compsKept: 5,
+    keptZpids: ['G2-O', 'G2-A', 'G2-B', 'G2-C', 'G2-D'],
     rejected: [],
-    radiusTierMi: 0.5,
+    radiusTierMi: 1.0,
+    recencyTierMonths: 3,
 
     trimCount: 1,
-    usedPpsf: [195, 200, 205, 210],
+    usedPpsf: [205, 215, 225],
     trimmedOutPpsf: [
-      { pricePerSqft: 180, end: 'low' },
+      { pricePerSqft: 196, end: 'low' },
       { pricePerSqft: 600, end: 'high' },
     ],
 
-    arvPerSqft: 202.5,
-    arv: 405000,
-    arvLow: 392000,
-    arvHigh: 418000,
-    sd: 6.4549722,
-    cv: 0.0318764,
-    confidence: 'medium',
+    arvPerSqft: 215,
+    arv: 430000,
+    arvLow: 410000,
+    arvHigh: 450000,
+    sd: 10,
+    cv: 0.0465116,
+    confidence: 'high',
 
     epsilon: 1e-6,
   },
   wrongAnswers: [
-    { bug: 'no trim — outlier goes straight into the mean (1590/6 = 265)', arv: 530000 },
-    { bug: 'trimCount uses floor(6 x 0.15) = 0 without the max(1, .)', arv: 530000 },
-    { bug: 'trims the first/last element of the UNSORTED array', arv: 593000 },
+    { bug: 'no trim — the rebuild goes straight into the mean (1441/5 = 288.2)', arv: 576000 },
+    { bug: 'trimCount uses floor(5 x 0.15) = 0 without the max(1, .)', arv: 576000 },
   ],
 };
 
 /**
- * The assertion that gives this case its teeth, stated plainly:
- *
- *   ARV computed WITH the outlier included  = $530,000
- *   ARV computed with the trim doing its job = $405,000
- *
- * Both are numbers a chatbot would print without blinking. Only one of them is
- * a house on this street. A test that merely asserts `arv === 405000` proves
- * the trim ran; asserting the $530,000 counterfactual separately proves the
- * trim MATTERED on this data, which is what stops the case rotting into a
- * tautology if the fixture is ever edited.
+ * The counterfactual this case exists to assert, kept as an exported constant
+ * so a test can state it rather than recompute it.
  */
-export const golden02UntrimmedArv = 530000;
+export const golden02UntrimmedArv = 576000;
+
+/**
+ * The v1 failure mode, recorded so it cannot quietly return: if MAX_COMPS_KEPT
+ * ever rises again, or if the outlier is edited to score badly, it gets capped
+ * out at rank 6 and this case silently stops testing the trim. A test asserts
+ * `G2-O` is in `keptZpids` for exactly that reason.
+ */
+export const golden02OutlierMustSurviveRanking = 'G2-O';

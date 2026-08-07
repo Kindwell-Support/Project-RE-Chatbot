@@ -11,6 +11,13 @@
  * Subject: 2,000 sqft, 3 bed / 2 bath, SFR, lot 6,000. `now` = 2025-07-15Z.
  *
  * ---------------------------------------------------------------------------
+ * v2 (CONTRACT §14, ALGO_VERSION 2). The arithmetic below the divider is the
+ * v1 derivation and is SUPERSEDED — kept only as the record of what changed.
+ * The authoritative hand-derivation for every v2 value in this file is
+ * `V2-RECOMPUTE.md` in this directory, which walks the new ladder, the 20%
+ * band, the cap at 5, the five-term score and the rebased confidence.
+ * ---------------------------------------------------------------------------
+ * ---------------------------------------------------------------------------
  * STEP 1 — hard filters (CONTRACT §5.3). Every comp passes all eleven:
  *   status SOLD · sold 30–120 days ago (≤ 12 mo) · sqft present
  *   sqft band = 2000 ± 25%  =>  [1500, 2500]; all eight are inside
@@ -136,20 +143,20 @@ const subject: SubjectProperty = {
 const comps: RawComp[] = [
   {
     zpid: 'G1-C1', address: '1204 NORTH MAIN STREET', status: 'SOLD',
-    soldPrice: 400000, soldDate: '2025-06-15', // 30 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 6200, // $/sqft 200
+    soldPrice: 406000, soldDate: '2025-06-15', // 30 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6200, // $/sqft 203
     propertyType: 'SFR', lat: 47.601, lng: -122.3, // 0.0690941 mi
   },
   {
     zpid: 'G1-C2', address: '1208 NORTH MAIN STREET', status: 'SOLD',
-    soldPrice: 409500, soldDate: '2025-05-16', // 60 d
-    beds: 4, baths: 2.5, livingArea: 2100, lotSize: 7000, // $/sqft 195
+    soldPrice: 411600, soldDate: '2025-05-16', // 60 d
+    beds: 4, baths: 2.5, livingArea: 2100, lotSize: 7000, // $/sqft 196
     propertyType: 'SFR', lat: 47.599, lng: -122.3, // 0.0690941 mi
   },
   {
     zpid: 'G1-C3', address: '1212 NORTH MAIN STREET', status: 'SOLD',
-    soldPrice: 342000, soldDate: '2025-04-16', // 90 d
-    beds: 3, baths: 2, livingArea: 1800, lotSize: 5800, // $/sqft 190  <- trimmed (low)
+    soldPrice: 338400, soldDate: '2025-04-16', // 90 d
+    beds: 3, baths: 2, livingArea: 1800, lotSize: 5800, // $/sqft 188  <- trimmed (low)
     propertyType: 'SFR', lat: 47.602, lng: -122.3, // 0.1381882 mi
   },
   {
@@ -160,14 +167,14 @@ const comps: RawComp[] = [
   },
   {
     zpid: 'G1-C5', address: '1220 NORTH MAIN STREET', status: 'SOLD',
-    soldPrice: 344000, soldDate: '2025-06-15', // 30 d
-    beds: 2, baths: 2, livingArea: 1600, lotSize: 5200, // $/sqft 215  <- trimmed (high)
+    soldPrice: 348800, soldDate: '2025-06-15', // 30 d
+    beds: 2, baths: 2, livingArea: 1600, lotSize: 5200, // $/sqft 218  <- trimmed (high)
     propertyType: 'SFR', lat: 47.603, lng: -122.3, // 0.2072823 mi
   },
   {
     zpid: 'G1-C6', address: '1224 NORTH MAIN STREET', status: 'SOLD',
-    soldPrice: 358750, soldDate: '2025-05-16', // 60 d
-    beds: 3, baths: 3, livingArea: 1750, lotSize: 6800, // $/sqft 205
+    soldPrice: 365750, soldDate: '2025-05-16', // 60 d
+    beds: 3, baths: 3, livingArea: 1750, lotSize: 6800, // $/sqft 209
     propertyType: 'SFR', lat: 47.597, lng: -122.3, // 0.2072823 mi
   },
   {
@@ -192,32 +199,49 @@ export const golden01: GoldenCase = {
   comps,
   expected: {
     ok: true,
-    compsKept: 8,
-    keptZpids: ['G1-C1', 'G1-C2', 'G1-C3', 'G1-C4', 'G1-C5', 'G1-C6', 'G1-C7', 'G1-C8'],
-    rejected: [],
-    radiusTierMi: 0.5,
+    // v2: rung 1 (1.0 mi / 3 mo) yields 6; C4 and C8 are STALE at 3 months.
+    // The cap at 5 then drops C7, the worst-scoring survivor.
+    compsKept: 5,
+    keptZpids: ['G1-C1', 'G1-C2', 'G1-C3', 'G1-C5', 'G1-C6'],
+    rejected: [
+      { zpid: 'G1-C4', reason: 'STALE_SALE' },
+      { zpid: 'G1-C8', reason: 'STALE_SALE' },
+    ],
+    radiusTierMi: 1.0,
+    recencyTierMonths: 3,
 
     trimCount: 1,
-    usedPpsf: [195, 198, 200, 202, 205, 208],
+    usedPpsf: [196, 203, 209],
     trimmedOutPpsf: [
-      { pricePerSqft: 190, end: 'low' },
-      { pricePerSqft: 215, end: 'high' },
+      { pricePerSqft: 188, end: 'low' },
+      { pricePerSqft: 218, end: 'high' },
     ],
 
-    arvPerSqft: 1208 / 6, // 201.333333…
-    arv: 403000,
-    arvLow: 394000,
-    arvHigh: 412000,
-    sd: 4.7187570,
-    cv: 0.0234375,
+    arvPerSqft: 608 / 3, // 202.666666…
+    arv: 405000,
+    arvLow: 392000,
+    arvHigh: 418000,
+    sd: 6.5064071,
+    cv: 0.0321041,
     confidence: 'high',
 
     epsilon: 1e-6,
   },
   wrongAnswers: [
-    { bug: 'trims the first/last element of the UNSORTED array', arv: 404000 },
-    { bug: 'trims by soldPrice instead of $/sqft', arv: 405000 },
-    { bug: '$/sqft computed against SUBJECT sqft instead of comp sqft', arv: 389000 },
+    // Re-derived for v2 against the kept FIVE (C1 203, C2 196, C3 188, C6 209,
+    // C5 218). The v1 list was invalidated by the re-spread — one entry
+    // ("trims by soldPrice") had drifted onto 405,000, the CORRECT v2 answer,
+    // which would have silently gutted the case. The dataset self-check caught
+    // it, which is the reason that check exists.
+    // unsorted trim: [203,196,188,209,218] -> drop ends -> [196,188,209]
+    //   -> 593/3 = 197.66667 -> $395,333 -> $395,000
+    { bug: 'trims the first/last element of the UNSORTED array', arv: 395000 },
+    // by price: min 338,400 (C3) and max 411,600 (C2) removed
+    //   -> [203, 218, 209] -> 630/3 = 210 -> $420,000
+    { bug: 'trims by soldPrice instead of $/sqft', arv: 420000 },
+    // vs subject sqft: [169.2, 174.4, 182.875, 203, 205.8] -> [174.4, 182.875, 203]
+    //   -> 560.275/3 = 186.75833 -> $373,517 -> $374,000
+    { bug: '$/sqft computed against SUBJECT sqft instead of comp sqft', arv: 374000 },
   ],
 };
 

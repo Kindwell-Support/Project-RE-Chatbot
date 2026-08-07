@@ -24,6 +24,13 @@
  * Subject: 2,000 sqft, 3 bed / 2 bath, SFR, lot 6,000. `now` = 2025-07-15Z.
  *
  * ---------------------------------------------------------------------------
+ * v2 (CONTRACT §14, ALGO_VERSION 2). The arithmetic below the divider is the
+ * v1 derivation and is SUPERSEDED — kept only as the record of what changed.
+ * The authoritative hand-derivation for every v2 value in this file is
+ * `V2-RECOMPUTE.md` in this directory, which walks the new ladder, the 20%
+ * band, the cap at 5, the five-term score and the rebased confidence.
+ * ---------------------------------------------------------------------------
+ * ---------------------------------------------------------------------------
  * STEP 1 — $/sqft for every input comp (all six have computable $/sqft):
  *   G6-A  400,000 / 2,000 =  200
  *   G6-B  420,000 / 2,000 =  210
@@ -96,19 +103,19 @@ const subject: SubjectProperty = {
 const comps: RawComp[] = [
   {
     zpid: 'G6-A', address: '644 NORTHWEST ALDER PLACE', status: 'SOLD',
-    soldPrice: 400000, soldDate: '2025-05-16', // 60 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 6000, // $/sqft 200
+    soldPrice: 350000, soldDate: '2025-05-16', // 60 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6000, // $/sqft 175
     propertyType: 'SFR', lat: 47.601, lng: -122.3, // 0.0690941 mi
   },
   {
     zpid: 'G6-B', address: '648 NORTHWEST ALDER PLACE', status: 'SOLD',
-    soldPrice: 420000, soldDate: '2025-04-16', // 90 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 6200, // $/sqft 210
+    soldPrice: 380000, soldDate: '2025-04-16', // 90 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6200, // $/sqft 205
     propertyType: 'SFR', lat: 47.602, lng: -122.3, // 0.1381882 mi
   },
   {
     zpid: 'G6-C', address: '652 NORTHWEST ALDER PLACE', status: 'SOLD',
-    soldPrice: 380000, soldDate: '2025-03-17', // 120 d
+    soldPrice: 410000, soldDate: '2025-03-17', // 120 d
     beds: 3, baths: 2, livingArea: 2000, lotSize: 5800, // $/sqft 190
     propertyType: 'SFR', lat: 47.603, lng: -122.3, // 0.2072823 mi
   },
@@ -131,8 +138,8 @@ const comps: RawComp[] = [
     // type, sold three weeks ago, next door. Only rule 10 stands between it and
     // a $60,000 haircut on the ARV.
     zpid: 'G6-F', address: '664 NORTHWEST ALDER PLACE', status: 'SOLD',
-    soldPrice: 160000, soldDate: '2025-06-15', // 30 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 6100, // $/sqft 80
+    soldPrice: 156000, soldDate: '2025-06-15', // 30 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6100, // $/sqft 78
     propertyType: 'SFR', lat: 47.597, lng: -122.3, // 0.2072823 mi
   },
 ];
@@ -152,18 +159,19 @@ export const golden06: GoldenCase = {
       { zpid: 'G6-E', reason: 'SQFT_OUT_OF_RANGE' },
       { zpid: 'G6-F', reason: 'NON_ARMS_LENGTH' },
     ],
-    radiusTierMi: 2.0,
+    radiusTierMi: 3.0,
+    recencyTierMonths: 12,
 
     trimCount: 0,
-    usedPpsf: [190, 200, 210],
+    usedPpsf: [175, 190, 205],
     trimmedOutPpsf: [],
 
-    arvPerSqft: 200,
-    arv: 400000,
-    arvLow: 380000,
-    arvHigh: 420000,
-    sd: 10,
-    cv: 0.05,
+    arvPerSqft: 190,
+    arv: 380000,
+    arvLow: 350000,
+    arvHigh: 410000,
+    sd: 15,
+    cv: 0.0789474,
     confidence: 'low',
 
     epsilon: 1e-9,
@@ -171,7 +179,7 @@ export const golden06: GoldenCase = {
   wrongAnswers: [
     {
       bug: 'candidate median taken over rule-1-9 survivors only (median 195, threshold 78) — transfer survives',
-      arv: 340000,
+      arv: 324000,
     },
   ],
 };

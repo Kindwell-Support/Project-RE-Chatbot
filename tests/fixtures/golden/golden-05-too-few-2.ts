@@ -109,9 +109,10 @@ export const golden05: GoldenCase = {
   expected: {
     ok: false,
     code: 'TOO_FEW_COMPS',
-    detail: { kept: 2, needed: 3, radiusTierMi: 2.0 },
+    detail: { kept: 2, needed: 3, radiusTierMi: 3.0 },
     compsKept: 2,
-    radiusTierMi: 2.0,
+    radiusTierMi: 3.0,
+    recencyTierMonths: 12,
     rejected: [
       { zpid: 'G5-C3', reason: 'NOT_SOLD' },
       { zpid: 'G5-C4', reason: 'STALE_SALE' },
@@ -139,9 +140,10 @@ export const golden05Empty: GoldenCase = {
   expected: {
     ok: false,
     code: 'TOO_FEW_COMPS',
-    detail: { kept: 0, needed: 3, radiusTierMi: 2.0 },
+    detail: { kept: 0, needed: 3, radiusTierMi: 3.0 },
     compsKept: 0,
-    radiusTierMi: 2.0,
+    radiusTierMi: 3.0,
+    recencyTierMonths: 12,
     rejected: [],
   },
   wrongAnswers: [

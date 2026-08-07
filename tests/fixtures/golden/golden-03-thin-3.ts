@@ -24,6 +24,13 @@
  * Subject: 2,000 sqft, 3 bed / 2 bath, SFR, lot 6,000. `now` = 2025-07-15Z.
  *
  * ---------------------------------------------------------------------------
+ * v2 (CONTRACT §14, ALGO_VERSION 2). The arithmetic below the divider is the
+ * v1 derivation and is SUPERSEDED — kept only as the record of what changed.
+ * The authoritative hand-derivation for every v2 value in this file is
+ * `V2-RECOMPUTE.md` in this directory, which walks the new ladder, the 20%
+ * band, the cap at 5, the five-term score and the rebased confidence.
+ * ---------------------------------------------------------------------------
+ * ---------------------------------------------------------------------------
  * STEP 1 — hard filters. All three pass.
  *   sqft band [1500, 2500]: 2000, 1900, 2400 — inside
  *   NON_ARMS_LENGTH: candidate median (n = 3, odd) of [190, 200, 240] = 200
@@ -131,7 +138,8 @@ export const golden03: GoldenCase = {
     rejected: [],
     // NOT 0.5 — see the header. Three comps never satisfies a tier, so the
     // search runs out of tiers and reports the last one it tried.
-    radiusTierMi: 2.0,
+    radiusTierMi: 3.0,
+    recencyTierMonths: 12,
 
     trimCount: 0,
     usedPpsf: [190, 200, 240],
