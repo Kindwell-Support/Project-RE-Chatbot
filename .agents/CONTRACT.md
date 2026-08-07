@@ -3,7 +3,7 @@
 Owner: MASON. INSPECTOR tests from this file. If code and contract disagree, the
 contract wins until a `CONTRACT_CHANGE` is agreed.
 
-- `ALGO_VERSION = 1`
+- `ALGO_VERSION = 2` (was 1 — bumped by the client-spec alignment, §14)
 - Status: **token available; full module in scope for tonight.** Pure logic
   stays offline-testable against the stub + fixtures; the Apify provider is
   being built against a recorded spike payload.
@@ -33,6 +33,151 @@ contract wins until a `CONTRACT_CHANGE` is agreed.
     address mismatch (§8).
 13. BUG-001 (materialBudget shebang/CRLF) is ruled **out of scope** for this
     feature.
+
+---
+
+## 14. CLIENT-SPEC ALIGNMENT (ALGO_VERSION 2) — branch `feat/comps-client-spec`
+
+Operator-directed alignment with the client's written comp-selection method.
+**This section is binding and supersedes the older values wherever they
+conflict**; the tables in §3/§5 have been edited in place to match.
+
+### 14.1 Parameter changes
+
+| Parameter | Was (v1) | Now (v2) | Note |
+| --- | --- | --- | --- |
+| `SQFT_TOLERANCE` | 0.25 | **0.20** | Her spec reads "generally within 10–20%". **Pinned reading:** 20% is the HARD GATE; closeness inside the band is already rewarded by the sqft scoring term, so gate-at-20% + existing scoring together satisfy "generally within 10–20%" without a second gate at 10% that would decimate thin markets. |
+| `RADIUS_TIERS_MI` | [0.5, 1.0, 2.0] | **[1.0, 3.0]** | **Widens the outer bound from 2 mi to 3 mi.** Fewer, wider rungs. |
+| Recency | flat 12-month gate, recency scored | **`RECENCY_TIERS_MONTHS = [3, 6, 12]`** | Her spec ("start at 3 months, extend to 12 in a slower market") is TIERING, not scoring. The 12-month wall remains the outer bound; the recency term still scores within it. |
+| `MAX_COMPS_KEPT` | 8 | **5** | Display AND compute — no split. The ARV is computed from the same 5 the member sees. |
+| `MIN_COMPS_TO_COMPUTE` | 3 | **3** (unchanged) | |
+| Lot size | hard gate (`LOT_ANOMALY`, >5× subject) | **soft scoring factor** | A hard lot gate decimates thin markets. Rule 11 `LOT_ANOMALY` is REMOVED from §5.3; lot becomes a scored term (§14.3). `RejectReason` keeps the member for back-compat with cached v1 results but it is never emitted. |
+
+### 14.2 The two ladders, and the order they widen (design decision, pinned)
+
+Two tiered gates now exist. They are walked as ONE ordered ladder, stopping at
+the first rung yielding ≥ `MIN_COMPS_FOR_TIER` (5):
+
+```
+1.0 mi / 3 mo  →  1.0 mi / 6 mo  →  1.0 mi / 12 mo
+              →  3.0 mi / 3 mo  →  3.0 mi / 6 mo  →  3.0 mi / 12 mo
+```
+
+**Recency widens BEFORE radius.** Rationale, pinned so it is not "corrected"
+later: location is a stronger determinant of value than recency inside a
+12-month window — a same-neighbourhood sale from eight months ago is usually a
+better comp than one three miles away from last month. Exhaust time before
+distance. If no rung reaches 5, the LAST rung's outcome is used (and may still
+satisfy `MIN_COMPS_TO_COMPUTE` = 3).
+
+`CompsResult` records BOTH: `radiusTierMi` (existing) and **`recencyTierMonths`**
+(new). The rendered block names both.
+
+### 14.3 Scoring, with lot reinstated as soft
+
+Weights must sum to 100. Lot takes 10, drawn 5 from distance and 5 from sqft —
+the minimum disturbance that leaves the two dominant terms dominant:
+
+```
+distance = min(distanceMi / DISTANCE_NORM_MI, 1)                  * 35   (was 40)
+sqft     = min(|cSqft - sSqft| / sSqft / SQFT_TOLERANCE, 1)       * 25   (was 30)
+recency  = min(max(monthsAgo, 0) / RECENCY_NORM_MONTHS, 1)        * 20   (unchanged)
+bedbath  = min((|dBeds| + |dBaths|) / 2, 1)                       * 10   (unchanged)
+lot      = min(|cLot - sLot| / sLot / LOT_NORM_RATIO, 1)          * 10   (NEW)
+```
+
+`LOT_NORM_RATIO = 1.0` — a 100% lot difference saturates the term. **Null lot on
+either side scores 0**, exactly as null beds/baths do: unknown is not a penalty.
+
+### 14.4 Confidence, rebased (operator ruling — a consequence, not a choice)
+
+`high` required n ≥ 6; with the cap at 5 that is structurally unreachable and
+every run would return medium or low forever. Rebased:
+
+- **high** — compsUsed ≥ **5** (the full set kept) ∧ cv ≤ 0.15 ∧ median distance ≤ 0.75 mi ∧ median age ≤ 6 months
+- **medium** — compsUsed ≥ 4 ∧ cv ≤ 0.25
+- **low** — otherwise
+
+CV thresholds unchanged.
+
+**The trim consequence, stated plainly rather than buried:** at n = 5,
+`trimCount = max(1, floor(5 × 0.15)) = 1`, so one comp is dropped from each end
+and **the ARV is the mean of 3 values, with the sample standard deviation also
+computed over those 3** (n−1 = 2 degrees of freedom). That is the client's
+method as written — 5 comps shown, 5 kept, 3 averaged after outlier trimming.
+It is a deliberately small sample and the confidence tiers are what qualify it.
+
+### 14.5 Per-comp fields — VERIFIED AGAINST THE RECORDED PAYLOAD
+
+Evidence: 73 sold comps across both recorded search runs
+(`spike-comps.json`, `spike-comps-2.json`).
+
+**Buildable — render these:**
+
+| Field | Source | Availability |
+| --- | --- | --- |
+| address, sold price, sold date, sqft, $/sqft, distance | existing | already rendered |
+| **beds** | `homeInfo.bedrooms` | 70/73 |
+| **baths** | `homeInfo.bathrooms` | 71/73 |
+| **lot size** | `homeInfo.lotAreaValue` + `lotAreaUnit` | 73/73 (68 sqft, 5 acres → normalized to sqft) |
+| **property link** | `detailUrl` | 73/73 |
+
+**NOT buildable from the comps payload — reported, NOT built (§14.6).**
+
+**Null rendering rule (no-fabrication extends to every new field):** a null
+field renders as an explicit **`—`** (em dash). Never omitted silently, never
+inferred, never back-filled from another comp or from the subject.
+
+### 14.6 What the payload does NOT contain — for the client conversation
+
+The comps come from the **search** scraper; the subject comes from the
+**detail** scraper. They carry different data, and that distinction is the
+whole answer:
+
+| Client criterion | In comps (search) payload? | Note |
+| --- | --- | --- |
+| **Days on market** | **NO — effectively absent.** `daysOnZillow` is **−1 on 73/73** sold comps (a sentinel, not a value). `timeOnZillow` exists in ms (5.6–14.6 days observed) but its meaning for a SOLD listing is unverified — it may be time-on-site, not marketing time. | Not rendered. Would be a guess. |
+| **Parking spaces** | **NO** — absent from every search field. | Present in the DETAIL payload only (`resoFacts.parkingCapacity`, `garageParkingCapacity`, `hasGarage`). |
+| **Year built / similar age** | **NO** in search. | Present in DETAIL (`yearBuilt`) — so available for the SUBJECT, not for comps. |
+| **Architectural style** | **NO** in search. | Present in DETAIL (`resoFacts.architecturalStyle` — observed "Ranch", "Spanish"). |
+| **Construction quality / condition** | **NO** in search. | DETAIL has `resoFacts.propertyCondition` (observed "Fixer") but only in 1 of 2 recorded subjects — inconsistent even there. |
+| **Garage / basement / ADU** | **NO** in search. | DETAIL has garage fields; **basement absent in both** recorded subjects; no ADU field at all (`hasAdditionalParcels` is not an ADU). |
+
+**The cost fact the client decision turns on:** every one of the missing
+criteria exists in the DETAIL payload. Getting them per comp means one detail
+actor run **per comp** — 5 extra runs on top of the current 2, i.e. **2 → 7
+runs per comps lookup, ~3.5× the Apify cost**, against a quota the client pays
+for. Recommend the client decides whether any of these criteria justify that
+before anything is built. No render slots exist for them today.
+
+### 14.7 Prescribed copy — verbatim, from constants, structural in format.ts
+
+Exported as named constants and emitted by `format.ts` structurally (not
+model-authored, not prompt-dependent), on every SUCCESSFUL comps render:
+
+- `COMPS_OPENING` (before the table): *"Sure. Here are recent comparable sales
+  for that location and home type. Please note responses are for education and
+  based on available public data. Investors are encouraged to review each
+  address for additional information."*
+- `COMPS_CLOSING` (after the ARV block): evaluate each property carefully;
+  current quality of home, overall appeal, lot location and usability can
+  drastically impact value; consider external factors such as view properties,
+  environmental concerns, powerlines, busy roads.
+
+The existing not-an-appraisal footer and the low-confidence warning remain.
+
+### 14.8 Out of scope (operator)
+
+- **Neighbourhood summary** — all of it. Separate block.
+- **ARV placement** — client has not ruled whether it stays, moves, or goes.
+  Stays where it is, but its position must be **one structural change** in
+  `format.ts` (a single emit-order list), not woven through the renderer.
+
+### 14.9 Blast radius
+
+Every golden expected value, every mapped fixture, and all three live
+ground-truth runs change. **Tests are INSPECTOR's and must be recomputed by
+hand from this contract — never adjusted to match implementation output.**
 
 ---
 
@@ -67,21 +212,23 @@ sql/add_comps_tables.sql
 | --- | --- | --- |
 | `ALGO_VERSION` | `1` | stamped on every result; cache recompute trigger |
 | `MAX_COMP_AGE_MONTHS` | `12` | hard filter |
-| `SQFT_TOLERANCE` | `0.25` | subject sqft ±25% |
+| `SQFT_TOLERANCE` | `0.20` | subject sqft ±20% — hard gate (§14.1) |
 | `MAX_BED_DIFF` | `1` | hard filter |
 | `MAX_BATH_DIFF` | `1` | hard filter |
-| `RADIUS_TIERS_MI` | `[0.5, 1.0, 2.0]` | stop at first tier with ≥ `MIN_COMPS_FOR_TIER` |
+| `RADIUS_TIERS_MI` | `[1.0, 3.0]` | outer bound widened 2→3 mi (§14.1) |
+| `RECENCY_TIERS_MONTHS` | `[3, 6, 12]` | recency is TIERED, not just scored (§14.1). Recency widens BEFORE radius (§14.2) |
 | `MIN_COMPS_FOR_TIER` | `5` | tier advance threshold |
 | `MIN_COMPS_TO_COMPUTE` | `3` | below ⇒ `TOO_FEW_COMPS` |
-| `MAX_COMPS_KEPT` | `8` | after ranking |
+| `MAX_COMPS_KEPT` | `5` | after ranking — display AND compute, no split (§14.1) |
 | `NON_ARMS_LENGTH_PPSF_FRACTION` | `0.4` | ppsf < 40% of candidate median ⇒ reject |
-| `LOT_ANOMALY_MULTIPLE` | `5` | lot > 5× subject lot ⇒ reject |
-| `WEIGHT_DISTANCE` / `WEIGHT_SQFT` / `WEIGHT_RECENCY` / `WEIGHT_BEDBATH` | `40 / 30 / 20 / 10` | score weights |
+| ~~`LOT_ANOMALY_MULTIPLE`~~ | REMOVED | lot is now a soft SCORING term, not a gate (§14.1/§14.3) |
+| `LOT_NORM_RATIO` | `1.0` | lot-score normalizer; 100% difference saturates |
+| `WEIGHT_DISTANCE` / `WEIGHT_SQFT` / `WEIGHT_RECENCY` / `WEIGHT_BEDBATH` / `WEIGHT_LOT` | `35 / 25 / 20 / 10 / 10` | score weights, sum 100 (§14.3) |
 | `DISTANCE_NORM_MI` | `1.0` | score normalizer |
 | `RECENCY_NORM_MONTHS` | `12` | score normalizer |
 | `TRIM_FRACTION` | `0.15` | trimmed-mean trim per end (n ≥ 5) |
 | `ARV_ROUND_TO` | `1000` | round ARV/low/high to nearest |
-| `CONF_HIGH` | `{ minComps: 6, maxCv: 0.15, maxMedianDistanceMi: 0.75, maxMedianAgeMonths: 6 }` | |
+| `CONF_HIGH` | `{ minComps: 5, maxCv: 0.15, maxMedianDistanceMi: 0.75, maxMedianAgeMonths: 6 }` | minComps 6→5: unreachable once the cap is 5 (§14.4) |
 | `CONF_MEDIUM` | `{ minComps: 4, maxCv: 0.25 }` | |
 | `CACHE_TTL_DAYS` | `14` | |
 | `PROVIDER_TIMEOUT_MS` | `90_000` | per Apify run |
@@ -231,7 +378,7 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
 8. `TOO_FAR` — haversine miles > active radius tier
 9. `PRICE_MISSING` — `soldPrice` null or ≤ 0
 10. `NON_ARMS_LENGTH` — ppsf < `NON_ARMS_LENGTH_PPSF_FRACTION` × median ppsf of the **candidate set** (all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters; median of even n = mean of middle two). Deterministic, order-independent.
-11. `LOT_ANOMALY` — both lots non-null and comp lot > `LOT_ANOMALY_MULTIPLE` × subject lot
+11. ~~`LOT_ANOMALY`~~ — **REMOVED in v2** (§14.1): lot is a soft scoring term now. The `RejectReason` union keeps the member so cached v1 results still type, but it is never emitted.
 12. `FUTURE_SOLD_DATE` — `soldDate` parses to strictly after `now` (BUG-003: a sale that hasn't happened is not a comp; Zillow emits pending-close and timezone-shifted dates)
 
 Radius tiers: run filters at 0.5 mi; if kept < `MIN_COMPS_FOR_TIER`, rerun the
