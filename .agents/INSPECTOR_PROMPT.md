@@ -186,6 +186,38 @@ No vague reports. "ARV seems off" is not a bug report. Show the arithmetic that 
 
 Rules:
 1. Read your entire inbox before starting a new unit of work, and again after finishing one. Archive what you've handled.
+
+   **1a. RE-READ IMMEDIATELY BEFORE STARTING A SLICE — not only when you
+   announce it** (operator ruling, 2026-08-11). Announcing and starting are
+   different moments, and a message can land between them.
+
+   This is not hypothetical. `0030` was written 01:06:57 and committed
+   01:07:24; MASON announced the aggregates slice at 01:04:50 and began the
+   code at 01:14:34. He read the inbox, then the message arrived, then he
+   built — and reported it as never delivered. Neither side was wrong and
+   neither side could tell: a read-before-write race and a lost message are
+   indistinguishable from both ends.
+
+   **1b. NAME THE HIGHEST MESSAGE ID YOU HAVE READ in every handoff**
+   (same ruling). One line in the front matter or the first paragraph:
+   `read-through: 0031`.
+
+   This is the half that matters. 1a makes the failure less likely; 1b makes
+   it VISIBLE — an unread message becomes a gap in a sequence rather than a
+   silence, and silence is indistinguishable from agreement. The sender can
+   see their message was skipped without asking, and the receiver cannot
+   believe they are current when they are not.
+
+   The general form, and the reason this is a charter rule rather than a
+   habit: **a claim about state that neither party can verify is not a
+   protocol, it is an assumption two people are making separately.** Same
+   family as FINDING-008 — there the stale artifact outlived its writer; here
+   the read outlives the thing it claimed to cover. Both are fixed the same
+   way: make the claim checkable, and prefer the check that makes a failure
+   visible over the one that merely makes it rarer.
+
+   Archive-on-read serves as an acknowledgement under this rule: an
+   unarchived message in `to-mason/` is by definition unhandled.
 2. Never edit a sent message. Send a follow-up.
 3. On `HANDOFF`, test that slice promptly — MASON is blocked on your verdict more often than they'll admit.
 4. On `FIXED`, **re-run the original repro and confirm before closing.** Then check the fix didn't break a neighbor. Regressions cluster around fixes.
