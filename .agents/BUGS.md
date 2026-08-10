@@ -9,6 +9,46 @@ carried into the GREEN message with its severity).
 
 ---
 
+## BUG-011 — the ARV removal orphaned `subjectAddress`; every manual ARV binds to the literal string "manual entry"
+
+- **Status**: OPEN — reported in mailbox `0024`, blocker
+- **Severity**: high, member-visible on both symptoms
+- **Found**: while re-pointing the P1 state suite after the ARV removal (`12eb0e7`)
+
+`tools.ts:218` reads `subjectAddress: existing?.subjectAddress ?? 'manual entry'`.
+That was safe while `run_comps` wrote the comps block. It no longer does, and
+`set_manual_arv` takes no address argument, so **no code path puts a real
+address into `subjectAddress` any more**. It is permanently the placeholder.
+
+**Symptom 1 — the member's own ARV is refused for the address they just named.**
+`addressConflict` (`agent.ts:449`) compares the member's real address against
+`"manual entry"`, they differ, the guard fires:
+
+```
+"use 450k as the ARV for 123 Main St"   -> stored, subjectAddress "manual entry"
+"run the flip numbers on 123 Main St"   -> ARV never reaches the calculator
+```
+
+and the model is told to ask "which deal is this — the one at manual entry, or
+the new address". There is no answer to that question.
+
+**Symptom 2 — the placeholder is rendered.** The chat echo (`agent.ts:287`)
+reads `Using ARV $450,000 from your manual entry for manual entry`.
+`formPrefill.ts:33` already special-cases `!== 'manual entry'` for the form
+label; the chat echo has no such guard.
+
+**Why it survived my first pass.** The bad path only fires when the member NAMES
+a property; `"run the flip numbers"` with no address pre-fills fine. My own
+guard test in `arvRemoved.test.ts` used a message with no address, so it passed
+while asserting nothing about the case that matters. Same failure mode as the
+false pin in `0016` — a test that is green about the wrong situation.
+
+**The fix must not be "treat 'manual entry' as never-conflicting."** That
+removes the A -> B protection the operator required kept. Three options offered
+in `0024`; MASON's call.
+
+---
+
 ## FINDING-004 — a member-visible ARV that never passes through format.ts — CLOSED-BY-RULING
 
 - **Status**: CLOSED by operator ruling 0024, with a residual noted below
