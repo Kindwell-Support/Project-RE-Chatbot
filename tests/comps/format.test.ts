@@ -553,13 +553,20 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
     const NULL_MARKERS = [/— bd/, /\/ — ba/, /lot — ·/, /lot —$/m];
     const hasNullMarker = (t: string) => NULL_MARKERS.some((m) => m.test(t));
 
-    it('PRECONDITION: with nothing nulled, no VALUE position carries a dash', () => {
-      // If the fully-populated golden already renders value-position dashes,
-      // every assertion below is meaningless — the dash would not discriminate
-      // null from set.
+    it('PRECONDITION + §14.5 MARKER EXCLUSIVITY: a fully-populated render has ZERO em dashes', () => {
+      // Two guarantees in one. As a precondition: if the fully-populated
+      // golden already renders dashes, nothing below discriminates null from
+      // set. As a contract rule (§14.5, amended after this suite first
+      // landed): within the success block the em dash appears ONLY as the
+      // null marker — a marker that doubles as punctuation stops being
+      // explicit, because a member scanning a row cannot tell "missing data"
+      // from typography.
       const text = renderCompsForChat(resultFor(golden01) as never);
-      expect(hasNullMarker(text), 'the fully-populated block already renders a null marker')
-        .toBe(false);
+      expect(
+        text.includes('—'),
+        'an em dash appears in a fully-populated success render — either a field ' +
+          'was nulled by accident or the renderer is using the null marker as punctuation',
+      ).toBe(false);
     });
 
     it.each([

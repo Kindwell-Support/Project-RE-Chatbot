@@ -31,6 +31,7 @@ function sessionId(name: string) {
 interface ChatResult {
   output: string;
   toolCalls: string[];
+  form?: { calculator: string; required: Array<{ label: string }> };
 }
 
 async function chatFull(message: string, session: string): Promise<ChatResult> {
@@ -42,7 +43,16 @@ async function chatFull(message: string, session: string): Promise<ChatResult> {
   });
   expect(res.statusCode, `chat failed: ${res.body}`).toBe(200);
   const body = res.json();
-  return { output: body.output as string, toolCalls: (body.tool_calls ?? []) as string[] };
+  return {
+    output: body.output as string,
+    toolCalls: (body.tool_calls ?? []) as string[],
+    // The calculator form surface (added after this suite was written). The
+    // A2/A4/A9 routing cases accept it as an equal way of delivering their
+    // substance: the form IS the input request.
+    form: body.render_form as
+      | { calculator: string; required: Array<{ label: string }> }
+      | undefined,
+  };
 }
 
 async function chat(message: string, session: string): Promise<string> {
@@ -136,13 +146,28 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
   }, 120000);
 
   it('A2: "2" routes to Flip, discloses before asking, then requests inputs', async () => {
-    const out = await chat('2', sessionId('a2'));
-    expect(out.toLowerCase()).toMatch(/flip/);
-    expect(out).toMatch(DISCLAIMER);
-    // Must ask for the required inputs rather than assuming them.
-    expect(out.toLowerCase()).toMatch(/purchase|price/);
-    expect(out.toLowerCase()).toMatch(/rehab|renovation/);
-    expect(out.toLowerCase()).toMatch(/arv|after.repair/);
+    // Two sanctioned shapes since the form surface landed. PROSE: name the
+    // calculator and ask for the inputs. FORM: render the flip form — the
+    // form IS the input request, its title names the calculator, and the
+    // one-liner still carries the disclaimer. Substance is identical; an
+    // earlier version asserted the prose shape only and failed the better
+    // (form) answer for its delivery mechanism.
+    const r = await chatFull('2', sessionId('a2'));
+    expect(r.output).toMatch(DISCLAIMER);
+
+    if (r.form) {
+      expect(r.form.calculator, '"2" routed the form to the wrong calculator').toBe('flip');
+      const labels = r.form.required.map((f) => f.label.toLowerCase()).join(' ');
+      expect(labels).toMatch(/purchase|price/);
+      expect(labels).toMatch(/rehab|renovation/);
+      expect(labels).toMatch(/arv|after.repair/);
+    } else {
+      expect(r.output.toLowerCase()).toMatch(/flip/);
+      // Must ask for the required inputs rather than assuming them.
+      expect(r.output.toLowerCase()).toMatch(/purchase|price/);
+      expect(r.output.toLowerCase()).toMatch(/rehab|renovation/);
+      expect(r.output.toLowerCase()).toMatch(/arv|after.repair/);
+    }
   }, 60000);
 
   it('A3: a full flip prompt returns 101916 and ~100.8% CoC with a disclaimer', async () => {
@@ -162,11 +187,14 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     // bulleted request ("I'll need the following inputs: ... Please provide these
     // details"), which contains no question mark. What matters is that it requests
     // the four required inputs by name and invents nothing.
-    const lower = r.output.toLowerCase();
-    expect(lower).toMatch(/purchase price/);
-    expect(lower).toMatch(/rehab/);
-    expect(lower).toMatch(/arv|after.repair/);
-    expect(lower).toMatch(/month|holding/);
+    // Form or prose — either way the four inputs are REQUESTED, not assumed.
+    const requested = r.form
+      ? r.form.required.map((f) => f.label.toLowerCase()).join(' ')
+      : r.output.toLowerCase();
+    expect(requested).toMatch(/purchase price|purchase/);
+    expect(requested).toMatch(/rehab/);
+    expect(requested).toMatch(/arv|after.repair/);
+    expect(requested).toMatch(/month|holding/);
     // It must not have run anything without numbers.
     expect(r.toolCalls, 'ran a calculator with no inputs').not.toContain('flip_calculator');
     // The frozen-number tell: the sheet defaults must not appear unasked.
@@ -269,11 +297,13 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
   }, 60000);
 
   it('A9: a long-term-hold question picks BRRRR or asks — never forces Flip', async () => {
-    const out = await chat("I want to analyze a rental I'll hold forever", sessionId('a9'));
-    const lower = out.toLowerCase();
-    const choosesBrrrr = lower.includes('brrrr');
-    const asks = out.includes('?');
-    expect(choosesBrrrr || asks, `forced a flip: ${out}`).toBe(true);
+    const r = await chatFull("I want to analyze a rental I'll hold forever", sessionId('a9'));
+    const lower = r.output.toLowerCase();
+    const choosesBrrrr = lower.includes('brrrr') || r.form?.calculator === 'brrrr';
+    const asks = r.output.includes('?');
+    expect(choosesBrrrr || asks, `forced a flip: ${r.output}`).toBe(true);
+    // The hard failure named in the title: a FLIP form for a forever-hold.
+    expect(r.form?.calculator, 'rendered the flip form for a forever-hold').not.toBe('flip');
   }, 60000);
 
   it('A10: "should I buy this, yes or no?" stays educational, no direct instruction', async () => {
