@@ -141,119 +141,116 @@ const SUBJECT_B = {
 
 describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
   // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('a successful run writes the §8 block', () => {
-    it('writes every key, with `arv` a NUMBER', () => {
-      // "412000" and "$412,000" both render identically in chat and both break
-      // the calculator, which type-rejects non-numbers (tests/agent.test.ts).
+  describe.skipIf(pendingSlice(...MODS))('a successful comps run writes NOTHING', () => {
+    // INVERTED (§14.8). This used to assert that a successful run wrote the
+    // whole §8 block with `arv` a number and `arvSource: 'comps'`. `run_comps`
+    // no longer touches session_state at all, so the guarantee is the opposite
+    // one — and it is the load-bearing half of the removal, because a comps
+    // run that still wrote a block would put a number back into the pre-fill
+    // path by the back door.
+    it('no state write happens on a successful run', async () => {
       const { app, supabase } = buildCompsApp({
         script: [runComps('123 Main St, Seattle WA'), say('Here are the comps.')],
         provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      return chat(app, 'run comps on 123 Main St, Seattle WA', 's1').then(() => {
-        const state = supabase.compsBlockFor('s1');
-        expect(state, 'no session_state row was written').toBeDefined();
-        for (const key of COMPS_STATE_KEYS) {
-          expect(state, `missing §8 key ${key}`).toHaveProperty(key);
-        }
+      const reply = await chat(app, 'run comps on 123 Main St, Seattle WA', 's1');
+
+      // POSITIVE PRECONDITION — "nothing was written" is trivially true of a
+      // run that never happened. The comps must actually have come back.
+      expect(reply.status, 'the turn failed outright').toBe(200);
+      expect(reply.output.length, 'no reply was rendered').toBeGreaterThan(0);
+
+      expect(
+        supabase.compsBlockFor('s1'),
+        'run_comps wrote a comps block — nothing may write one any more',
+      ).toBeUndefined();
+      for (const w of supabase.stateWrites) {
+        const block = compsBlockOf(w) ?? {};
+        expect(
+          block.arvSource,
+          `write #${w.seq} carries arvSource 'comps' — the source is retired`,
+        ).not.toBe('comps');
+      }
+    });
+
+    it('set_manual_arv still writes the whole §8 block, with `arv` a NUMBER', () => {
+      // The half that SURVIVES. "412000" and "$412,000" render identically in
+      // chat and both break the calculator, which type-rejects non-numbers
+      // (tests/agent.test.ts). Removing our ARV must not damage theirs.
+      const { app, supabase } = buildCompsApp({
+        script: [
+          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
+          say('Using your ARV of $450,000.'),
+        ],
+      });
+      return chat(app, 'use 450k as the ARV', 's-manual-write').then(() => {
+        const state = supabase.compsBlockFor('s-manual-write');
+        expect(state, 'no session_state row was written for a MANUAL ARV').toBeDefined();
         expect(typeof state!.arv, `arv is ${typeof state!.arv}, not number`).toBe('number');
-        expect(typeof state!.arvLow).toBe('number');
-        expect(typeof state!.arvHigh).toBe('number');
         expect(typeof state!.subjectSqft).toBe('number');
         expect(typeof state!.subjectAddress).toBe('string');
-        expect(state!.arvSource).toBe('comps');
-        expect(state!.arv).toBe(403000); // golden 01, hand-computed
+        expect(state!.arvSource).toBe('manual');
+        expect(state!.arv).toBe(450000);
       });
     });
   });
 
   // =========================================================================
-  // THE HIGHEST-VALUE TEST OF THE NIGHT
+  // THE INVERSION — the highest-risk change in the removal.
+  //
+  // It was: "a failed comps run leaves NO stale ARV." `run_comps` cleared the
+  // block before touching the provider, so a failure could not leave the
+  // previous house's number bound to the new question.
+  //
+  // It is now: "a comps run PRESERVES the member's manual ARV." The clear had
+  // exactly one thing left to destroy — a number the member typed themselves —
+  // so it was removed (§14.8). Running comps must never silently delete that.
+  //
+  // The protection did not disappear, it moved: the address-mismatch guard is
+  // now the whole of it, which is why it is tested harder below than the clear
+  // ever was.
+  //
+  // DISCIPLINE. Every case here leads with a POSITIVE PRECONDITION. "The ARV
+  // is still 450,000" passes trivially if nothing ever wrote it, and that is
+  // the exact shape of vacuous pass this file has produced before.
   // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('clear-on-failure: a failed run leaves NO ARV', () => {
-    it('a failed run on B does not leave A\'s ARV behind', async () => {
-      // The exact scenario. A succeeds, B fails, and the state must not still be
-      // carrying A's number under B's question.
-      const { app, supabase } = buildCompsApp({
-        script: [
-          runComps('123 Main St, Seattle WA'), say('Comps for 123 Main.'),
-          runComps('456 Oak Ave, Seattle WA'), say('That one did not work.'),
-        ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
-      });
+  describe.skipIf(pendingSlice(...MODS))("a comps run PRESERVES the member's manual ARV", () => {
+    /** Bind a manual ARV, then run comps against it with the given provider. */
+    async function manualThenComps(sessionId: string, provider: ProviderSpyOptions) {
+      const supabase = makeCompsSupabase({});
 
-      await chat(app, 'run comps on 123 Main St, Seattle WA', 's-clear');
-      expect(supabase.compsBlockFor('s-clear')!.arv).toBe(403000);
-
-      // Second app instance sharing the same store, with a provider that fails.
-      const failing = makeProviderSpy({ failSubject: { kind: 'timeout' } });
-      const openai2 = makeFakeOpenAI([
-        runComps('456 Oak Ave, Seattle WA'),
-        say('I could not pull comps for that address.'),
-      ]);
-      const app2 = buildApp(config, {
-        openai: openai2.client,
+      const a = buildApp(config, {
+        openai: makeFakeOpenAI([
+          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
+          say('Using your ARV of $450,000.'),
+        ]).client,
         supabase: supabase.client,
-        propertyProvider: failing.provider,
+        propertyProvider: makeProviderSpy({}).provider,
       } as never);
-      await chat(app2, 'now run comps on 456 Oak Ave, Seattle WA', 's-clear');
+      await chat(a, 'use 450k as the ARV', sessionId);
 
-      // §8: the block is written whole or not at all, so after a failed run it
-      // must be ABSENT — not merely blanked field-by-field.
-      const block = supabase.compsBlockFor('s-clear');
-      expect(
-        block,
-        "the comps block survived a FAILED run — 123 Main's ARV is still bound to 456 Oak",
-      ).toBeUndefined();
-      for (const key of ARV_BEARING_KEYS) {
-        expect((block ?? {})[key], `${key} survived a FAILED run`).toBeUndefined();
-      }
-      expect((block ?? {}).arv, "A's ARV is still in state after B failed").not.toBe(403000);
-    });
+      const before = supabase.compsBlockFor(sessionId);
+      expect(before?.arv, 'PRECONDITION: the manual ARV was never stored').toBe(450000);
+      expect(before?.arvSource, 'PRECONDITION: not recorded as manual').toBe('manual');
 
-    it('the clear happens BEFORE the provider is called, not after it succeeds', async () => {
-      // Clearing only on success is the subtle version of the same bug: a
-      // provider that times out mid-run leaves the previous block intact.
-      // Observed directly — the state is snapshotted at the moment the provider
-      // is first touched.
-      const supabase = makeCompsSupabase({
-        sessionState: {
-          's-order': {
-            comps: {
-              subjectAddress: '123 MAIN STREET', subjectSqft: 2000,
-              subjectBeds: 3, subjectBaths: 2,
-              arv: 403000, arvLow: 394000, arvHigh: 412000,
-              arvConfidence: 'high', arvSource: 'comps', compsRunId: 'run-a',
-              computedAt: '2025-07-15T00:00:00.000Z',
-            },
-          },
-        },
+      const spy = makeProviderSpy(provider);
+      const b = buildApp(config, {
+        openai: makeFakeOpenAI([runComps('456 Oak Ave'), say('Comps run.')]).client,
+        supabase: supabase.client,
+        propertyProvider: spy.provider,
+      } as never);
+      const reply = await chat(b, 'run comps on 456 Oak Ave', sessionId);
+
+      return { supabase, spy, reply, after: supabase.compsBlockFor(sessionId) };
+    }
+
+    it('SUCCESS path: a successful comps run does not touch it', async () => {
+      const { spy, after } = await manualThenComps('p-success', {
+        subject: SUBJECT_B, comps: FRESH_COMPS,
       });
-
-      let stateAtProviderCall: Record<string, unknown> | undefined;
-      let providerWasCalled = false;
-      const spy = makeProviderSpy({ subject: SUBJECT_B, comps: FRESH_COMPS });
-      const watching = {
-        name: 'watching',
-        async lookupSubject(addr: string) {
-          providerWasCalled = true;
-          stateAtProviderCall = supabase.compsBlockFor('s-order');
-          return (spy.provider as { lookupSubject(a: string): Promise<unknown> }).lookupSubject(addr);
-        },
-        fetchSoldComps: (spy.provider as { fetchSoldComps: unknown }).fetchSoldComps,
-      };
-
-      const openai = makeFakeOpenAI([runComps('456 Oak Ave'), say('done')]);
-      const app = buildApp(config, {
-        openai: openai.client, supabase: supabase.client, propertyProvider: watching,
-      } as never);
-      await chat(app, 'run comps on 456 Oak Ave', 's-order');
-
-      expect(providerWasCalled, 'the provider was never called').toBe(true);
-      expect(
-        stateAtProviderCall,
-        'the previous comps block was still present when the provider was hit — ' +
-          'the clear runs on success instead of at the START of the run',
-      ).toBeUndefined();
+      expect(spy.callCount, 'PRECONDITION: the provider was never reached').toBeGreaterThan(0);
+      expect(after?.arv, "a SUCCESSFUL comps run deleted the member's own ARV").toBe(450000);
+      expect(after?.arvSource, 'the manual ARV was relabelled').toBe('manual');
     });
 
     it.each([
@@ -265,43 +262,67 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       ['address not found', { subject: null }],
       ['no subject sqft', { subject: { ...SUBJECT_B, livingArea: null }, comps: FRESH_COMPS }],
       ['too few comps', { subject: SUBJECT_B, comps: FRESH_COMPS.slice(0, 2) }],
-    ])('every failure mode clears: %s', async (_label, provider) => {
-      const supabase = makeCompsSupabase({
-        sessionState: {
-          's-fail': {
-            comps: {
-              subjectAddress: '123 MAIN STREET', subjectSqft: 2000,
-              subjectBeds: 3, subjectBaths: 2,
-              arv: 403000, arvLow: 394000, arvHigh: 412000,
-              arvConfidence: 'high', arvSource: 'comps', compsRunId: 'run-a',
-              computedAt: '2025-07-15T00:00:00.000Z',
-            },
-          },
-        },
-      });
-      const spy = makeProviderSpy(provider as ProviderSpyOptions);
-      const openai = makeFakeOpenAI([runComps('456 Oak Ave'), say('sorry')]);
-      const app = buildApp(config, {
-        openai: openai.client, supabase: supabase.client, propertyProvider: spy.provider,
-      } as never);
-      await chat(app, 'run comps on 456 Oak Ave', 's-fail');
+    ])('every failure mode PRESERVES it: %s', async (label, provider) => {
+      // This is the exact list the old suite used to prove the block was
+      // CLEARED. Same eight paths, opposite expectation. Keeping the list
+      // identical is deliberate: it makes the inversion legible in a diff, and
+      // it means no failure mode quietly lost its coverage in the flip.
+      const { after } = await manualThenComps(
+        `p-fail-${label.replace(/\W+/g, '-')}`,
+        provider as ProviderSpyOptions,
+      );
+      expect(
+        after?.arv,
+        `a ${label} failure destroyed the member's manual ARV — running comps ` +
+          'must never silently delete a number they typed themselves',
+      ).toBe(450000);
+      expect(after?.arvSource).toBe('manual');
+    });
 
-      const block = supabase.compsBlockFor('s-fail');
-      expect(block, 'the comps block survived a failed run').toBeUndefined();
-      for (const key of ARV_BEARING_KEYS) {
-        expect((block ?? {})[key], `${key} survived a failed run`).toBeUndefined();
+    it('clearCompsBlock has no production caller on the comps path', async () => {
+      // §14.8 keeps `clearCompsBlock` exported and tested but leaves it with no
+      // caller. Asserted from the OUTSIDE — across a success and a failure,
+      // no observable write ever removes the block — rather than by reading
+      // the source, because a re-introduced caller anywhere on the path is
+      // what this needs to catch, not a specific call site.
+      for (const [name, provider] of [
+        ['ok', { subject: SUBJECT_B, comps: FRESH_COMPS }],
+        ['fail', { failSubject: { kind: 'timeout' as const } }],
+      ] as const) {
+        const { supabase, after } = await manualThenComps(
+          `p-noclear-${name}`,
+          provider as ProviderSpyOptions,
+        );
+        expect(after?.arv, `${name}: the block was cleared`).toBe(450000);
+        for (const w of supabase.stateWrites) {
+          const block = compsBlockOf(w);
+          expect(
+            block === null || block === undefined,
+            `${name}: write #${w.seq} nulled the comps block — that is the removed clear`,
+          ).toBe(false);
+        }
       }
     });
   });
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('atomicity: never half a comps block', () => {
-    it('no observable write has `arv` without `subjectAddress`, or the reverse', async () => {
+    // Re-pointed onto set_manual_arv, which is now the only writer. The
+    // guarantee is unchanged and still matters: §8 says the block is written
+    // whole or not at all, and a half-written block is what makes an ARV
+    // reachable without the address it is bound to.
+    function writeManual(sessionId: string) {
       const { app, supabase } = buildCompsApp({
-        script: [runComps('123 Main St'), say('done')],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+        script: [
+          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
+          say('done'),
+        ],
       });
-      await chat(app, 'run comps on 123 Main St', 's-atomic');
+      return chat(app, 'set the ARV to 450k', sessionId).then(() => supabase);
+    }
+
+    it('no observable write has `arv` without `subjectAddress`, or the reverse', async () => {
+      const supabase = await writeManual('s-atomic');
 
       expect(supabase.stateWrites.length, 'nothing was written').toBeGreaterThan(0);
       for (const w of supabase.stateWrites) {
@@ -313,35 +334,32 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           `write #${w.seq} has arv but no subjectAddress — a partial block is observable`,
         ).toBe(false);
         expect(
-          hasAddress && hasArv === false && s.arvSource === 'comps',
-          `write #${w.seq} claims arvSource 'comps' with no arv`,
+          hasAddress && !hasArv && s.arvSource !== undefined,
+          `write #${w.seq} claims an arvSource with no arv`,
         ).toBe(false);
       }
     });
 
-    it('the ARV band is never partially written', async () => {
-      const { app, supabase } = buildCompsApp({
-        script: [runComps('123 Main St'), say('done')],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
-      });
-      await chat(app, 'run comps on 123 Main St', 's-band');
+    it('a manual write never leaves a comps-shaped band behind', async () => {
+      // RE-POINTED. The old case checked arv/arvLow/arvHigh moved together.
+      // There is no band any more, so the risk inverted: a manual ARV must not
+      // be written alongside band or confidence fields left over from a v2
+      // session, which would make it look like a computed estimate.
+      const supabase = await writeManual('s-band');
 
-      // POSITIVE PRECONDITION. Without this the loop below iterates an empty
-      // array and the test passes having proven nothing at all.
-      expect(supabase.stateWrites.length, 'no state was written — nothing to check').toBeGreaterThan(0);
-      const complete = supabase.stateWrites.filter((w) => {
-        const s = compsBlockOf(w) ?? {};
-        return ['arv', 'arvLow', 'arvHigh'].every((k) => s[k] !== undefined);
-      });
-      expect(complete.length, 'no write ever carried a complete band').toBeGreaterThan(0);
+      expect(supabase.stateWrites.length, 'no state was written — nothing to check')
+        .toBeGreaterThan(0);
+      const withArv = supabase.stateWrites.filter((w) => (compsBlockOf(w) ?? {}).arv !== undefined);
+      expect(withArv.length, 'no write ever carried an arv').toBeGreaterThan(0);
 
-      for (const w of supabase.stateWrites) {
+      for (const w of withArv) {
         const s = compsBlockOf(w) ?? {};
-        const present = ['arv', 'arvLow', 'arvHigh'].filter((k) => s[k] !== undefined);
-        expect(
-          present.length === 0 || present.length === 3,
-          `write #${w.seq} has a partial band: ${present.join(', ')}`,
-        ).toBe(true);
+        for (const dead of MANUAL_NULLED_KEYS) {
+          expect(
+            s[dead] ?? null,
+            `write #${w.seq} carries ${dead} on a MANUAL ARV — it reads as a computed estimate`,
+          ).toBeNull();
+        }
       }
     });
   });
@@ -787,14 +805,26 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     it('two sessions never see each other\'s ARV', async () => {
       const supabase = makeCompsSupabase({});
 
+      // Re-pointed: Alice binds a MANUAL ARV, since a comps run no longer
+      // stores anything for Bob to inherit. Isolation is if anything more
+      // important now — a manual ARV is a number the member typed, so leaking
+      // it across sessions leaks their input, not just our estimate.
       const appA = buildApp(config, {
-        openai: makeFakeOpenAI([runComps('123 Main St'), say('A done')]).client,
+        openai: makeFakeOpenAI([
+          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
+          say('A done'),
+        ]).client,
         supabase: supabase.client,
-        propertyProvider: makeProviderSpy({ subject: SUBJECT_A, comps: FRESH_COMPS }).provider,
+        propertyProvider: makeProviderSpy({}).provider,
       } as never);
-      await chat(appA, 'run comps on 123 Main St', 'session-alice');
+      await chat(appA, 'use 450k as the ARV', 'session-alice');
 
-      // Bob never ran comps. His flip must not inherit Alice's ARV.
+      // POSITIVE PRECONDITION — with nothing bound to Alice, "Bob did not
+      // inherit it" is true of an empty store.
+      expect(supabase.compsBlockFor('session-alice')?.arv, 'PRECONDITION: nothing bound to Alice')
+        .toBe(450000);
+
+      // Bob never set an ARV. His flip must not inherit Alice's.
       const openaiB = makeFakeOpenAI([runFlip(), say('Numbers.')]);
       const appB = buildApp(config, {
         openai: openaiB.client,
@@ -810,11 +840,11 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       ) as { inputs_used?: Record<string, unknown>; error?: string } | undefined;
       if (flip?.inputs_used) {
         expect(flip.inputs_used.after_repair_value, "Alice's ARV reached Bob's calculator")
-          .not.toBe(403000);
+          .not.toBe(450000);
       }
-      expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('403000');
+      expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('450000');
       // Alice's own state is untouched by Bob's turn.
-      expect(supabase.compsBlockFor('session-alice')!.arv).toBe(403000);
+      expect(supabase.compsBlockFor('session-alice')!.arv).toBe(450000);
     });
   });
 
@@ -915,8 +945,12 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // The comps must actually have been fetched and rendered — otherwise this
       // is just asserting the server did not crash.
       expect(spy.callCount, 'the provider was never reached').toBeGreaterThan(0);
+      // The discriminator used to be the ARV appearing in the payload ('403').
+      // With no ARV, look for the rendered block itself.
       const comps = toolResults(openai.calls).find(
-        (r) => typeof r === 'string' ? /\$\s?\d/.test(r) : JSON.stringify(r).includes('403'),
+        (r) => typeof r === 'object' && r !== null
+          && typeof (r as { rendered_block?: unknown }).rendered_block === 'string'
+          && (r as { rendered_block: string }).rendered_block.length > 200,
       );
       expect(comps, 'no comps result reached the model despite a write-only failure').toBeDefined();
     });
