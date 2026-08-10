@@ -280,6 +280,49 @@ the confidence tier up.
   `candidateMedianPpsf` additionally dedupes its own input. Both halves of the
   stated rationale now hold; the rejection semantics stay honest.
 
+### 14.14 Per-comp detail enrichment — PRE-BUILD RULES (client approved; build gated on INSPECTOR GREEN)
+
+Client approved detail runs for the final comps (DOM, parking, year built —
+style/condition are obtainable but DISPLAY needs a separate client ruling).
+Spike recorded in `spike-detail-batch5.json` / `spike-detail-batch-mixed.json`.
+Pinned now, while fresh, so the build cannot drift from the evidence:
+
+1. **THE JOIN KEY IS `addressOrUrlFromInput`. NEVER POSITION.** This is a
+   RULE, not a note: the batch returns items OUT of input order (recorded —
+   input 1,2,3,4,5 came back 1,4,5,2,3). Positional matching would assemble
+   five comps wearing each other's parking counts and year built, and nothing
+   about that looks broken from the outside. Any adapter matching batch
+   output to comps by index is a bug regardless of passing tests.
+2. **Batch size is bounded by `MAX_COMPS_KEPT`, never an independent
+   constant.** Detail runs happen AFTER ranking and dedupe, on the FINAL kept
+   set only — if the cap changes, the batch changes with it automatically.
+   (Get this wrong and it is ~40 runs per lookup, not 1.)
+3. **Partial failure is non-fatal**, and the actor's own semantics support it:
+   a bad address in a batch returns as its own `{isValid:false,
+   invalidReason}` item while the rest succeed (recorded). A failed item
+   renders em-dash detail fields exactly like today; a detail failure never
+   turns a working comps run into a failure.
+4. **Detail cached BY ZPID, separately from the comps result, with its own
+   LONGER TTL** — property facts barely change; nearby lookups share comps
+   and therefore share detail payloads. This is the main cost lever.
+5. **The 90s ceiling applies to the WHOLE pipeline.** If detail would breach
+   it, return the comps without detail.
+6. **Economics**: 3 actor runs per lookup (subject + search + one batched
+   detail), not 7. Batch of 5 measured at 16s vs 10s for a single.
+7. **Parallel fallback (individual detail runs) MUST NOT be built blind**:
+   the account limits endpoint returns nothing to this token, so the plan's
+   concurrency ceiling is unknown. If batching ever stops sufficing, that
+   number comes from the client's Apify console FIRST. Recorded so nobody
+   starts it without it.
+
+**Daily cap ruling (operator):** `COMPS_DAILY_RUN_CAP` stays **50** and counts
+**LOOKUPS** — the client accepted the 3-runs-per-lookup multiplier knowingly,
+and dropping to a spend-neutral 33 would quietly claw back capacity she did
+not agree to give up. 50 lookups ≈ 150 actor runs/day worst case. The config
+comment currently says "provider runs", which is wrong about what the code
+counts — fixed in the build slice, with the multiplier documented next to the
+value.
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live
