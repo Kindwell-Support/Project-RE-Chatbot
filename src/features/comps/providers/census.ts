@@ -78,14 +78,31 @@ export function mapTractFromGeocoder(body: unknown): TractRef | null {
 }
 
 /**
- * ACS values arrive as strings. A usable figure is finite and NON-NEGATIVE —
- * the suppression sentinels are all large negatives, and none of income /
- * age / a household count can legitimately be below zero.
+ * ACS suppression/annotation sentinels (CONTRACT §14.10 GUARANTEE 3) — an
+ * ENUMERATED LIST, deliberately not a threshold. A "drop anything ≤ 0"
+ * check would eat true zeros (a 0% owner-occupied tract is real), and a
+ * "drop negatives" check is the wrong SHAPE for a sentinel class — this is
+ * its third appearance after daysOnZillow's -1. Exported so tests assert
+ * the list itself, not a behavioural shadow of it.
+ */
+export const ACS_SENTINELS: ReadonlySet<number> = new Set([
+  -666666666, // estimate not computable
+  -999999999, // suppressed / N/A
+  -888888888, // not applicable
+  -222222222, // too few samples
+  -555555555, // estimate controlled (documented annotation; completes the class)
+  -333333333, // median falls in lowest/highest interval (same)
+]);
+
+/**
+ * ACS values arrive as strings. A usable figure is finite and NOT a listed
+ * sentinel. Zero passes — it is a value, never an absence (Guarantee 3's
+ * inverse guard).
  */
 function acsNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  return Number.isFinite(n) && !ACS_SENTINELS.has(n) ? n : null;
 }
 
 /** ACS body ([[headers],[values,...]]) → Demographics. Columns BY NAME, never position. */

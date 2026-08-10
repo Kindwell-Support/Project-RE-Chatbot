@@ -310,6 +310,45 @@ unavailable); never infer a figure the API did not return.
   HAND-BUILT to the documented shape — replace with a recording on the
   first keyed run; the name marks the difference on purpose.
 
+**GUARANTEE 3 (operator ruling) — suppression sentinels render as
+unavailable, never as a number and never as zero.** ACS returns its
+annotations IN the numeric field as negative sentinels. The guard is an
+**ENUMERATED LIST, not a threshold** — a range check on "negative" is the
+wrong shape (this is the third appearance of the sentinel class, after the
+search payload's `daysOnZillow: -1` and the detail DOM):
+
+| Sentinel | Meaning (Census annotation) |
+| --- | --- |
+| `-666666666` | estimate not computable |
+| `-999999999` | suppressed / N-A |
+| `-888888888` | not applicable |
+| `-222222222` | too few samples |
+| `-555555555` | estimate controlled (documented annotation, added to complete the class — flag to operator if unwanted) |
+| `-333333333` | median falls in lowest/highest interval (same) |
+
+Any listed value ⇒ null ⇒ em-dash. **The inverse is guarded too: `0` is a
+REAL value** — a 0% owner-occupied tract exists (all-rental), and a
+"drop anything ≤ 0" filter would eat it. Zero tenure counts flow through
+the percentage arithmetic; only a zero DENOMINATOR (no occupied households
+returned at all) nulls the percentages.
+
+**GUARANTEE 4 (operator ruling; INSPECTOR's framing adopted) — the
+provenance rule, standing:** *a number the member did not supply must carry
+its provenance, and if the provenance cannot render, the number must not
+render.* One rule, three surfaces today:
+
+1. **The widget ARV pre-fill** (§8.1): label and value live in one object —
+   no label, no pre-fill, by construction.
+2. **Census figures** (this section): the tract name and "US Census ACS
+   5-year, <vintage>" render in the SAME template as the figures — the
+   section cannot emit numbers without its geography and vintage.
+3. **The aggregates DOM line** (§14.16, when built): the 5-comp-average
+   label is load-bearing — if the label cannot render, the line does not
+   render.
+
+Any future member-visible number that the member did not type inherits this
+rule by default; rendering one bare is a bug without needing a new ruling.
+
 ### 14.11 Out of scope
 
 - ~~**Neighbourhood summary** — all of it. Separate block.~~ Superseded:
@@ -335,7 +374,8 @@ over 100+ sales) blows the 90s ceiling — an accurate number that times out is
 worth less than a labelled approximation that arrives. **The label is
 LOAD-BEARING and non-negotiable: it must read as the average of the 5 comps
 shown, never as the neighbourhood figure. If the label cannot render, the
-line does not render.**
+line does not render.** (An instance of the standing provenance rule,
+§14.10 Guarantee 4.)
 
 **Build gate — the resultsLimit spike comes FIRST (one run):** does
 `MAP_MARKERS` honour a `resultsLimit` above ~40, and how many items does a
@@ -1063,7 +1103,8 @@ the other is worse than no guard, because the tests look green.
   <subjectAddress> — edit to override.`, or, when the binding is null
   (BUG-011), `Pre-filled from the ARV you set earlier — edit to override.`
   Label and value live in ONE object — **no label means no pre-fill, by
-  construction**.
+  construction**. (An instance of the standing provenance rule, §14.10
+  Guarantee 4.)
 - **Mismatch ⇒ blank**: if the member's current message names a different
   property (same `findConflictingAddress` discriminator as chat), the form
   renders WITHOUT a default — never a silent carry. **Bound blocks only
