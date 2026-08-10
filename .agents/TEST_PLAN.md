@@ -575,6 +575,14 @@ break without anyone editing a test.
       arithmetic still describes the data it sits above.
 - [ ] **DEAD-GUARD SWEEP — see below. RECURRING.**
 - [ ] Live battery at the CURRENT HEAD. Not at an earlier SHA, however recent.
+- [ ] **On every slice handoff: confirm the gate for that slice RESOLVES.**
+      `pendingSlice(...)` must return false once the module lands. A gate
+      pointing at a path that will never exist skips forever while its
+      `sliceNote` reports "pending MASON" — which reads as *specced and
+      waiting* rather than *dead*. This happened once: the census gate said
+      `census`, the module shipped at `providers/census`, and 12 cases would
+      have sat green-by-skipping indefinitely. The dead-file class, in the
+      gate itself.
 
 ## THE DEAD-GUARD SWEEP — why it is recurring, not one-time
 

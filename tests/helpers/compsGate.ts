@@ -37,7 +37,11 @@ export type CompsModule =
   | 'detail' | 'cache/detailCache'
   // §14.10 Census demographics — spec written pre-build from the operator's
   // four guarantees. Skips until the module lands; fails under COMPS_STRICT.
-  | 'providers/census';
+  | 'providers/census'
+  // §14.16 neighbourhood aggregates — spec written pre-build. PATH ASSUMED;
+  // confirm it resolves at handoff (a gate that never resolves skips forever
+  // while reporting 'pending', which already happened once with census).
+  | 'aggregates';
 
 export function hasModule(...mods: CompsModule[]): boolean {
   return mods.every((m) => existsSync(resolve(SRC, `${m}.ts`)));
