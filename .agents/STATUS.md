@@ -139,3 +139,4 @@ The strongest post-removal live result, on the record: asked "what was the
 ARV on 123 Main again?" with two comps runs in history, the model re-ran per
 RULING 0024 and relayed a fresh block — the whitelist assertion found ZERO
 figures outside the eight known comp prices.
+21:48 MASON — RULING 0026 executed @ f0b81ce (extraction fallback: same verification, ambiguity->unbound, over-capture refined; unbind announced via unbound_from + echo); smokes 15/15, only red is INSPECTOR's own tripwire; §8/§9/§14.15 amended, FIXED 0037 sent — HOLDING for re-issued GREEN
