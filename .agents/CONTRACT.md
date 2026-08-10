@@ -345,6 +345,28 @@ REAL value** — a 0% owner-occupied tract exists (all-rental), and a
 the percentage arithmetic; only a zero DENOMINATOR (no occupied households
 returned at all) nulls the percentages.
 
+**BUG-013 (operator ruling) — a DOMAIN FLOOR sits UNDER the enumeration,
+not instead of it.** The two layers have different jobs:
+
+- the enumerated set stays the primary mechanism: documented suppression,
+  nulled SILENTLY because it is expected;
+- none of income, age, or the tenure counts can be negative, so an
+  unlisted negative is bad data: it nulls out AND **logs at WARN with the
+  raw value, the variable, and the tract**. The log line is the point — it
+  is how we learn Census added a seventh annotation, rather than from a
+  member screenshot. (Wire: the mapper reports through an `onUnrecognized`
+  observer; the service owns the WARN.)
+- **Percentages: clamp is wrong, null is right.** If the tenure counts do
+  not reconcile to their denominator — any computed percentage outside
+  [0,100] — BOTH lines render unavailable and the anomaly is reported. We
+  do not repair data we do not understand. (Structurally unreachable while
+  the floor holds; kept so the guarantee survives refactors.)
+- The denominator for the percentages is the SUM of the two returned
+  counts, never the returned B25003 total — computing owner% against a
+  total that counts households the tenure split does not classify would be
+  inference (INSPECTOR-verified: 300/100/500 reads 75%, not 60%; a
+  suppressed renter count nulls BOTH percentages).
+
 **GUARANTEE 4 (operator ruling; INSPECTOR's framing adopted) — the
 provenance rule, standing:** *a number the member did not supply must carry
 its provenance, and if the provenance cannot render, the number must not

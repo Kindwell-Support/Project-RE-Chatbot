@@ -51,10 +51,25 @@ export interface TractRef {
   tract: string;
 }
 
+/**
+ * BUG-013: an ACS value that is negative but NOT an enumerated sentinel.
+ * The member never sees it (nulled by the domain floor); the caller LOGS it
+ * — that log line is how we learn Census added a seventh annotation,
+ * instead of finding out from a member screenshot.
+ */
+export interface UnrecognizedAcsValue {
+  variable: string;
+  value: number;
+  tractGeoid: string;
+}
+
 export interface DemographicsProviderLike {
   /** Null when the coordinates resolve to no tract (offshore, bad data). */
   resolveTract(lat: number, lng: number, opts?: { timeoutMs?: number }): Promise<TractRef | null>;
-  fetchDemographics(tract: TractRef, opts?: { timeoutMs?: number }): Promise<Demographics>;
+  fetchDemographics(
+    tract: TractRef,
+    opts?: { timeoutMs?: number; onUnrecognized?: (anomaly: UnrecognizedAcsValue) => void },
+  ): Promise<Demographics>;
 }
 
 /** Geocoder response → TractRef, or null when no tract layer came back. */
@@ -95,21 +110,25 @@ export const ACS_SENTINELS: ReadonlySet<number> = new Set([
 ]);
 
 /**
- * ACS values arrive as strings. A usable figure is finite and NOT a listed
- * sentinel. Zero passes — it is a value, never an absence (Guarantee 3's
- * inverse guard).
+ * ACS body ([[headers],[values,...]]) → Demographics. Columns BY NAME, never
+ * position.
+ *
+ * Value guard is TWO layers with different jobs (BUG-013, operator ruling):
+ *  1. the ENUMERATED sentinel set — named, documented suppression, nulled
+ *     SILENTLY because it is expected;
+ *  2. a DOMAIN FLOOR beneath it: none of these four measures (income, age,
+ *     household counts) can be negative, so an unlisted negative is bad
+ *     data — nulled AND reported through `onUnrecognized`, which the
+ *     service logs at WARN. The log line is the point: it is how we learn
+ *     Census added a seventh annotation, rather than from a member
+ *     screenshot. A bare threshold would have hidden that forever; the
+ *     enumeration alone rendered "renter-occupied 150%".
  */
-function acsNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const n = Number(value);
-  return Number.isFinite(n) && !ACS_SENTINELS.has(n) ? n : null;
-}
-
-/** ACS body ([[headers],[values,...]]) → Demographics. Columns BY NAME, never position. */
 export function mapDemographicsFromAcs(
   body: unknown,
   tract: TractRef,
   acsYear: number = CENSUS_ACS_YEAR,
+  onUnrecognized?: (anomaly: UnrecognizedAcsValue) => void,
 ): Demographics {
   const rows = Array.isArray(body) ? (body as unknown[][]) : [];
   const headers = Array.isArray(rows[0]) ? rows[0].map((h) => String(h)) : [];
@@ -119,8 +138,22 @@ export function mapDemographicsFromAcs(
     return i >= 0 ? values[i] : undefined;
   };
 
-  const owner = acsNumber(col(ACS_VARIABLES.tenureOwner));
-  const renter = acsNumber(col(ACS_VARIABLES.tenureRenter));
+  /** Strings → numbers; sentinel → null silently; unlisted negative → null + report; 0 is a value. */
+  const acsNumber = (variable: string): number | null => {
+    const raw = col(variable);
+    if (raw === null || raw === undefined) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    if (ACS_SENTINELS.has(n)) return null;
+    if (n < 0) {
+      onUnrecognized?.({ variable, value: n, tractGeoid: tract.geoid });
+      return null;
+    }
+    return n;
+  };
+
+  const owner = acsNumber(ACS_VARIABLES.tenureOwner);
+  const renter = acsNumber(ACS_VARIABLES.tenureRenter);
   // Percentages are ARITHMETIC ON RETURNED COUNTS (§14.10 allows arithmetic,
   // never inference) — and only when both counts exist and sum above zero.
   const occupied = owner !== null && renter !== null ? owner + renter : null;
@@ -129,14 +162,28 @@ export function mapDemographicsFromAcs(
       ? Math.round((part / occupied) * 1000) / 10
       : null;
 
+  let ownerPct = pct(owner);
+  let renterPct = pct(renter);
+  // Structural backstop (BUG-013, operator: "clamp is wrong, null is
+  // right"): a percentage outside [0,100] is data we do not understand, and
+  // we do not repair data we do not understand — both lines render
+  // unavailable. Unreachable while the domain floor holds (non-negative
+  // counts cannot leave the range); kept so the guarantee survives any
+  // future refactor of the floor, and reported when it fires.
+  if (ownerPct !== null && renterPct !== null && (ownerPct < 0 || ownerPct > 100 || renterPct < 0 || renterPct > 100)) {
+    onUnrecognized?.({ variable: 'B25003 tenure reconciliation', value: ownerPct, tractGeoid: tract.geoid });
+    ownerPct = null;
+    renterPct = null;
+  }
+
   return {
     tractGeoid: tract.geoid,
     tractName: tract.name,
     acsYear,
-    medianHouseholdIncome: acsNumber(col(ACS_VARIABLES.medianHouseholdIncome)),
-    medianAge: acsNumber(col(ACS_VARIABLES.medianAge)),
-    ownerOccupiedPct: pct(owner),
-    renterOccupiedPct: pct(renter),
+    medianHouseholdIncome: acsNumber(ACS_VARIABLES.medianHouseholdIncome),
+    medianAge: acsNumber(ACS_VARIABLES.medianAge),
+    ownerOccupiedPct: ownerPct,
+    renterOccupiedPct: renterPct,
   };
 }
 
@@ -157,7 +204,10 @@ export class CensusAcsProvider implements DemographicsProviderLike {
     return mapTractFromGeocoder(body);
   }
 
-  async fetchDemographics(tract: TractRef, opts?: { timeoutMs?: number }): Promise<Demographics> {
+  async fetchDemographics(
+    tract: TractRef,
+    opts?: { timeoutMs?: number; onUnrecognized?: (anomaly: UnrecognizedAcsValue) => void },
+  ): Promise<Demographics> {
     const vars = Object.values(ACS_VARIABLES).join(',');
     const url =
       `${CENSUS_ACS_BASE}/${CENSUS_ACS_YEAR}/acs/acs5?get=${vars}` +
@@ -165,7 +215,7 @@ export class CensusAcsProvider implements DemographicsProviderLike {
       `&in=state:${encodeURIComponent(tract.state)}%20county:${encodeURIComponent(tract.county)}` +
       `&key=${encodeURIComponent(this.apiKey)}`;
     const body = await this.getJson(url, 'census acs', opts?.timeoutMs);
-    return mapDemographicsFromAcs(body, tract);
+    return mapDemographicsFromAcs(body, tract, CENSUS_ACS_YEAR, opts?.onUnrecognized);
   }
 
   /**

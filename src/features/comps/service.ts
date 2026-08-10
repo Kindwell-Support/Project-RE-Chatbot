@@ -372,7 +372,17 @@ async function enrichWithDemographics(
       }
     }
 
-    const demographics = await provider.fetchDemographics(tract, { timeoutMs });
+    const demographics = await provider.fetchDemographics(tract, {
+      timeoutMs,
+      // BUG-013: the domain floor's finding surfaces HERE, at WARN, with the
+      // raw value and the tract. The member sees an em-dash; this line is
+      // how we learn Census grew a seventh annotation value.
+      onUnrecognized: (anomaly) =>
+        logger?.warn(
+          { variable: anomaly.variable, value: anomaly.value, tractGeoid: anomaly.tractGeoid },
+          'unrecognised negative ACS value — rendered unavailable; possible new Census annotation',
+        ),
+    });
     if (deps.censusCache) {
       try {
         await deps.censusCache.set(
