@@ -509,4 +509,114 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
         .toBeGreaterThan(0);
     });
   });
+  // =========================================================================
+  // THE NULL RULE — CONTRACT §14.5. "A null field renders as an explicit —
+  // (em dash). Never omitted silently, never inferred, never back-filled from
+  // another comp or from the subject." The fields are the v2 additions: beds,
+  // baths, lot size, and the property link (which nulls to the words "link
+  // unavailable" instead, because §14.9 makes it LOAD-BEARING: the client
+  // waived style/condition matching and named the link as the member's
+  // substitute for judging those, so its absence must be stated, not shown as
+  // just another dash).
+  //
+  // Derived from the contract text, not the renderer. The dangerous failure
+  // here is OMISSION: a dropped column reads as "not applicable" and the row
+  // silently changes meaning; a dash reads as "we don't know", which is true.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('null per-comp fields render an explicit em-dash (§14.5)', () => {
+    /** golden01 with chosen fields nulled on the comp that survives ranking first. */
+    function outcomeWithNulls(nulls: Partial<Record<'beds' | 'baths' | 'lotSize' | 'detailUrl', null>>) {
+      const gc = {
+        ...golden01,
+        comps: golden01.comps.map((c) =>
+          c.zpid === 'G1-C1' ? { ...c, ...nulls } : c,
+        ),
+      };
+      return resultFor(gc as never);
+    }
+
+    /** The rendered line for one comp, so assertions cannot match a sibling. */
+    function lineFor(text: string, address: string): string {
+      const lines = text.split('\n');
+      const i = lines.findIndex((l) => l.includes(address));
+      expect(i, `no rendered row for ${address}`).toBeGreaterThanOrEqual(0);
+      // the row is the address line plus its two continuation lines
+      return lines.slice(i, i + 3).join('\n');
+    }
+
+    /**
+     * A dash in a VALUE position. The renderer legitimately uses an em-dash
+     * as address-line punctuation ("** — sold $406,000"), so matching the bare
+     * character would flag every row; these three shapes are the only places
+     * the NULL marker can appear.
+     */
+    const NULL_MARKERS = [/— bd/, /\/ — ba/, /lot — ·/, /lot —$/m];
+    const hasNullMarker = (t: string) => NULL_MARKERS.some((m) => m.test(t));
+
+    it('PRECONDITION: with nothing nulled, no VALUE position carries a dash', () => {
+      // If the fully-populated golden already renders value-position dashes,
+      // every assertion below is meaningless — the dash would not discriminate
+      // null from set.
+      const text = renderCompsForChat(resultFor(golden01) as never);
+      expect(hasNullMarker(text), 'the fully-populated block already renders a null marker')
+        .toBe(false);
+    });
+
+    it.each([
+      ['beds', { beds: null }, /— bd/],
+      ['baths', { baths: null }, /\/ — ba/],
+      ['lot size', { lotSize: null }, /lot — ·/],
+    ] as const)('null %s renders a dash IN PLACE — not omitted, not back-filled', (_name, nulls, marker) => {
+      const outcome = outcomeWithNulls(nulls);
+      const text = renderCompsForChat(outcome as never);
+      const row = lineFor(text, '1204 NORTH MAIN STREET'); // G1-C1's address
+
+      expect(row, 'the null field was not rendered as an em-dash').toMatch(marker);
+
+      // NOT back-filled from the subject (3 bd / 2 ba / 6,000 lot) — the row
+      // structure must keep every other column intact, so the dash replaced
+      // the VALUE, not the column.
+      expect(row, 'the row lost its bd/ba column entirely').toMatch(/bd \/ .* ba/);
+      expect(row, 'the row lost its lot column entirely').toContain('lot ');
+
+      // ...and only THIS comp's row carries the dash; the siblings are whole.
+      const other = lineFor(text, '1208 NORTH MAIN STREET');
+      expect(hasNullMarker(other), "a sibling comp's row caught the null").toBe(false);
+    });
+
+    it('a null on one comp is never back-filled from a sibling or the subject', () => {
+      // The subject has 3 beds; every other comp has beds set. If any
+      // inference exists, "3" is what it would produce for the nulled comp.
+      const outcome = outcomeWithNulls({ beds: null });
+      const text = renderCompsForChat(outcome as never);
+      const row = lineFor(text, '1204 NORTH MAIN STREET');
+      expect(row, 'the null was back-filled with a plausible bed count')
+        .not.toMatch(/\b3 bd/);
+      expect(row).toMatch(/— bd/);
+    });
+
+    it('a null link renders the WORDS "link unavailable", not a dash (§14.9)', () => {
+      const outcome = outcomeWithNulls({ detailUrl: null });
+      const text = renderCompsForChat(outcome as never);
+      const row = lineFor(text, '1204 NORTH MAIN STREET');
+      expect(row.toLowerCase(), 'a missing load-bearing link was reduced to a dash')
+        .toContain('link unavailable');
+      // The link column never dashes: it is the one absence important enough
+      // to get a sentence.
+      expect(row, 'the link column rendered the generic null marker').not.toMatch(/\n\s*—\s*$/);
+    });
+
+    it('all four nulls together still yield a structurally complete row', () => {
+      const outcome = outcomeWithNulls({ beds: null, baths: null, lotSize: null, detailUrl: null });
+      const text = renderCompsForChat(outcome as never);
+      const row = lineFor(text, '1204 NORTH MAIN STREET');
+      expect(row).toMatch(/— bd \/ — ba/);
+      expect(row).toMatch(/lot —/);
+      expect(row.toLowerCase()).toContain('link unavailable');
+      // Sold price and sqft were NOT nulled and must still be real values.
+      expect(row, 'a populated field was dashed alongside the null ones').toContain('$');
+      expect(row).toMatch(/2,000 sqft/);
+      expect(text, 'the degraded row broke the block').toContain('NORTH MAIN');
+    });
+  });
 });
