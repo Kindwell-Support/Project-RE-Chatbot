@@ -4,9 +4,10 @@
  *
  * This is the honesty layer. The LLM is handed this rendered block and told
  * to relay it — it never authors comp data, so a hallucinated comp cannot
- * exist. Everything a member could ask "why?" about is IN the render: which
- * comps were trimmed and why, the arithmetic from $/sqft to ARV, and which
- * radius produced the set.
+ * exist. Everything a member could ask "why?" about is IN the render: every
+ * per-comp fact with explicit em-dash nulls, which tiers produced the set,
+ * and how many candidates were rejected. (The trim/ARV arithmetic this
+ * comment once promised is gone with the ARV itself — CONTRACT §14.8.)
  */
 import type { CompsFailure, CompsFailureCode, CompsOutcome, CompsResult, ScoredComp } from './types.js';
 

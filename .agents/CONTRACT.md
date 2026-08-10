@@ -3,7 +3,7 @@
 Owner: MASON. INSPECTOR tests from this file. If code and contract disagree, the
 contract wins until a `CONTRACT_CHANGE` is agreed.
 
-- `ALGO_VERSION = 2` (was 1 — bumped by the client-spec alignment, §14)
+- `ALGO_VERSION = 3` (1 → 2 client-spec alignment §14; 2 → 3 ARV removal §14.8)
 - Status: **token available; full module in scope for tonight.** Pure logic
   stays offline-testable against the stub + fixtures; the Apify provider is
   being built against a recorded spike payload.
@@ -36,7 +36,7 @@ contract wins until a `CONTRACT_CHANGE` is agreed.
 
 ---
 
-## 14. CLIENT-SPEC ALIGNMENT (ALGO_VERSION 2) — branch `feat/comps-client-spec`
+## 14. CLIENT-SPEC ALIGNMENT (ALGO_VERSION 2, then 3 after §14.8) — branch `feat/comps-client-spec`
 
 Operator-directed alignment with the client's written comp-selection method.
 **This section is binding and supersedes the older values wherever they
@@ -159,12 +159,16 @@ model-authored, not prompt-dependent), on every SUCCESSFUL comps render:
   for that location and home type. Please note responses are for education and
   based on available public data. Investors are encouraged to review each
   address for additional information."*
-- `COMPS_CLOSING` (emitted after the comps table; when `ARV_SURFACING` is on the ARV block sits between them, so this is always the LAST content before the footer): evaluate each property carefully;
+- `COMPS_CLOSING` (emitted after the comps table, always the LAST content
+  before the footer — the emit order is opening → header → table → closing →
+  footer with no gap, §14.8): evaluate each property carefully;
   current quality of home, overall appeal, lot location and usability can
   drastically impact value; consider external factors such as view properties,
   environmental concerns, powerlines, busy roads.
 
-The existing not-an-appraisal footer and the low-confidence warning remain.
+The existing not-an-appraisal footer remains. (The low-confidence warning is
+GONE with the confidence grade itself, §14.8; an earlier draft of this
+section referenced an `ARV_SURFACING` flag that §14.8 also deleted.)
 
 ### 14.8 ARV REMOVED — a ONE-WAY DOOR (client decision, final)
 
@@ -323,6 +327,44 @@ comment currently says "provider runs", which is wrong about what the code
 counts — fixed in the build slice, with the multiplier documented next to the
 value.
 
+### 14.15 BUG-011 — manual ARV address binding (operator ruling)
+
+The ARV removal (§14.8) orphaned `subjectAddress`: with `run_comps` writing
+nothing, `set_manual_arv`'s inherit-or-`'manual entry'` fallback bound every
+manual ARV to a literal placeholder — which the guard then "defended"
+(refusing the member's own number on the address they had just named) and
+which shipped in member-visible copy ("for manual entry"). INSPECTOR's
+mailbox 0024; blocker.
+
+Ruling, binding:
+
+1. `set_manual_arv` gains an **OPTIONAL `address` argument** (§9), bound
+   from the member's **CURRENT message only**, never conversation history.
+   The binding is verified structurally, not trusted from the model (§8,
+   `bindAddressToCurrentMessage`).
+2. **No verifiable address ⇒ `subjectAddress: null`** — a real "unbound"
+   state, NOT a placeholder string. The block inherits nothing from any
+   previous block.
+3. **The guard does not fire on null.** An unbound ARV has nothing to
+   conflict with and pre-fills wherever the member takes it (chat and form).
+   The value-based stale-figure refusal (§8 explicit-ARV rule, case 3)
+   still fires when unbound — only its wording drops the address.
+4. **A bound ARV on address A still conflicts with address B.** That
+   guarantee is untouched, on both surfaces.
+5. **Echo on null carries no address clause**: `Using your ARV of $450,000 —
+   say "change ARV" to override.` The placeholder never renders anywhere;
+   form label reads "the ARV you set earlier".
+6. **Legacy shim**: rows already storing the literal `'manual entry'` are
+   coerced to null on read (`sessionState.ts`), so the placeholder class
+   cannot re-enter from production data.
+
+Known, flagged, not fixed (needs its own ruling if wanted):
+`ADDRESS_FRAGMENT_RE` over-captures when a pure dollar figure precedes the
+address ("my ARV is 620000 for 830 W America St" fragments as "620000 for
+830 …"). Binding compensates (street-part check); the guard's pre-existing
+behaviour is unchanged — worst case an unnecessary clarifying question,
+never a wrong number.
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live
@@ -349,7 +391,8 @@ Dev server: MASON on port 3000 (already running), INSPECTOR on 3001.
 ```
 src/features/comps/
   types.ts       config.ts      normalize.ts   filter.ts      rank.ts
-  arv.ts         format.ts      service.ts     tools.ts
+  format.ts      service.ts     tools.ts       # arv.ts DELETED (§14.8)
+  formPrefill.ts sessionState.ts               # §8/§8.1 state + form surface
   providers/types.ts  providers/apifyZillow.ts  providers/stub.ts   # geocode.ts dropped — detail scraper takes plain addresses (§6.1)
   cache/compsCache.ts
   __fixtures__/            # shared with INSPECTOR — hand-written now, real recordings when token lands
@@ -360,7 +403,7 @@ sql/add_comps_tables.sql
 
 | Export | Default | Meaning |
 | --- | --- | --- |
-| `ALGO_VERSION` | `2` | stamped on every result; cache recompute trigger. **2 as of the client-spec alignment (§14)** — until the constant is 2 the recompute path never fires and cached v1 rows keep serving old-parameter results for 14 days, stamped `algoVersion: 1` and indistinguishable from fresh. |
+| `ALGO_VERSION` | `3` | stamped on every result; cache recompute trigger. **3 as of the ARV removal (§14.8)** — cached v2 blobs carry a dead `arv` key that no longer deserializes into `CompsResult`; the bump forces recompute-from-raw (zero provider calls, verified by spy) rather than trusting the deserializer to tolerate the dead field. The same mechanism retired v1 rows at the 1→2 bump: until the constant advances, stale rows keep serving old-parameter results for 14 days, indistinguishable from fresh. |
 | `MAX_COMP_AGE_MONTHS` | `12` | hard filter |
 | `SQFT_TOLERANCE` | `0.20` | subject sqft ±20% — hard gate (§14.1) |
 | `MAX_BED_DIFF` | `1` | hard filter |
@@ -376,10 +419,7 @@ sql/add_comps_tables.sql
 | `WEIGHT_DISTANCE` / `WEIGHT_SQFT` / `WEIGHT_RECENCY` / `WEIGHT_BEDBATH` / `WEIGHT_LOT` | `35 / 25 / 20 / 10 / 10` | score weights, sum 100 (§14.3) |
 | `DISTANCE_NORM_MI` | `1.0` | score normalizer |
 | `RECENCY_NORM_MONTHS` | `12` | score normalizer |
-| `TRIM_FRACTION` | `0.15` | trimmed-mean trim per end (n ≥ 5) |
-| `ARV_ROUND_TO` | `1000` | round ARV/low/high to nearest |
-| `CONF_HIGH` | `{ minComps: 5, maxCv: 0.15, maxMedianDistanceMi: 0.75, maxMedianAgeMonths: 6 }` | minComps 6→5: unreachable once the cap is 5 (§14.4) |
-| `CONF_MEDIUM` | `{ minComps: 4, maxCv: 0.25 }` | |
+| ~~`TRIM_FRACTION` / `ARV_ROUND_TO` / `CONF_HIGH` / `CONF_MEDIUM`~~ | REMOVED | deleted with `arv.ts` (§14.8); values preserved in §5.5's struck spec |
 | `CACHE_TTL_DAYS` | `14` | |
 | `PROVIDER_TIMEOUT_MS` | `90_000` | per Apify run |
 | `PROVIDER_MAX_RETRIES` | `1` | transient only (timeout/5xx/network); **0 on 4xx** |
@@ -415,36 +455,43 @@ export interface RawComp {
   beds: number | null; baths: number | null;
   livingArea: number | null; lotSize: number | null;
   propertyType: PropertyType; lat: number; lng: number;
+  detailUrl: string | null;   // LOAD-BEARING (§14.9): null renders "link unavailable", never omitted
 }
 
 export type RejectReason =
+  | 'SUBJECT_PROPERTY'                               // rule 0, BUG-004
   | 'NOT_SOLD' | 'STALE_SALE' | 'SQFT_MISSING' | 'SQFT_OUT_OF_RANGE'
   | 'BEDS_DIFF' | 'BATHS_DIFF' | 'TYPE_MISMATCH' | 'TOO_FAR'
-  | 'PRICE_MISSING' | 'NON_ARMS_LENGTH' | 'LOT_ANOMALY' | 'FUTURE_SOLD_DATE';
+  | 'PRICE_MISSING' | 'NON_ARMS_LENGTH'
+  | 'LOT_ANOMALY'                                    // never emitted in v2 (§14.1); kept so cached v1 rows type
+  | 'FUTURE_SOLD_DATE'                               // rule 12, BUG-003
+  | 'DUPLICATE_SALE';                                // BUG-010: post-gate dedupe, not a numbered rule
 
 export interface RejectedComp { comp: RawComp; reason: RejectReason }
 
 export interface ScoredComp {
   comp: RawComp; distanceMi: number; monthsAgo: number;
   pricePerSqft: number; score: number;               // 0–100, lower better
-  parts: { distance: number; sqft: number; recency: number; bedbath: number };
+  // FIVE terms in v2 (§14.3) — weights 35/25/20/10/10, sum 100
+  parts: { distance: number; sqft: number; recency: number; bedbath: number; lot: number };
 }
 
-export type ArvConfidence = 'high' | 'medium' | 'low';
-
-export interface ArvResult {
-  arv: number; arvLow: number; arvHigh: number;      // rounded to ARV_ROUND_TO
-  arvPerSqft: number; sd: number; cv: number;
-  confidence: ArvConfidence;
-  trimmedOut: { zpid: string; pricePerSqft: number; end: 'low' | 'high' }[];
-  compsUsed: number;  // RULING CF-001: kept/ranked comps — n BEFORE the trim (the charter's `n = ppsf.length`)
-}
+// ────────────────────────────────────────────────────────────────────────
+// REMOVED — DO NOT REBUILD (§14.8, client decision, ONE-WAY DOOR).
+// `ArvConfidence` and `ArvResult` are DELETED from types.ts along with
+// arv.ts and `CompsResult.arv`. Their definitions are preserved ONLY in
+// §5.5's struck spec, because §14.8 defines reinstatement as "a REBUILD
+// from this contract". Nothing that compiles refers to them. If you are
+// reading this because you found a reference to either type somewhere:
+// that reference is the bug.
+// ────────────────────────────────────────────────────────────────────────
 
 export interface CompsResult {
   ok: true; algoVersion: number; runId: string;      // runId = crypto.randomUUID()
   subject: SubjectProperty; radiusTierMi: number;
+  recencyTierMonths: number;                         // which recency rung produced the set (§14.2)
   comps: ScoredComp[]; rejected: RejectedComp[];
-  arv: ArvResult; fromCache: boolean; provider: string;
+  fromCache: boolean; provider: string;              // NO `arv` field (§14.8)
 }
 
 export type CompsFailureCode =
@@ -454,7 +501,12 @@ export type CompsFailureCode =
 export interface CompsFailure {
   ok: false; algoVersion: number; code: CompsFailureCode;
   message: string;                                    // plain English, ends offering manual ARV
-  detail?: { kept?: number; needed?: number; radiusTierMi?: number };
+  detail?: {
+    kept?: number; needed?: number; radiusTierMi?: number;
+    resolution?: 'unit_mismatch' | 'not_found';       // ADDRESS_NOT_FOUND copy branch (§10)
+    inputHasUnit?: boolean;                           // unit_mismatch sub-branch (§10)
+    pool?: 'no_type_match';                           // TOO_FEW_COMPS copy branch (§10)
+  };
 }
 
 export type CompsOutcome = CompsResult | CompsFailure;   // discriminated on `ok`
@@ -467,21 +519,21 @@ Pure-function signatures INSPECTOR can import directly:
 export function normalizeAddress(raw: string): string;
 export function cacheKey(normalized: string): string;      // sha256 hex
 
-// filter.ts
+// filter.ts — both gates are per-rung arguments (§14.2)
 export function haversineMiles(aLat: number, aLng: number, bLat: number, bLng: number): number;
-export function applyHardFilters(subject: SubjectProperty, comps: RawComp[], radiusMi: number, now: Date):
-  { kept: RawComp[]; rejected: RejectedComp[] };
-export function selectRadiusTier(subject: SubjectProperty, comps: RawComp[], now: Date):
-  { kept: RawComp[]; rejected: RejectedComp[]; radiusTierMi: number };
+export function applyHardFilters(subject: SubjectProperty, comps: RawComp[], radiusMi: number,
+  maxAgeMonths: number, now: Date): { kept: RawComp[]; rejected: RejectedComp[] };
+export function selectTiers(subject: SubjectProperty, comps: RawComp[], now: Date): TierSelection;
+  // { kept, rejected, radiusTierMi, recencyTierMonths } — renamed from
+  // selectRadiusTier: it walks BOTH ladders, and dedupeSales (BUG-010) runs
+  // inside it, after the gates and before the sufficiency test
 
 // rank.ts
 export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): ScoredComp;
 export function rankComps(subject: SubjectProperty, kept: RawComp[], now: Date): ScoredComp[]; // sorted asc, capped MAX_COMPS_KEPT
 
-// arv.ts
-export function pricePerSqft(soldPrice: number, livingArea: number): number;
-export function trimmedMean(values: number[]): { mean: number; trimmedOut: number[]; used: number[] };
-export function calculateArv(subject: SubjectProperty, ranked: ScoredComp[]): ArvResult;
+// arv.ts — DELETED (§14.8). pricePerSqft / trimmedMean / calculateArv are
+// gone; their spec survives, struck, in §5.5 only.
 
 // format.ts
 export function renderCompsForChat(outcome: CompsOutcome): string;   // pure, data-only
@@ -519,7 +571,9 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
    the member's own purchase price; prepended so the reject table names the
    real reason)
 1. `NOT_SOLD` — status ≠ SOLD (case-insensitive)
-2. `STALE_SALE` — `soldDate` null or > `MAX_COMP_AGE_MONTHS` months before `now` (months = days / `DAYS_PER_MONTH`). **All date arithmetic (`monthsBetween`) runs at UTC CALENDAR-DAY granularity** (BUG-006): `soldDate` is an ISO date, so a sale "today" is 0 months old at every hour of the day, and comp sets are deterministic per calendar day rather than per hour
+2. `STALE_SALE` — `soldDate` null or older than the **ACTIVE recency rung**
+   (`RECENCY_TIERS_MONTHS`, §14.2 — the outer rung equals
+   `MAX_COMP_AGE_MONTHS`; months = days / `DAYS_PER_MONTH`). **All date arithmetic (`monthsBetween`) runs at UTC CALENDAR-DAY granularity** (BUG-006): `soldDate` is an ISO date, so a sale "today" is 0 months old at every hour of the day, and comp sets are deterministic per calendar day rather than per hour
 3. `SQFT_MISSING` — `livingArea` null or ≤ 0
 4. `SQFT_OUT_OF_RANGE` — outside subject ± `SQFT_TOLERANCE`
 5. `BEDS_DIFF` — both non-null and |Δbeds| > `MAX_BED_DIFF` (null on either side = no rejection)
@@ -527,14 +581,18 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
 7. `TYPE_MISMATCH` — `propertyType` ≠ subject's (OTHER never matches anything, including OTHER)
 8. `TOO_FAR` — haversine miles > active radius tier
 9. `PRICE_MISSING` — `soldPrice` null or ≤ 0
-10. `NON_ARMS_LENGTH` — ppsf < `NON_ARMS_LENGTH_PPSF_FRACTION` × median ppsf of the **DEDUPED candidate set** (BUG-010: `candidateMedianPpsf` runs `dedupeSales` on its own input first. The DUPLICATE_SALE rejection happens after the gates, but this median is computed INSIDE the gate pass, so a later drop cannot reach it — without deduping here, a sale counted twice would skew the very threshold the rule depends on. Implement it as written or the next reader will reintroduce the skew.) Median over all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters (all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters; median of even n = mean of middle two). Deterministic, order-independent.
+10. `NON_ARMS_LENGTH` — ppsf < `NON_ARMS_LENGTH_PPSF_FRACTION` × median ppsf of the **DEDUPED candidate set** (BUG-010: `candidateMedianPpsf` runs `dedupeSales` on its own input first. The DUPLICATE_SALE rejection happens after the gates, but this median is computed INSIDE the gate pass, so a later drop cannot reach it — without deduping here, a sale counted twice would skew the very threshold the rule depends on. Implement it as written or the next reader will reintroduce the skew.) Median over all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters; median of even n = mean of middle two. Deterministic, order-independent.
 11. ~~`LOT_ANOMALY`~~ — **REMOVED in v2** (§14.1): lot is a soft scoring term now. The `RejectReason` union keeps the member so cached v1 results still type, but it is never emitted.
 12. `FUTURE_SOLD_DATE` — `soldDate` parses to strictly after `now` (BUG-003: a sale that hasn't happened is not a comp; Zillow emits pending-close and timezone-shifted dates)
 
-Radius tiers: run filters at 0.5 mi; if kept < `MIN_COMPS_FOR_TIER`, rerun the
-full filter pass at 1.0, then 2.0. Stop at the first tier with ≥ 5 kept, else
-use the 2.0 mi outcome. `radiusTierMi` recorded on the result. Rejected list
-reported from the **final** tier only.
+Tier ladder (v2, §14.2 — the v1 one-dimensional 0.5/1.0/2.0 radius walk is
+GONE): the full filter pass reruns per rung of the ONE ordered ladder
+`[1.0, 3.0] mi × [3, 6, 12] mo`, **recency widening BEFORE radius**:
+`1.0/3 → 1.0/6 → 1.0/12 → 3.0/3 → 3.0/6 → 3.0/12`. Stop at the first rung
+with ≥ `MIN_COMPS_FOR_TIER` (5) kept after dedupe, else use the last rung's
+outcome. `radiusTierMi` AND `recencyTierMonths` recorded on the result.
+Rejected list reported from the **final** rung only. Rationale and rung
+reachability: §14.2.
 
 ### 5.4 Scoring (lower better)
 ```
@@ -553,7 +611,26 @@ negative number is the evidence of a future date, and the field stays honest.
 Sort ascending; ties broken by `distanceMi` asc, then `zpid` asc (determinism).
 Keep top `MAX_COMPS_KEPT`. Fewer than `MIN_COMPS_TO_COMPUTE` kept ⇒ `TOO_FEW_COMPS`.
 
-### 5.5 ARV
+### 5.5 ARV — **REMOVED (§14.8). This subsection is a PRESERVED SPEC, not a live requirement.**
+
+Nothing below this banner describes shipping code: `arv.ts` is deleted,
+`CompsResult` has no `arv`, and no confidence grade exists anywhere. The text
+is kept solely because §14.8 defines reinstatement as "a REBUILD from this
+contract" — this, plus the types below, is that rebuild spec. Implementing
+any of it without a new client ruling is the bug §14.8 exists to prevent.
+
+```ts
+// Types that lived in types.ts until §14.8 — preserved here only:
+// export type ArvConfidence = 'high' | 'medium' | 'low';
+// export interface ArvResult {
+//   arv: number; arvLow: number; arvHigh: number;    // rounded to ARV_ROUND_TO
+//   arvPerSqft: number; sd: number; cv: number;
+//   confidence: ArvConfidence;
+//   trimmedOut: { zpid: string; pricePerSqft: number; end: 'low' | 'high' }[];
+//   compsUsed: number;  // RULING CF-001: kept/ranked count, BEFORE the trim
+// }
+```
+
 ```
 ppsf       = kept comps' soldPrice / livingArea
 n          = ppsf.length
@@ -565,10 +642,11 @@ sd         = SAMPLE std dev of trimmed (n-1 denominator; sd = 0 when trimmed.len
 arvLow/High= arv ∓ round(sd * subjectSqft / ARV_ROUND_TO) * ARV_ROUND_TO
 cv         = sd / arvPerSqft
 ```
-Confidence: `high` if compsUsed ≥ 6 ∧ cv ≤ 0.15 ∧ median distance ≤ 0.75 mi ∧
-median age ≤ 6 months (medians over the kept, ranked set); `medium` if
-compsUsed ≥ 4 ∧ cv ≤ 0.25; else `low`. `low` still returns numbers but the
-rendered copy must call the estimate weak and invite manual override.
+Confidence (as last agreed — the §14.4 REBASE, not the original v1 tiers):
+`high` if compsUsed ≥ 5 ∧ cv ≤ 0.15 ∧ median distance ≤ 0.75 mi ∧ median age
+≤ 6 months (medians over the kept, ranked set); `medium` if compsUsed ≥ 4 ∧
+cv ≤ 0.25; else `low`. `low` still returned numbers but the rendered copy had
+to call the estimate weak and invite manual override.
 
 Boundary guards (BUG-002, change log #6): `trimmedMean([])` **throws**
 (`TypeError`), and `pricePerSqft(price, livingArea)` **throws** when
@@ -694,21 +772,35 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
 - The comps block is written as **ONE atomic object**, never field-by-field:
   ```ts
   interface CompsStateBlock {
-    subjectAddress: string; subjectSqft: number;
+    // BUG-011 (§14.15): null = UNBOUND — the member stated a number without
+    // naming a property. A real state, not a placeholder; the retired
+    // 'manual entry' literal is coerced to null on read (legacy shim).
+    subjectAddress: string | null;
+    subjectSqft: number;
     subjectBeds: number | null; subjectBaths: number | null;
     arv: number; arvLow: number | null; arvHigh: number | null;
-    arvConfidence: ArvConfidence | null;
+    arvConfidence: null;               // the confidence grade is gone (§14.8)
     arvSource: 'comps' | 'manual';
     compsRunId: string | null;
     computedAt: string;                // ISO timestamp
   }
   // state.comps: CompsStateBlock | undefined — the whole block or nothing
   ```
-- **The block is CLEARED at the START of every `run_comps` call, before the
-  provider is hit.** A failed run leaves NO ARV behind — not the previous one.
-- `set_manual_arv` writes the same shape with `arvSource: 'manual'`,
-  `arvLow/arvHigh/arvConfidence/compsRunId: null`, and `subjectAddress`
-  carried from the existing block when present (else `'manual entry'`).
+- ~~The block is CLEARED at the START of every `run_comps` call~~ —
+  **REVERSED by §14.8**: `run_comps` no longer touches `session_state` at
+  all, and the clear would now only ever destroy a number the MEMBER typed.
+- `set_manual_arv` (BUG-011, §14.15) writes the shape above with
+  `arvSource: 'manual'`, `arvLow/arvHigh/arvConfidence/compsRunId: null`,
+  `subjectSqft: 0`, `subjectBeds/Baths: null` — **a fresh statement,
+  inheriting NOTHING from any previous block.** `subjectAddress` is the
+  optional `address` argument **verified against the member's CURRENT
+  message** (`bindAddressToCurrentMessage`: an ADDRESS_FRAGMENT_RE fragment
+  of the message contained in the normalized candidate, OR the candidate's
+  street part contained verbatim in the normalized message — the same
+  normalizer the guard uses, so a binding can never conflict with the
+  message that bound it). Anything the current message does not name —
+  i.e. anything carried from conversation history — binds **null**, never
+  trusted. Failure direction is always "unbound", never "bound wrong".
 - Pre-fill: when `flip_calculator` / `brrrr_calculator` is invoked **without**
   `after_repair_value` and `state.comps` exists, the agent layer injects
   `state.comps.arv` before `assertRequired` runs. The reply MUST echo the bound
@@ -717,7 +809,12 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
   visible instead of silently wrong.
 - **Address-mismatch guard**: if the user's message states an address that is
   not the same property as `subjectAddress` (compare normalized forms), do NOT
-  pre-fill. Ask which deal they mean.
+  pre-fill. Ask which deal they mean. **The guard requires a real binding
+  (BUG-011): `subjectAddress: null` never conflicts** — an unbound ARV
+  applies wherever the member takes it, and every echo of it drops the
+  address clause (`Using your ARV of $450,000 — say "change ARV" to
+  override.`) rather than naming a placeholder. A BOUND ARV keeps the full
+  A-vs-B refusal on both surfaces.
 - **Explicit-ARV rule (operator ruling, blocker-level; replaces the plain
   "explicit wins")** — when a stored block exists, an explicit
   `after_repair_value` in a flip/brrrr call resolves by WHO said the number:
@@ -763,11 +860,16 @@ the other is worse than no guard, because the tests look green.
   (src/features/comps/formPrefill.ts) on a CLONE; the static
   `CALCULATOR_FORMS` never carry session data.
 - **Label copy**: `Pre-filled from your comps on <subjectAddress> — edit to
-  override.` (manual-source variant names the manual entry). Label and value
-  live in ONE object — **no label means no pre-fill, by construction**.
+  override.` Manual-source variant: `Pre-filled from the ARV you set for
+  <subjectAddress> — edit to override.`, or, when the binding is null
+  (BUG-011), `Pre-filled from the ARV you set earlier — edit to override.`
+  Label and value live in ONE object — **no label means no pre-fill, by
+  construction**.
 - **Mismatch ⇒ blank**: if the member's current message names a different
   property (same `findConflictingAddress` discriminator as chat), the form
-  renders WITHOUT a default — never a silent carry.
+  renders WITHOUT a default — never a silent carry. **Bound blocks only
+  (BUG-011): a null binding pre-fills regardless of what the message names**
+  — nothing claims it belongs to any property, and the label says so.
 - **No block ⇒ no default, ever.** State read failure ⇒ plain form.
 - **Widget obligations**: render `prefill.value` into the control, render
   `prefill.label` visibly beside it, do NOT mark it as an omittable sheet
@@ -792,10 +894,15 @@ the other is worse than no guard, because the tests look green.
     "properties": { "address": { "type": "string", "description": "Full street address incl. city+state (and ZIP if given)" } },
     "required": ["address"], "additionalProperties": false } }
 
-// set_manual_arv
+// set_manual_arv — address OPTIONAL (BUG-011, §14.15): the model passes the
+// property the member named IN THE CURRENT MESSAGE, or omits it entirely.
+// The handler verifies the claim structurally (bindAddressToCurrentMessage,
+// §8) — an unverifiable address stores null, it is never trusted.
 { "name": "set_manual_arv",
   "parameters": { "type": "object",
-    "properties": { "arv": { "type": "number", "description": "User-supplied ARV in dollars, > 0" } },
+    "properties": {
+      "arv": { "type": "number", "description": "User-supplied ARV in dollars, > 0" },
+      "address": { "type": "string", "description": "Property the member tied this ARV to in THIS message; omit when none is named" } },
     "required": ["arv"], "additionalProperties": false } }
 ```
 Handlers live in `tools.ts`; agent.ts switch delegates. `run_comps` returns the
@@ -811,8 +918,10 @@ even attempt a comps run, and the prompt must not advertise it.
 address already run this conversation is RE-RUN through `run_comps` — a
 repeat is a cache hit and costs nothing, and the member gets the full
 rendered block again, inside every guarantee. The prompt forbids answering a
-comps request by summarising an earlier result from memory: every ARV the
-member sees must come from a `run_comps` result in that turn. (The previous
+comps request by summarising an earlier result from memory: every comps
+figure the member sees must come from a `run_comps` result in that turn
+(the ruling predates §14.8 and originally said "every ARV" — the substance,
+never answer from memory, stands unchanged). (The previous
 "don't re-run" spend guard solved a problem the cache already solves, and
 pushed replies onto a transcript-recall path outside `format.ts` — see
 mailbox 0023 for the evidence.) No recall-with-constraints path exists or is
@@ -840,11 +949,17 @@ work; cache hits bypass it entirely; breach ⇒ `RATE_LIMITED`.
 
 ## 11. Rendered chat block (`format.ts`, pure)
 
-Success: per comp — address, sold price, sqft, $/sqft, sold date, distance —
-plus which comps were trimmed and why (`trimmedOut`), the trimmed $/sqft, the
-subject sqft, the multiplication, ARV with low–high band and confidence, radius
-tier used, and the one-line footer: *automated estimate from public sold data,
-not a formal appraisal*. Confidence `low` adds the weak-estimate warning.
+Success (v2/v3 — the ARV block, trim narrative and confidence line are GONE,
+§14.8): emit order is `COMPS_OPENING` → header → table → `COMPS_CLOSING` →
+footer, with no gap where the ARV used to sit. The header names the subject
+(beds/baths/sqft/type), BOTH tiers used (`radiusTierMi`,
+`recencyTierMonths`) and the rejected count. Per comp: address, sold price,
+sold date, sqft, $/sqft, beds, baths, lot size, distance, and the
+LOAD-BEARING property link (§14.9 — null renders the literal "link
+unavailable"). Null fields render an explicit `—` (§14.5), never omitted or
+inferred. Footer: *automated estimate from public sold data, not a formal
+appraisal — verify these comps with your agent* (de-ARVed wording; ours to
+edit, unlike the §14.7 prescribed copy).
 
 Failure copy ownership (FINDING-002): the §10 wording is COMPOSED in
 `service.ts` (from format.ts's exported `FAILURE_COPY` table — one source) and
