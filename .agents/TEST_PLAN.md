@@ -322,3 +322,62 @@ Specs are written ahead of MASON's slices and gated by `tests/helpers/compsGate.
 which skips a suite while its module is absent and **fails** it under
 `COMPS_STRICT=1`. Sign-off runs with `COMPS_STRICT=1`, so nothing can reach
 `GREEN` by being quietly skipped.
+
+
+---
+
+# APPENDIX — ARV REMOVAL (operator ruling, 2026-08-08)
+
+ARV is removed from the comps module completely. Not gated — removed, and the
+`ARV_SURFACING` flag with it. Recorded here so the resulting coverage gap reads
+as a decision rather than an oversight.
+
+## RETIRED — what went, and why
+
+| coverage | why it goes |
+| --- | --- |
+| the six recomputed ARV goldens (`arv`, `arvPerSqft`) | nothing computes an ARV |
+| trimmed-mean arithmetic — trimCount across n, sorted-vs-unsorted trim, duplicate-extreme handling | the trimmed mean has no consumer |
+| sample-vs-population sd, `cv` | derived from the trimmed mean |
+| `arvLow` / `arvHigh`, the band-rounding trap | no band is produced |
+| confidence boundary cases (cv 0.15 / 0.25, n=4/5, median distance and age) | no confidence grade is surfaced |
+| golden `wrongAnswers` for ARV-shifting bugs | the numbers they discriminate no longer exist |
+
+These were correct and hand-derived, and several caught real defects
+(BUG-002, BUG-003, the `arvLow` rounding trap). They are retired because their
+subject was removed, not because they were wrong. The v2 hand-derivations stay
+in `V2-RECOMPUTE.md` as the record.
+
+**Kept deliberately despite having no consumer:** the `trimmedMean` /
+`calculateArv` guard tests (BUG-002 — throw rather than return NaN/Infinity).
+The functions remain exported, and an unguarded export is one reuse away from
+being a live hazard again.
+
+## KEPT AND RE-POINTED
+
+The 24 P1 `session_state` tests stay. Awaiting MASON's report on whether the
+comps block was `session_state`'s only writer before any rewrite — re-pointing
+them against an unresolved ownership question would be guessing.
+
+## ADDED — the new guarantees, which matter more than what went
+
+1. **Nothing ARV-shaped in the rendered output.** No ARV, no range, no
+   confidence grade, no trimmed-mean line. Asserted on the rendered string.
+2. **Nothing ARV-shaped in the model-facing tool result.** Not a formatted
+   figure, not a raw field. Nothing about ARV reaches the model from this tool.
+3. **The live battery becomes the strongest test in the suite.** Previously it
+   asked whether the model would relay a legitimate ARV under pressure. Now
+   there is no legitimate ARV anywhere in the pipeline, so **any figure it
+   produces is fabricated by definition** — there is no innocent source to
+   confuse it with. Same phrasings, strictly stronger claim.
+4. **The member's own ARV path stays whole** — `set_manual_arv`, the
+   calculator's own input, and the form field. Verified end to end: removing
+   ours must not damage theirs.
+
+## Sign-off consequence
+
+The §9 line "no path produces a fabricated ARV" changes character. It was a
+statement about relay discipline; it becomes a statement about arithmetic that
+no longer exists. Weaker to violate, stronger when held — and only the live
+battery can test it, because the guarantee is now entirely about model
+behaviour.
