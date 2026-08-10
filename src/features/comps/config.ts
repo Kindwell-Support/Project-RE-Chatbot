@@ -162,6 +162,29 @@ export const COMPS_RUNS_PER_SESSION_PER_HOUR = 5;
  */
 export const COMPS_DAILY_RUN_CAP = 50;
 
+// --- Neighbourhood sales aggregates (CONTRACT §14.16/.1) ---------------------
+
+/** The client's spec: aggregates over 1 mile. The CIRCLE — box corners are cut in pure code. */
+export const NEIGHBORHOOD_RADIUS_MI = 1.0;
+
+/** ...and over the past 12 months, pushed SERVER-SIDE via Zillow's doz filter. */
+export const NEIGHBORHOOD_WINDOW_MONTHS = 12;
+
+/**
+ * Results ceiling for the dedicated aggregate fetch. The spike proved the
+ * old 40-item wall was OUR limit, not Zillow's: 500 returned 235 with the
+ * query exhausted. These actors bill per result, so this is also a spend
+ * bound (~500 × per-result rate worst case).
+ */
+export const NEIGHBORHOOD_RESULTS_LIMIT = 500;
+
+/**
+ * Skip the aggregate fetch below this much whole-pipeline headroom
+ * (§14.14 rule 5 applies to every decoration). Spike measured 6.4s; comps
+ * render without the neighbourhood block rather than failing.
+ */
+export const NEIGHBORHOOD_MIN_REMAINING_MS = 10_000;
+
 // --- Census demographics (CONTRACT §14.10) -----------------------------------
 
 /**

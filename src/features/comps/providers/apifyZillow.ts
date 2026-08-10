@@ -16,7 +16,7 @@
  * The token lives in the Authorization header only. It must never appear in
  * an error message, a log line, or a thrown value.
  */
-import { PROVIDER_TIMEOUT_MS } from '../config.js';
+import { NEIGHBORHOOD_RESULTS_LIMIT, PROVIDER_TIMEOUT_MS } from '../config.js';
 import { normalizeAddress } from '../normalize.js';
 import type { CompDetail, PropertyType, RawComp, SubjectProperty } from '../types.js';
 import {
@@ -268,8 +268,15 @@ export function mapDetailBatchItems(items: Array<Record<string, unknown>>): Deta
   return mapped;
 }
 
-/** Zillow search URL whose searchQueryState bounds a box of ±radiusMi around the subject. */
-export function buildSoldSearchUrl(lat: number, lng: number, radiusMi: number): string {
+/**
+ * Zillow search URL whose searchQueryState bounds a box of ±radiusMi around
+ * the subject. `dozMonths` (§14.16.1) pushes the sold-within window
+ * SERVER-SIDE via Zillow's own `doz` filter — spike-verified: without it
+ * the result cap fills with the newest sales and "12 months" is weeks
+ * deep. The comps search deliberately omits it (unruled); the aggregate
+ * fetch requires it.
+ */
+export function buildSoldSearchUrl(lat: number, lng: number, radiusMi: number, dozMonths?: number): string {
   const latDelta = radiusMi / MILES_PER_DEG_LAT;
   const lngDelta = radiusMi / (MILES_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180));
   const searchQueryState = {
@@ -281,6 +288,7 @@ export function buildSoldSearchUrl(lat: number, lng: number, radiusMi: number): 
     },
     filterState: {
       isRecentlySold: { value: true },
+      ...(dozMonths !== undefined ? { doz: { value: `${dozMonths}m` } } : {}),
       isForSaleByAgent: { value: false },
       isForSaleByOwner: { value: false },
       isNewConstruction: { value: false },
@@ -335,7 +343,32 @@ export class ApifyZillowProvider implements PropertyDataProvider {
   }
 
   /**
-   * ONE batched detail run (§14.14 rule 6 — the third and last actor run of a
+   * The dedicated neighbourhood-sales fetch (§14.16.1) — the 4th actor run
+   * of a cold lookup. Same actor and mapper as the comps search; different
+   * query: doz window server-side, NEIGHBORHOOD_RESULTS_LIMIT instead of
+   * the comps cap (spike: 500 returned 235 with the query exhausted).
+   */
+  async fetchNeighborhoodSales(
+    subject: SubjectProperty,
+    radiusMi: number,
+    windowMonths: number,
+    opts?: { timeoutMs?: number },
+  ): Promise<RawComp[]> {
+    const items = await this.runActor(
+      SEARCH_ACTOR,
+      'neighborhood sales search',
+      {
+        searchUrls: [{ url: buildSoldSearchUrl(subject.lat, subject.lng, radiusMi, windowMonths) }],
+        extractionMethod: 'MAP_MARKERS',
+        resultsLimit: NEIGHBORHOOD_RESULTS_LIMIT,
+      },
+      opts?.timeoutMs,
+    );
+    return mapCompItems(items);
+  }
+
+  /**
+   * ONE batched detail run (§14.14 rule 6 — the third actor run of a
    * lookup). Batch size is the caller's final kept set, structurally bounded
    * by MAX_COMPS_KEPT because the service passes ranked-and-capped comps —
    * never an independent constant (rule 2). `timeoutMs` is the remaining

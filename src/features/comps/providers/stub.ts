@@ -24,10 +24,19 @@ export class StubPropertyDataProvider implements PropertyDataProvider {
    */
   fetchDetailBatch?: (addresses: string[], opts?: { timeoutMs?: number }) => Promise<DetailBatchItem[]>;
 
+  /** Same optionality rule for the neighbourhood fetch (§14.16.1). */
+  fetchNeighborhoodSales?: (
+    subject: SubjectProperty,
+    radiusMi: number,
+    windowMonths: number,
+    opts?: { timeoutMs?: number },
+  ) => Promise<RawComp[]>;
+
   constructor(
     private readonly rawSubjectItems: Array<Record<string, unknown>>,
     private readonly rawCompItems: Array<Record<string, unknown>>,
     rawDetailItems?: Array<Record<string, unknown>>,
+    rawNeighborhoodItems?: Array<Record<string, unknown>>,
   ) {
     if (rawDetailItems) {
       this.fetchDetailBatch = async (addresses: string[]) => {
@@ -38,6 +47,9 @@ export class StubPropertyDataProvider implements PropertyDataProvider {
         const requested = new Set(addresses);
         return mapDetailBatchItems(rawDetailItems).filter((i) => requested.has(i.addressOrUrlFromInput));
       };
+    }
+    if (rawNeighborhoodItems) {
+      this.fetchNeighborhoodSales = async () => mapCompItems(rawNeighborhoodItems);
     }
   }
 

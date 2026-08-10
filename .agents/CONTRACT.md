@@ -318,10 +318,15 @@ unavailable); never infer a figure the API did not return.
     passing value simultaneously. The county-wide sweep behind it: 35
     sentinel hits across 1,009 Maricopa tracts, ALL `-666666666`, zero
     negative non-sentinel values, zero API-null cells.
-  Live e2e render, verbatim: `**Neighborhood snapshot** — Census Tract 1117
+  Live e2e render, verbatim: `**Neighborhood snapshot**: Census Tract 1117
   (US Census ACS 5-year, 2023)` / `Median household income $93,333 · median
   age 37.9 · owner-occupied 62% · renter-occupied 38%`, positioned
-  table → snapshot → closing → footer as pinned.
+  table → snapshot → closing → footer as pinned. (Header separator changed
+  from an em dash to a colon during the aggregates build: §14.5 marker
+  exclusivity applies to every success-block section, and a punctuation
+  dash here would have broken the fully-populated zero-em-dash guarantee
+  the moment the section joined a populated render. The unavailable lines
+  likewise carry no em dash.)
 
 **GUARANTEE 3 (operator ruling) — suppression sentinels render as
 unavailable, never as a number and never as zero.** ACS returns its
@@ -479,6 +484,14 @@ label — the exact failure the dedicated fetch exists to prevent.
    set — the field the truncation tests assert on.
 4. Averages over empty subsets are null (em-dash); `totalSales: 0` is a
    REAL figure and renders as one.
+5. **Cap-detection invariant (INSPECTOR's CASE 3, adopted into contract):**
+   the fetch returning `NEIGHBORHOOD_RESULTS_LIMIT` items means the window
+   is almost certainly truncated (`isWindowTruncated`, exported;
+   `windowTruncated` on the result). A truncated set MUST NOT carry a
+   12-month label — the render switches to the actual covered span
+   ("sales since <earliest> within 1 mile; older sales exceeded the data
+   limit"). Silence beats a mislabelled average; an honest span beats
+   silence.
 
 **DOM (Ruling 2)**: `avgDomOfDisplayedComps` = mean of
 `detail.daysOnMarket` over the DISPLAYED comps that carry one (rounded,

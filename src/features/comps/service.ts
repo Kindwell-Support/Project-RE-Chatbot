@@ -21,10 +21,14 @@ import {
   DETAIL_CACHE_TTL_DAYS,
   DETAIL_MIN_REMAINING_MS,
   MIN_COMPS_TO_COMPUTE,
+  NEIGHBORHOOD_MIN_REMAINING_MS,
+  NEIGHBORHOOD_RADIUS_MI,
+  NEIGHBORHOOD_WINDOW_MONTHS,
   PROVIDER_MAX_RETRIES,
   PROVIDER_TIMEOUT_MS,
   RADIUS_TIERS_MI,
 } from './config.js';
+import { computeNeighborhoodAggregates } from './aggregates.js';
 import { attachDetails, detailBatchFor } from './detail.js';
 import { FAILURE_COPY } from './format.js';
 import { selectTiers } from './filter.js';
@@ -72,6 +76,12 @@ export interface CachedComps {
   normalizedAddress: string;
   rawSubject: SubjectProperty | null;
   rawComps: RawComp[];
+  /**
+   * Raw neighbourhood-sales payload (§14.16.1), riding the same row and
+   * TTL. Nullable: rows predating the column fetch live ONCE on next touch
+   * and cache. Aggregates are computed per serve from this — never stored.
+   */
+  rawNeighborhood?: RawComp[] | null;
   result: CompsOutcome | null;
   algoVersion: number;
   provider: string;
@@ -234,17 +244,18 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     // detail is attached on EVERY serve and never stored in comps_cache).
     if (cached.result && cached.algoVersion === ALGO_VERSION) {
       if (!cached.result.ok) return cached.result;
-      return enrichAll({ ...cached.result, fromCache: true }, deps, key, now, startedAtMs, false);
+      return enrichAll({ ...cached.result, fromCache: true }, deps, key, now, startedAtMs, false, cached);
     }
     // Raw payload cached under an older algo: recompute WITHOUT re-billing.
     if (cached.rawSubject) {
       const recomputed = computeFromRaw(cached.rawSubject, cached.rawComps, now(), cached.provider, true);
-      await writeCache(deps, logger, {
+      const updated: CachedComps = {
         ...cached,
         result: recomputed,
         algoVersion: ALGO_VERSION,
-      });
-      return recomputed.ok ? enrichAll(recomputed, deps, key, now, startedAtMs, false) : recomputed;
+      };
+      await writeCache(deps, logger, updated);
+      return recomputed.ok ? enrichAll(recomputed, deps, key, now, startedAtMs, false, updated) : recomputed;
     }
   }
 
@@ -295,8 +306,10 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
 
   // The cache stores the DETAIL-FREE result on purpose (§14.14 rule 4):
   // detail lives in its own zpid-keyed cache with a longer TTL and is
-  // re-attached on every serve, so the two lifetimes never entangle.
-  await writeCache(deps, logger, {
+  // re-attached on every serve, so the two lifetimes never entangle. The
+  // neighbourhood RAW payload joins this row later, written back by its
+  // enrichment step (§14.16.1).
+  const entry: CachedComps = {
     cacheKey: key,
     normalizedAddress: normalized,
     rawSubject: subject,
@@ -305,15 +318,30 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     algoVersion: ALGO_VERSION,
     provider: deps.provider.name,
     expiresAt: new Date(now().getTime() + CACHE_TTL_MS).toISOString(),
-  });
+  };
+  await writeCache(deps, logger, entry);
 
-  return outcome.ok ? enrichAll(outcome, deps, key, now, startedAtMs, true) : outcome;
+  return outcome.ok ? enrichAll(outcome, deps, key, now, startedAtMs, true, entry) : outcome;
 }
 
 const DETAIL_CACHE_TTL_MS = DETAIL_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
 const CENSUS_CACHE_TTL_MS = CENSUS_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
 
-/** The full post-compute decoration chain: detail (§14.14) then demographics (§14.10). */
+/**
+ * ONE cap unit per Apify-touching lookup, SHARED across the decoration
+ * fetches (§14.16.1): on cache-hit paths whichever billed fetch fires
+ * first consumes the unit and the rest ride it. Mutable token, threaded.
+ */
+interface BudgetState {
+  consumed: boolean;
+}
+
+/**
+ * The full post-compute decoration chain: detail (§14.14) → neighbourhood
+ * aggregates (§14.16.1, needs the detail-enriched comps for the DOM line)
+ * → demographics (§14.10, free, last so billed fetches see the most
+ * ceiling headroom).
+ */
 async function enrichAll(
   result: CompsResult,
   deps: RunCompsDeps,
@@ -321,9 +349,77 @@ async function enrichAll(
   now: () => Date,
   startedAtMs: number,
   budgetConsumed: boolean,
+  entry: CachedComps | null,
 ): Promise<CompsResult> {
-  const withDetail = await enrichWithDetail(result, deps, key, now, startedAtMs, budgetConsumed);
-  return enrichWithDemographics(withDetail, deps, key, now, startedAtMs);
+  const budgetState: BudgetState = { consumed: budgetConsumed };
+  const withDetail = await enrichWithDetail(result, deps, key, now, startedAtMs, budgetState);
+  const withNeighborhood = await enrichWithNeighborhood(withDetail, deps, key, now, startedAtMs, budgetState, entry);
+  return enrichWithDemographics(withNeighborhood, deps, key, now, startedAtMs);
+}
+
+/**
+ * Neighbourhood aggregates (§14.16.1) — decoration, never a dependency.
+ * Raw sales come from the comps_cache row when present (zero spend); a
+ * live fetch is ONE actor run behind the shared budget unit and the
+ * pipeline ceiling, with NO retry (pinned: the unavailable line is the
+ * retry). The computed aggregates are never stored — only the raw payload
+ * is, back onto the same row.
+ */
+async function enrichWithNeighborhood(
+  result: CompsResult,
+  deps: RunCompsDeps,
+  key: string,
+  now: () => Date,
+  startedAtMs: number,
+  budgetState: BudgetState,
+  entry: CachedComps | null,
+): Promise<CompsResult> {
+  if (!deps.provider.fetchNeighborhoodSales) return result; // incapable ⇒ absent ⇒ no section
+  const logger = deps.logger;
+
+  let rawSales = entry?.rawNeighborhood ?? null;
+  if (!rawSales) {
+    const remainingMs = PROVIDER_TIMEOUT_MS - (now().getTime() - startedAtMs);
+    if (remainingMs < NEIGHBORHOOD_MIN_REMAINING_MS) {
+      logger?.info?.(
+        { cacheKey: key, remainingMs },
+        'neighborhood fetch skipped — whole-pipeline ceiling; comps render without the section',
+      );
+      return { ...result, neighborhood: null };
+    }
+    if (!budgetState.consumed && deps.budget && !deps.budget.tryConsume(now())) {
+      logger?.info?.({ cacheKey: key }, 'neighborhood fetch skipped — daily cap; comps render without the section');
+      return { ...result, neighborhood: null };
+    }
+    budgetState.consumed = true;
+    try {
+      rawSales = await deps.provider.fetchNeighborhoodSales(
+        result.subject,
+        NEIGHBORHOOD_RADIUS_MI,
+        NEIGHBORHOOD_WINDOW_MONTHS,
+        { timeoutMs: remainingMs },
+      );
+    } catch (err) {
+      logger?.warn(
+        { err: err instanceof Error ? err.message : String(err), cacheKey: key },
+        'neighborhood fetch failed — comps render without the section',
+      );
+      return { ...result, neighborhood: null };
+    }
+    if (deps.cache && entry) {
+      try {
+        entry.rawNeighborhood = rawSales;
+        await deps.cache.set(entry);
+      } catch (err) {
+        logger?.warn({ err, cacheKey: key }, 'neighborhood raw cache write failed — served uncached');
+      }
+    }
+  }
+
+  return {
+    ...result,
+    neighborhood: computeNeighborhoodAggregates(rawSales, result.subject, result.comps, now()),
+  };
 }
 
 /**
@@ -418,10 +514,10 @@ async function enrichWithDemographics(
  *  - NO retry on the detail batch (unlike the subject/search seam policy):
  *    a retry doubles the bill for decoration and eats the pipeline ceiling;
  *    the degradation path (em-dashes) is the retry.
- *  - `budgetConsumed` distinguishes the live path (this lookup already
- *    consumed its cap unit — detail rides inside it) from cache-hit paths
- *    (a live detail batch is this lookup's FIRST actor run, so it consumes
- *    the unit; denial ⇒ skip, never RATE_LIMITED).
+ *  - `budgetState` is the SHARED lookup unit (§14.16.1): on the live path
+ *    it starts consumed (the provider stage paid); on cache-hit paths the
+ *    first billed decoration fetch consumes it and later ones ride it.
+ *    Denial ⇒ skip, never RATE_LIMITED.
  */
 async function enrichWithDetail(
   result: CompsResult,
@@ -429,7 +525,7 @@ async function enrichWithDetail(
   key: string,
   now: () => Date,
   startedAtMs: number,
-  budgetConsumed: boolean,
+  budgetState: BudgetState,
 ): Promise<CompsResult> {
   if (result.comps.length === 0) return result;
   const logger = deps.logger;
@@ -455,9 +551,10 @@ async function enrichWithDetail(
         { cacheKey: key, remainingMs },
         'detail batch skipped — whole-pipeline ceiling; comps render without detail',
       );
-    } else if (!budgetConsumed && deps.budget && !deps.budget.tryConsume(now())) {
+    } else if (!budgetState.consumed && deps.budget && !deps.budget.tryConsume(now())) {
       logger?.info?.({ cacheKey: key }, 'detail batch skipped — daily cap; comps render without detail');
     } else {
+      budgetState.consumed = true;
       try {
         // Batch size = the final kept set — already capped through ranking,
         // and clamped again by detailBatchFor (§14.14 rule 2: bounded by

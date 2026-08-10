@@ -52,6 +52,20 @@ export interface PropertyDataProvider {
    * honour it over their own default.
    */
   fetchDetailBatch?(addresses: string[], opts?: { timeoutMs?: number }): Promise<DetailBatchItem[]>;
+  /**
+   * The dedicated neighbourhood-sales fetch (§14.16.1): radius-bounded,
+   * window pushed SERVER-SIDE (Zillow doz) — never the candidate pool,
+   * whose results cap makes its "12 months" weeks deep. OPTIONAL, same
+   * degradation rule as fetchDetailBatch: absent ⇒ no neighbourhood
+   * section. Returns search-shaped RawComps; the pure aggregate pipeline
+   * (circle cut → dedupe → averages) owns everything after the wire.
+   */
+  fetchNeighborhoodSales?(
+    subject: SubjectProperty,
+    radiusMi: number,
+    windowMonths: number,
+    opts?: { timeoutMs?: number },
+  ): Promise<RawComp[]>;
 }
 
 /** Provider exceeded PROVIDER_TIMEOUT_MS. Retried once, then PROVIDER_TIMEOUT. */

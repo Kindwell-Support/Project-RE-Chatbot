@@ -151,6 +151,49 @@ function compLine(s: ScoredComp): string {
 }
 
 /**
+ * Neighbourhood sales section (§14.16.1). Three states like demographics.
+ * Guarantee 4 twice over: the section header carries geography AND window
+ * verbatim ("past 12 months within 1 mile") in the same template as the
+ * figures, and the DOM line exists ONLY inside its load-bearing label —
+ * it is the average of the comps SHOWN, never the neighbourhood, and a
+ * template that renders the number without saying so cannot be written
+ * from this function. domCompCount 0 keeps the label and em-dashes the
+ * number. Em-dash nulls everywhere; totalSales 0 is a real figure.
+ */
+function renderNeighborhood(
+  neighborhood: CompsResult['neighborhood'],
+  displayedCompCount: number,
+): string | null {
+  if (neighborhood === undefined) return null;
+  // §14.5 marker exclusivity applies to these sections too: no em dash as
+  // punctuation anywhere — the dash below means "missing value" only.
+  if (neighborhood === null) {
+    return '_Neighborhood sales data is unavailable right now; the comps above are unaffected._';
+  }
+  const n = neighborhood;
+  const price = n.avgSoldPrice === null ? NA : USD.format(n.avgSoldPrice);
+  const ppsf = n.avgPricePerSqft === null ? NA : `${USD.format(n.avgPricePerSqft)}/sqft`;
+  const beds = n.avgBeds === null ? NA : String(n.avgBeds);
+  const baths = n.avgBaths === null ? NA : String(n.avgBaths);
+  const dom = n.avgDomOfDisplayedComps === null ? NA : String(n.avgDomOfDisplayedComps);
+  // Cap-detection invariant (§14.16.1): a truncated fetch must NOT carry a
+  // 12-month label — the actual covered span is the only honest window.
+  const miles = `within ${n.radiusMi} mile${n.radiusMi === 1 ? '' : 's'}`;
+  const window = n.windowTruncated
+    ? n.earliestSaleDate
+      ? `sales since ${n.earliestSaleDate} ${miles}; older sales exceeded the data limit`
+      : `recent sales ${miles}; the full history exceeded the data limit`
+    : `past ${n.windowMonths} months ${miles}`;
+  return (
+    `**Neighborhood sales** (${window})\n` +
+    `${n.totalSales} sale${n.totalSales === 1 ? '' : 's'} · average price ${price} · average ${ppsf} · ` +
+    `average ${beds} bd / ${baths} ba\n` +
+    `Days on market: ${dom} (average across ${n.domCompCount} of the ${displayedCompCount} comps shown ` +
+    'above, not a neighborhood figure)'
+  );
+}
+
+/**
  * Demographics section (§14.10). Three states, mirroring the type: absent
  * field ⇒ NO section (unconfigured is not a failure); null ⇒ the
  * "unavailable" line — plain, blames nothing, promises nothing; present ⇒
@@ -160,8 +203,12 @@ function compLine(s: ScoredComp): string {
  */
 function renderDemographics(demographics: CompsResult['demographics']): string | null {
   if (demographics === undefined) return null;
+  // §14.5 marker exclusivity: the em dash is the null marker, never
+  // punctuation — hence the colon (BUG caught by the aggregates build: the
+  // original header used a dash and would have broken the fully-populated
+  // zero-em-dash guarantee the moment this section joined it).
   if (demographics === null) {
-    return '_Neighborhood demographics are unavailable right now — the comps above are unaffected._';
+    return '_Neighborhood demographics are unavailable right now; the comps above are unaffected._';
   }
   const d = demographics;
   const income = d.medianHouseholdIncome === null ? NA : USD.format(d.medianHouseholdIncome);
@@ -169,7 +216,7 @@ function renderDemographics(demographics: CompsResult['demographics']): string |
   const owner = d.ownerOccupiedPct === null ? NA : `${Math.round(d.ownerOccupiedPct)}%`;
   const renter = d.renterOccupiedPct === null ? NA : `${Math.round(d.renterOccupiedPct)}%`;
   return (
-    `**Neighborhood snapshot** — ${d.tractName} (US Census ACS 5-year, ${d.acsYear})\n` +
+    `**Neighborhood snapshot**: ${d.tractName} (US Census ACS 5-year, ${d.acsYear})\n` +
     `Median household income ${income} · median age ${age} · ` +
     `owner-occupied ${owner} · renter-occupied ${renter}`
   );
@@ -189,17 +236,19 @@ function renderSuccess(result: CompsResult): string {
   const table = [`**${comps.length} sold comps** (best match first):`, ...comps.map(compLine)].join('\n');
 
   /**
-   * THE emit order (CONTRACT §14.8, extended by §14.10): opening → header →
-   * table → [demographics] → closing → footer. The ARV block that used to
-   * sit after the table is GONE — removed with arv.ts, not gated;
-   * reinstating it would be a rebuild from the contract, not a line here.
-   * The demographics section slots where it does so COMPS_CLOSING stays the
-   * LAST content before the footer, exactly as pinned.
+   * THE emit order (CONTRACT §14.8, extended by §14.10 and §14.16.1):
+   * opening → header → table → [neighborhood] → [demographics] → closing →
+   * footer. The ARV block that used to sit after the table is GONE —
+   * removed with arv.ts, not gated; reinstating it would be a rebuild from
+   * the contract, not a line here. Both decoration sections slot where
+   * they do so COMPS_CLOSING stays the LAST content before the footer,
+   * exactly as pinned.
    */
   const sections: Array<string | null> = [
     COMPS_OPENING,
     header,
     table,
+    renderNeighborhood(result.neighborhood, comps.length),
     renderDemographics(result.demographics),
     COMPS_CLOSING,
     FOOTER,

@@ -169,6 +169,49 @@ export interface Demographics {
   renterOccupiedPct: number | null;
 }
 
+/**
+ * Neighbourhood sales aggregates (CONTRACT §14.16/.1) — computed from a
+ * DEDICATED 1-mile, 12-month fetch (never the candidate pool, whose window
+ * is weeks deep under its results cap), deduped BEFORE any average.
+ * Decoration: never blocks a comps run; computed per serve from cached raw,
+ * never stored.
+ */
+export interface NeighborhoodAggregates {
+  /** Geography half of the Guarantee-4 label. */
+  radiusMi: number;
+  /** Window half of the label. */
+  windowMonths: number;
+  /** Deduped sale count inside the circle and window. 0 is a real figure. */
+  totalSales: number;
+  avgSoldPrice: number | null;
+  /** Mean of per-sale $/sqft (mean of ratios, not ratio of means). */
+  avgPricePerSqft: number | null;
+  avgBeds: number | null;
+  avgBaths: number | null;
+  /**
+   * The span the fetch ACTUALLY covered — what the window-truncation tests
+   * assert on, because a truncated window still produces plausible figures.
+   */
+  earliestSaleDate: string | null;
+  latestSaleDate: string | null;
+  /**
+   * True when the dedicated fetch returned its results limit — the
+   * cap-detection invariant (INSPECTOR's CASE 3): count == cap means there
+   * is almost certainly older data we did not get, and the render MUST NOT
+   * carry a 12-month label. It labels the actual span instead. Silence
+   * beats a mislabelled average.
+   */
+  windowTruncated: boolean;
+  /**
+   * Ruling 2: mean daysOnMarket over the DISPLAYED comps carrying one —
+   * never the neighbourhood pool. Renders ONLY inside its load-bearing
+   * label; null when no displayed comp has a DOM.
+   */
+  avgDomOfDisplayedComps: number | null;
+  /** How many displayed comps carried a DOM — the label names N of M. */
+  domCompCount: number;
+}
+
 export interface CompsResult {
   ok: true;
   algoVersion: number;
@@ -190,6 +233,12 @@ export interface CompsResult {
    * Attached by the service on every serve, never stored in comps_cache.
    */
   demographics?: Demographics | null;
+  /**
+   * §14.16.1, same three states: ABSENT = provider lacks the optional
+   * fetch (no section); NULL = attempted and failed/skipped (unavailable
+   * line); PRESENT = the aggregates. Attached per serve, never stored.
+   */
+  neighborhood?: NeighborhoodAggregates | null;
 }
 
 export type CompsFailureCode =
