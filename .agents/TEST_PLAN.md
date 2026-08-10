@@ -348,10 +348,34 @@ These were correct and hand-derived, and several caught real defects
 subject was removed, not because they were wrong. The v2 hand-derivations stay
 in `V2-RECOMPUTE.md` as the record.
 
-**Kept deliberately despite having no consumer:** the `trimmedMean` /
-`calculateArv` guard tests (BUG-002 — throw rather than return NaN/Infinity).
-The functions remain exported, and an unguarded export is one reuse away from
-being a live hazard again.
+**Kept deliberately despite having no consumer** — *revised once the removal
+landed.* The original ruling was to keep the BUG-002 guard tests because "an
+unguarded export is one reuse away from being live". On inspection at `12eb0e7`
+that only half applies, and the two halves went different ways:
+
+- `trimmedMean` — **retired with its function.** `src/features/comps/arv.ts` is
+  deleted outright, so there is no export left to guard. Deleted code cannot
+  regress. Nothing is kept.
+- `pricePerSqft` — **kept, and re-pointed.** It was not deleted, it MOVED:
+  the same division now happens inline in `scoreComp` (`rank.ts:35`), which is
+  exported standalone. The guard has a live subject, so the BUG-002 cases moved
+  to `rank.test.ts` along with it.
+
+The guard also changed SHAPE, not just address: the old helpers threw, the
+inline version degrades to 0 for price and saturates the sqft term. Both are
+defensible, so the re-pointed cases assert the guarantee — always finite,
+always inside 0–100 — rather than the mechanism.
+
+Two divisions on the SUBJECT side are covered there for the first time
+(`|cSqft − sSqft| / sSqft` and the lot equivalent). Neither was reachable
+through the old `arv.ts` tests, and they resolve their unknowns in OPPOSITE
+directions — unknown sqft SATURATES the term, unknown lot scores ZERO (§14.3,
+"unknown is not a penalty"). That asymmetry is deliberate and is now pinned,
+because it is exactly the kind of thing a later reader tidies into consistency.
+
+**`tests/comps/arv.test.ts` is deleted** (57 cases). Retired, not lost: this
+table is the record of what it covered, and `V2-RECOMPUTE.md` holds the
+hand-derivations.
 
 ## KEPT AND RE-POINTED
 

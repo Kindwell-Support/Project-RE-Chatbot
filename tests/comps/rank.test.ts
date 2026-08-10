@@ -519,4 +519,90 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
       }
     });
   });
+  // =========================================================================
+  // BUG-002, RE-POINTED. `arv.ts` is deleted, so the `trimmedMean` half of the
+  // guard retires with its function — deleted code cannot regress. But
+  // `pricePerSqft` was not deleted, it MOVED: it is now computed inline in
+  // `scoreComp` (rank.ts:35), and every division in this function is a place
+  // NaN or Infinity can re-enter. An unguarded division is one bad payload
+  // away from being live, and `scoreComp` is exported standalone.
+  //
+  // Note the guard changed SHAPE as well as address. The old helpers threw;
+  // the inline version degrades to 0 (price) or saturates the term (sqft).
+  // Both are defensible, so these cases assert the GUARANTEE — always finite,
+  // always inside 0-100 — rather than the mechanism, which is MASON's to pick.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('BUG-002 — degenerate inputs never produce NaN or Infinity', () => {
+    const DEGENERATE: Array<[string, Partial<RawComp>]> = [
+      ['null price', { soldPrice: null }],
+      ['zero price', { soldPrice: 0 }],
+      ['negative price', { soldPrice: -1 }],
+      ['null sqft', { livingArea: null }],
+      ['zero sqft', { livingArea: 0 }],
+      ['negative sqft', { livingArea: -100 }],
+      ['zero price AND zero sqft', { soldPrice: 0, livingArea: 0 }],
+      ['null lot', { lotSize: null }],
+      ['zero lot', { lotSize: 0 }],
+      ['absurd sqft', { livingArea: 1e9 }],
+      ['absurd price', { soldPrice: 1e15 }],
+    ];
+
+    it.each(DEGENERATE)('comp side: %s stays finite and in range', (_name, over) => {
+      const s = scoreComp(SUBJECT, comp(over), NOW);
+      expect(Number.isFinite(s.pricePerSqft), 'pricePerSqft is NaN or Infinity').toBe(true);
+      expect(Number.isFinite(s.score), 'score is NaN or Infinity').toBe(true);
+      expect(s.score).toBeGreaterThanOrEqual(0);
+      expect(s.score).toBeLessThanOrEqual(100);
+      for (const [k, v] of Object.entries(s.parts)) {
+        expect(Number.isFinite(v), `parts.${k} is NaN or Infinity`).toBe(true);
+        expect(v, `parts.${k} is negative`).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('subject side: a zero or null subject sqft divides by zero if unguarded', () => {
+      // The division that is easiest to miss, because every realistic subject
+      // has a sqft: |cSqft - sSqft| / sSqft. With sSqft = 0 that is x/0.
+      for (const livingArea of [0, null, -100]) {
+        const s = scoreComp({ ...SUBJECT, livingArea }, comp(), NOW);
+        expect(Number.isFinite(s.score), `subject sqft ${livingArea} produced ${s.score}`).toBe(true);
+        expect(s.parts.sqft, 'unknown subject sqft must SATURATE, not vanish')
+          .toBeCloseTo(WEIGHT_SQFT, 9);
+      }
+    });
+
+    it('subject side: a zero or null subject lot divides by zero if unguarded', () => {
+      for (const lotSize of [0, null, -100]) {
+        const s = scoreComp({ ...SUBJECT, lotSize }, comp({ lotSize: 50000 }), NOW);
+        expect(Number.isFinite(s.score), `subject lot ${lotSize} produced ${s.score}`).toBe(true);
+        // Unlike sqft, an unknown LOT scores 0 — §14.3 says unknown is not a
+        // penalty. The two divisions resolve their unknowns in OPPOSITE
+        // directions, which is exactly the kind of asymmetry that gets
+        // "tidied up" into consistency by a later reader.
+        expect(s.parts.lot, 'an unknown lot became a penalty').toBe(0);
+      }
+    });
+
+    it('BUG-003 — a future-dated comp scores a NON-NEGATIVE recency term', () => {
+      // The defensive half. min() alone capped only the top of the range, so a
+      // future date scored negative and sorted AHEAD of flawless comps: bad
+      // data promoted, not merely tolerated. Rule 12 rejects these at the
+      // filter, but scoreComp is exported and must hold on its own.
+      const future = scoreComp(SUBJECT, comp({ soldDate: daysAgo(-400) }), NOW);
+      expect(future.monthsAgo, 'precondition: this comp is not actually future-dated')
+        .toBeLessThan(0);
+      expect(future.parts.recency, 'a future sale earned a NEGATIVE recency score').toBe(0);
+      expect(future.score).toBeGreaterThanOrEqual(0);
+
+      // ...and it must not outrank a perfect comp.
+      const perfect = scoreComp(SUBJECT, comp(), NOW);
+      expect(
+        future.score,
+        'a future-dated comp scores better than an identical one sold today',
+      ).toBeGreaterThanOrEqual(perfect.score);
+    });
+
+    it('an empty comp list ranks to an empty array, not a crash', () => {
+      expect(rankComps(SUBJECT, [], NOW)).toEqual([]);
+    });
+  });
 });
