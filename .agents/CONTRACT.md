@@ -265,7 +265,43 @@ unavailable); never infer a figure the API did not return.
 
 ### 14.11 Out of scope
 
-- **Neighbourhood summary** — all of it. Separate block.
+- ~~**Neighbourhood summary** — all of it. Separate block.~~ Superseded:
+  the sales-aggregate half is now scoped and ruled (§14.16); Census
+  demographics were already in scope (§14.10).
+
+### 14.16 Neighbourhood sales aggregates — RULED, NOT BUILT (operator, 2026-08-10)
+
+Client spec: per lookup, 1-mile radius, past 12 months — total sales, avg
+price, avg $/sqft, avg bed/bath, avg DOM. Scoping evidence in
+`reports/NEIGHBOURHOOD_AGGREGATES_SCOPING.md` (both recorded search runs hit
+the 40-result cap; the pool's "12 months" is really 4–5 weeks deep).
+
+**RULING 1 — dedicated 1-mile fetch with the 12-month window SERVER-SIDE**
+(Zillow `doz=12m`), never the candidate pool. Cost was not the deciding
+factor: the pool version is structurally wrong in a way no member could
+detect. `dedupeSales` runs on the aggregate set BEFORE any average — BUG-010's
+duplicate pair sat in a recorded pool and would double-count.
+
+**RULING 2 — DOM is the labelled 5-comp average** (option b): already paid
+for by the detail slice. The full-accuracy version (a detail run per sale
+over 100+ sales) blows the 90s ceiling — an accurate number that times out is
+worth less than a labelled approximation that arrives. **The label is
+LOAD-BEARING and non-negotiable: it must read as the average of the 5 comps
+shown, never as the neighbourhood figure. If the label cannot render, the
+line does not render.**
+
+**Build gate — the resultsLimit spike comes FIRST (one run):** does
+`MAP_MARKERS` honour a `resultsLimit` above ~40, and how many items does a
+real urban 1-mile/12-month query return? Reported to the operator BEFORE any
+aggregate code exists; if the cap holds regardless, the approach needs
+rethinking.
+
+**Candidate, recorded NOT built (operator):** once the aggregate pool exists
+(potentially hundreds of sales), it is a far better basis for outlier
+detection than 5 comps — flag when the comp set sits meaningfully above or
+below the neighbourhood distribution. Would have caught the Don Frank case
+(tight comps, high confidence, subject sold ~15% above every one). A
+candidate for a future ruling; nothing here authorizes building it.
 
 ### 14.13 BUG-010 — duplicate-sale dedupe (operator ruling)
 

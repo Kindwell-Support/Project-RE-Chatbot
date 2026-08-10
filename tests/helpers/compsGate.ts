@@ -34,7 +34,10 @@ export type CompsModule =
   | 'cache/compsCache'
   // §14.14 detail enrichment — specs written pre-build, from the contract and
   // the recorded spike fixtures.
-  | 'detail' | 'cache/detailCache';
+  | 'detail' | 'cache/detailCache'
+  // §14.10 Census demographics — spec written pre-build from the operator's
+  // four guarantees. Skips until the module lands; fails under COMPS_STRICT.
+  | 'census';
 
 export function hasModule(...mods: CompsModule[]): boolean {
   return mods.every((m) => existsSync(resolve(SRC, `${m}.ts`)));

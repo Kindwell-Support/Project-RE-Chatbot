@@ -607,3 +607,121 @@ Then classify each hit — the sweep does not tell you which are wrong:
 
 Baseline at `c3bc55a`: 21 guarded blocks, 5 dead, all five classified as
 conditional rules. A sweep returning more than five wants explaining.
+
+
+---
+
+# APPENDIX — NEXT THREE SLICES: what I will test, derived before the build
+
+Order per the operator: **Census → spike → aggregates.** Rulings recorded here
+so they cannot drift while the slices wait. Where a ruling is not yet in
+CONTRACT.md it is marked — the contract is the referee and prose in my plan
+does not bind MASON.
+
+## 1. CENSUS (next) — `tests/comps/census.test.ts`, 12 cases, written
+
+Guarantees 1 and 2 are CONTRACT §14.10. Guarantees 3 and 4 are the operator's
+ruling and are **NOT in the contract yet** — raised for a CONTRACT_CHANGE.
+
+### The one that will bite: ACS sentinels (guarantee 3)
+
+The ACS API does not omit unavailable values. It returns negative sentinels in
+the same numeric field:
+
+| value | meaning |
+| --- | --- |
+| −666666666 | estimate not computable for this geography |
+| −999999999 | suppressed — too few samples to publish |
+| −888888888 | not applicable |
+| −222222222 | too few samples for a reliable estimate |
+
+This is the `daysOnZillow: -1` class exactly, and this project has already
+shipped that class once. Both wrong answers are worse than silence: pass it
+through and render "median household income −$666,666,666", or coalesce with
+`|| 0` and render "$0" — a real-looking figure claiming a neighbourhood has no
+income. Tested per-sentinel, plus the inverse trap: a genuine 0% owner-occupied
+is real in an all-rental tract and must survive a sentinel filter.
+
+### Why geography and vintage are not cosmetic (guarantee 4)
+
+A tract is a few thousand people. A figure from the NEIGHBOURING tract is a
+confident, invisible, wrong fact about the member's property — the wrong-house
+bug in demographic clothing, and the geography label is what makes it
+checkable. ACS 5-year estimates lag ~2 years, so an unvintaged figure reads as
+current.
+
+**Pinned as the same rule as BUG-008**: if the provenance cannot render, the
+FIGURE must not render. A demographic number with no vintage is the unlabelled
+pre-filled ARV, one surface over. Both directions tested (no vintage, no
+geography).
+
+### Also to test when the module lands
+
+- **Cache by tract, and prove the key discriminates.** Sharing an entry between
+  two addresses in the same tract is the cost lever and is correct; two
+  addresses in DIFFERENT tracts sharing one is the wrong-house bug with a cache
+  in front of it. Needs a two-address case, not just a hit/miss count.
+- **Geography derives from the SUBJECT's lat/lng**, and a failed geocode
+  yields unavailable rather than a nearby tract.
+- Failure is non-fatal end-to-end: comps render in FULL, section says
+  unavailable, and no figure appears in a failed section.
+
+### Dead-guard sweep AFTER Census
+
+Census adds a product branch, so the recurring sweep applies. Baseline to beat:
+**21 guarded blocks, 5 dead, all five conditional rules.** More than five wants
+explaining — and the likely new members are exactly the shapes this slice
+introduces (`if (census)` around the section, `if (figure !== null)` around
+each line). Those are the dead-guarantee pattern if the false branch is the
+normal path, which for a slice whose failure mode is "unavailable" it may well
+be.
+
+## 2. AGGREGATES — the 12-month window is the whole test
+
+Ruling: dedicated 1-mile fetch, `doz=12m` server-side. NOT the candidate pool,
+which caps at 40 newest sales and is therefore four to five weeks deep in a
+dense market.
+
+**The bug is invisible in the output**, which decides how to test it. A
+truncated window produces a smaller, younger, entirely plausible average. So
+the assertions cannot be on the number:
+
+1. **A SEPARATE provider call happens** — by call count and by argument, with
+   `doz=12m` on the request. Reusing the candidate pool is the failure, and it
+   shows up as a missing call, not a wrong figure.
+2. **The returned set SPANS the window.** Fixture built so the aggregate result
+   contains genuinely old sales and the candidate pool contains only recent
+   ones. If the implementation reuses the pool, the age span collapses and the
+   span assertion fails. This is the discriminator — it distinguishes the two
+   implementations by the DATA they used, which no output assertion can.
+3. **The cap-detection invariant.** If the aggregate count equals the
+   provider's result cap AND the oldest sale is far younger than 12 months, the
+   window was truncated and the figure must not be presented as 12-month.
+   Silence beats a confidently mislabelled average.
+
+**dedupeSales before averaging**, per the ruling. The operator's point is the
+test design point: a duplicate pair in a 100-sale set shifts the average
+slightly, which is harder to spot than in a set of 5. So the fixture will make
+the duplicate's effect LARGE enough to be unambiguous, and the assertion will
+be on the deduped COUNT as well as the hand-computed average — a shift too
+small to distinguish from rounding is not a discriminator.
+
+## 3. DOM — the label IS the guarantee
+
+Ruling: option (b), the 5-comp average.
+
+- The rendered string must SAY it is the five-comp average.
+- It must NEVER present as a neighbourhood figure.
+- **If the label cannot render, the LINE must not render.** Tested as its own
+  path, not inferred from the happy case.
+
+Same class as an unlabelled pre-filled ARV, and the third time this shape has
+come up (BUG-008 the widget, guarantee 4 above, this). Worth naming as a
+standing rule rather than three separate cases:
+
+> **A number the member did not supply must carry its provenance, and if the
+> provenance cannot render, the number must not render.**
+
+The failure is never that the figure is wrong. It is that a figure computed
+over five properties, or one tract, or one member's own earlier input, reads
+as something broader and more authoritative than it is.
