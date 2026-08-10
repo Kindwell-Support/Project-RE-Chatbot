@@ -110,6 +110,23 @@ export const ACS_SENTINELS: ReadonlySet<number> = new Set([
 ]);
 
 /**
+ * The BUG-013 reconciliation backstop's PREDICATE, exported (operator
+ * ruling): the backstop exists precisely because the domain floor might
+ * break in a future refactor, so its branch must be testable WITHOUT first
+ * writing that bug — a branch reachable only through a hypothetical defect
+ * is the dead-guarantee class. True = the percentages are coherent (or
+ * there is nothing to reconcile); false = out-of-range, and the mapper
+ * nulls BOTH and reports.
+ */
+export function tenurePercentagesReconcile(
+  ownerPct: number | null,
+  renterPct: number | null,
+): boolean {
+  if (ownerPct === null || renterPct === null) return true;
+  return ownerPct >= 0 && ownerPct <= 100 && renterPct >= 0 && renterPct <= 100;
+}
+
+/**
  * ACS body ([[headers],[values,...]]) → Demographics. Columns BY NAME, never
  * position.
  *
@@ -170,8 +187,8 @@ export function mapDemographicsFromAcs(
   // unavailable. Unreachable while the domain floor holds (non-negative
   // counts cannot leave the range); kept so the guarantee survives any
   // future refactor of the floor, and reported when it fires.
-  if (ownerPct !== null && renterPct !== null && (ownerPct < 0 || ownerPct > 100 || renterPct < 0 || renterPct > 100)) {
-    onUnrecognized?.({ variable: 'B25003 tenure reconciliation', value: ownerPct, tractGeoid: tract.geoid });
+  if (!tenurePercentagesReconcile(ownerPct, renterPct)) {
+    onUnrecognized?.({ variable: 'B25003 tenure reconciliation', value: ownerPct ?? NaN, tractGeoid: tract.geoid });
     ownerPct = null;
     renterPct = null;
   }
