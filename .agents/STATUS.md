@@ -140,3 +140,4 @@ ARV on 123 Main again?" with two comps runs in history, the model re-ran per
 RULING 0024 and relayed a fresh block — the whitelist assertion found ZERO
 figures outside the eight known comp prices.
 21:48 MASON — RULING 0026 executed @ f0b81ce (extraction fallback: same verification, ambiguity->unbound, over-capture refined; unbind announced via unbound_from + echo); smokes 15/15, only red is INSPECTOR's own tripwire; §8/§9/§14.15 amended, FIXED 0037 sent — HOLDING for re-issued GREEN
+22:05 MASON — DETAIL SLICE shipped @ 66699ce (§14.14.1: batched 3rd run, join by addressOrUrlFromInput never position, zpid cache 90d, detail-free comps_cache + re-attach per serve, 20s ceiling floor, no-retry pinned, cap counts lookups, style/condition captured NOT rendered); smokes 9/9, INSPECTOR pre-written suite 10/11, 4 reds all fixture-vintage theirs; HANDOFF 0038 + maybeSingle flag relayed — next: Census §14.10 after their verification
