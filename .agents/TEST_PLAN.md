@@ -405,3 +405,66 @@ statement about relay discipline; it becomes a statement about arithmetic that
 no longer exists. Weaker to violate, stronger when held — and only the live
 battery can test it, because the guarantee is now entirely about model
 behaviour.
+
+
+---
+
+# APPENDIX — §14.14 DETAIL ENRICHMENT (spec written from the contract + the spike)
+
+`tests/comps/detailEnrichment.test.ts` (27) + the §14.14 additions to
+`format.test.ts`. Derived from CONTRACT §14.14 and the two recorded payloads
+(`spike-detail-batch5.json`, `spike-detail-batch-mixed.json`) before reading
+the implementation; only the seam NAMES were aligned afterwards.
+
+## The evidence is tested first
+
+Four cases assert the recorded fixtures still say what §14.14 was written
+from — five valid items with unique join keys, real `daysOnZillow` (not the
+search payload's −1 sentinel), one invalid item alongside two intact ones,
+and the two parking sources agreeing. If the evidence moves, the failure
+should say so there rather than as a confusing miss downstream.
+
+## THE JOIN (rule 1) — the invisible failure
+
+Index-matching is banned "regardless of passing tests", so the case was
+mutation-checked: running the banned implementation against the shuffled
+fixture mismatches **4 of 5** year-built values, all plausible, nothing
+null, no error. Covered: out-of-order maps correctly; a dropped item joins to
+nothing rather than shifting neighbours; an unrequested echo is ignored; a
+keyless item is dropped (the only way to "use" it is positionally); a
+re-formatted echo still joins without crossing properties; the cache wins over
+the batch; the cache-write key is the COMP zpid, not the batch item's (BUG-010:
+one sale, two zpids — the wrong key is a cache that silently never hits).
+
+## PARTIAL FAILURE (rule 3) — the new surface
+
+The module's first non-total failure. A failed item costs only its own comp;
+`missing` counts it; a sparse item nulls only the absent field. Beyond the
+brief, three falsy traps: parking `0` is a value; a `0` from the PRIMARY
+source must not fall through to the fallback; the `-1` DOM sentinel nulls but
+a genuine `0` survives. Plus: a FAILED item is never cached — the detail TTL
+is 90 days, so caching a failure turns a transient miss into a durable one.
+
+## COST (rules 2, 4, 6) — call counts, never timing
+
+Cold lookup = exactly 3 runs. The one batch carries the same ADDRESSES as the
+final kept set, not merely the same count. Warm detail cache = **0** detail
+runs, with a precondition that the cold run wrote and a check that details
+survived the round trip. No `fetchDetailBatch` on the provider = 2 runs, no
+crash.
+
+## THE CEILING (rule 5)
+
+Asserted through an INJECTED clock so it tests the decision rather than racing
+it, with a CONTROL proving the same lookup enriches when time remains —
+without it the ceiling case passes for a build that never enriches at all.
+
+## RENDER
+
+Three labelled fields, `label —` on null (a bare dash in a three-value run has
+no referent). §14.5 em-dash exclusivity extended: "fully populated" now means
+detail attached too. Style/condition captured but NOT rendered — rendering
+them without the client ruling ships an un-approved claim about a house.
+
+**BUG-012 open**: `year built 1,928` — the year goes through the sqft/lot
+formatter. Repro live and red in `format.test.ts`.

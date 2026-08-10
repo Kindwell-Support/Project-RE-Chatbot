@@ -31,7 +31,10 @@ export type CompsModule =
   | 'types' | 'config' | 'normalize' | 'filter' | 'rank' | 'arv'
   | 'format' | 'service' | 'tools'
   | 'providers/types' | 'providers/apifyZillow' | 'providers/geocode' | 'providers/stub'
-  | 'cache/compsCache';
+  | 'cache/compsCache'
+  // §14.14 detail enrichment — specs written pre-build, from the contract and
+  // the recorded spike fixtures.
+  | 'detail' | 'cache/detailCache';
 
 export function hasModule(...mods: CompsModule[]): boolean {
   return mods.every((m) => existsSync(resolve(SRC, `${m}.ts`)));

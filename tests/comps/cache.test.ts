@@ -27,6 +27,16 @@ import { normalizeAddress, cacheKey } from '../../src/features/comps/normalize.j
 import { ALGO_VERSION, CACHE_TTL_DAYS } from '../../src/features/comps/config.js';
 import { golden01 } from '../fixtures/golden/index.js';
 
+/**
+ * NOTE on `noDetailSupport`. These cases are about the COMPS cache and count
+ * provider calls to prove it. Detail enrichment (§14.14) adds a THIRD actor
+ * run per lookup, and with no detail cache wired it re-runs even on a comps
+ * hit — correct behaviour, since the comps cache deliberately stores the
+ * detail-FREE result. Rather than let that noise inflate every count here,
+ * these spies present as a provider that predates the slice. The detail
+ * cache's own cost guarantees are asserted in detailEnrichment.test.ts,
+ * including that a warm detail cache means ZERO detail runs.
+ */
 const MODS = ['service', 'cache/compsCache'] as const;
 
 const NOW = new Date('2026-08-05T12:00:00.000Z');
@@ -85,7 +95,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('miss, then hit', () => {
     it('the first call hits the provider and the second does not', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache, counts } = makeCache();
 
       const first = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
@@ -104,7 +114,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       // is the comp set and the tier that produced it. That is a stricter test
       // than the ARV was — two different comp sets can round to the same ARV,
       // but they cannot have the same zpids, prices and $/sqft.
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       const live = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       const hit = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
@@ -133,7 +143,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       // The removal has to hold on BOTH sides of the cache. A pre-removal entry
       // shape that still round-trips an `arv` key would resurrect the number
       // for every session that hits a warm key.
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       const hit = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
@@ -145,7 +155,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
 
     it('address variants collapse to ONE provider run', async () => {
       // The cost-control payoff of §5.1 normalization, measured in Apify runs.
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       for (const variant of [
         '123 Main St, Seattle WA',
@@ -159,7 +169,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('genuinely different addresses do NOT share a cache entry', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       await runComps('123 Main St N, Seattle WA', { provider: spy.provider as never, cache, now });
       await runComps('123 Main St S, Seattle WA', { provider: spy.provider as never, cache, now });
@@ -170,7 +180,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('expiry', () => {
     it('an expired entry is treated as absent and refetches', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
@@ -187,7 +197,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('an entry inside the TTL is served without touching the provider', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       const billed = spy.callCount;
@@ -208,7 +218,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('ALGO_VERSION recompute', () => {
     it('recomputes from the stored raw payload with ZERO provider calls', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache, counts } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
@@ -250,7 +260,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('the recomputed entry is stamped with the CURRENT algo version', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache, rows } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
@@ -265,7 +275,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       expect(rows.get(KEY)!.algoVersion, 'a stale algoVersion survived the recompute')
         .toBe(ALGO_VERSION);
       // ...otherwise every subsequent call recomputes forever.
-      const spy2 = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy2 = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       await runComps(ADDRESS, { provider: spy2.provider as never, cache, now });
       expect(spy2.callCount).toBe(0);
     });
@@ -273,7 +283,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     it('a stale entry with NO raw payload must refetch rather than serve nothing', async () => {
       // Recompute-from-raw is only possible if raw was stored. An entry from
       // before raw-caching existed has to fall back to a live run.
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
@@ -294,7 +304,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('a broken cache costs money, never correctness', () => {
     it('a read failure degrades to a live run rather than an error', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const cache: CompsCacheLike = {
         async get() { throw new Error('supabase unavailable'); },
         async set() { /* fine */ },
@@ -305,7 +315,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('a write failure still returns the result', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const cache: CompsCacheLike = {
         async get() { return null; },
         async set() { throw new Error('supabase unavailable'); },
@@ -322,7 +332,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('runs at all with no cache injected', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const out = await runComps(ADDRESS, { provider: spy.provider as never, now });
       expect(out.ok).toBe(true);
     });
@@ -331,7 +341,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('the daily spend cap', () => {
     it('blocks a provider run once the cap is reached, BEFORE any provider work', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const budget = createDailyRunBudget(2);
       const opts = { provider: spy.provider as never, budget, now };
 
@@ -349,7 +359,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('RATE_LIMITED copy carries no number and offers manual entry', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const budget = createDailyRunBudget(0);
       const out = await runComps(ADDRESS, { provider: spy.provider as never, budget, now });
       expect(out.ok).toBe(false);
@@ -368,7 +378,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       // The cap guards Apify spend. A hit costs nothing, so charging for it
       // would lock a member out for re-reading one address at zero cost to
       // the client.
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       const budget = createDailyRunBudget(1);
       const opts = { provider: spy.provider as never, cache, budget, now };
@@ -386,7 +396,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('the cap resets on a new day', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const budget = createDailyRunBudget(1);
       const day1 = await runComps('1 A St', { provider: spy.provider as never, budget, now });
       expect(day1.ok).toBe(true);
@@ -412,7 +422,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
         warn: (...a: unknown[]) => lines.push(a.map(String).join(' ')),
         error: (...a: unknown[]) => lines.push(a.map(String).join(' ')),
       };
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       await runComps(ADDRESS, {
         provider: spy.provider as never, cache, logger: logger as never, now,

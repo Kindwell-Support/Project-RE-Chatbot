@@ -9,6 +9,35 @@ carried into the GREEN message with its severity).
 
 ---
 
+## BUG-012 — `year built 1,928`: the year is rendered as a quantity
+
+- **Status**: OPEN — reported in mailbox `0027`. Repro is live and red in
+  `tests/comps/format.test.ts` ("YEAR BUILT is not a quantity").
+- **Severity**: low mechanically, but member-visible on EVERY comp and in the
+  one column that is asking to be trusted.
+- **Found**: writing the §14.14 render spec.
+
+`format.ts:129` renders the new detail line through the shared `num()` helper:
+
+```ts
+const num = (v, suffix='') => v === null || v === undefined ? NA : `${v.toLocaleString('en-US')}${suffix}`;
+`  year built ${num(d?.yearBuilt ?? null)} · days on market ...`
+```
+
+`toLocaleString('en-US')` puts a thousands separator in a YEAR: **1928 renders
+as `1,928`**. Correct for sqft and lot size — which is why the helper is right
+to exist and wrong to reuse here.
+
+Affects every comp built before the year 10000, i.e. all of them. It is not a
+rounding nit: a year formatted as a quantity is what a member screenshots into
+a rehab scope, and it makes the column look machine-generated in exactly the
+place the block is asking to be believed.
+
+Fix is a year-shaped formatter (`String(v)`), not a change to `num()` —
+sqft and lot SHOULD keep their separators.
+
+---
+
 ## BUG-011 — the ARV removal orphaned `subjectAddress`; every manual ARV binds to the literal string "manual entry"
 
 - **Status**: CLOSED — fixed at `0b7dcab` (operator-ruled: optional `address`

@@ -540,8 +540,14 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       const lines = text.split('\n');
       const i = lines.findIndex((l) => l.includes(address));
       expect(i, `no rendered row for ${address}`).toBeGreaterThanOrEqual(0);
-      // the row is the address line plus its two continuation lines
-      return lines.slice(i, i + 3).join('\n');
+      // The address line plus its continuation lines. §14.14 added a third
+      // (year built / DOM / parking), so a fixed slice of 3 silently cut the
+      // link line off the end and two "link unavailable" assertions started
+      // passing on text that no longer contained the row they meant. Bound by
+      // the NEXT row instead, so the helper cannot rot again when a line is
+      // added or removed.
+      const next = lines.findIndex((l, n) => n > i && /^- \*\*/.test(l));
+      return lines.slice(i, next === -1 ? undefined : next).join('\n');
     }
 
     /**
@@ -553,6 +559,21 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
     const NULL_MARKERS = [/— bd/, /\/ — ba/, /lot — ·/, /lot —$/m];
     const hasNullMarker = (t: string) => NULL_MARKERS.some((m) => m.test(t));
 
+    /** golden01 with detail attached to every comp — "fully populated" now includes §14.14. */
+    const fullyPopulated = () => {
+      const base = resultFor(golden01) as { comps: Array<Record<string, unknown>> };
+      return {
+        ...base,
+        comps: base.comps.map((c, i) => ({
+          ...c,
+          detail: {
+            daysOnMarket: 20 + i, parkingSpaces: 2, yearBuilt: 1990 + i,
+            architecturalStyle: 'Ranch', propertyCondition: 'Updated',
+          },
+        })),
+      };
+    };
+
     it('PRECONDITION + §14.5 MARKER EXCLUSIVITY: a fully-populated render has ZERO em dashes', () => {
       // Two guarantees in one. As a precondition: if the fully-populated
       // golden already renders dashes, nothing below discriminates null from
@@ -561,12 +582,53 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       // null marker — a marker that doubles as punctuation stops being
       // explicit, because a member scanning a row cannot tell "missing data"
       // from typography.
-      const text = renderCompsForChat(resultFor(golden01) as never);
+      const text = renderCompsForChat(fullyPopulated() as never);
       expect(
         text.includes('—'),
         'an em dash appears in a fully-populated success render — either a field ' +
           'was nulled by accident or the renderer is using the null marker as punctuation',
       ).toBe(false);
+    });
+
+    it('§14.14 the three detail fields are LABELLED, and null renders label-then-dash', () => {
+      // A bare dash in a three-value run ("— · — · —") has no referent; the
+      // member cannot tell which fact is missing. Labels make each absence
+      // self-describing, which is the whole point of an explicit marker.
+      const withDetail = renderCompsForChat(fullyPopulated() as never);
+      expect(withDetail, 'year built is not labelled').toMatch(/year built \d/);
+      expect(withDetail, 'days on market is not labelled').toMatch(/days on market \d/);
+      expect(withDetail, 'parking spaces is not labelled').toMatch(/parking spaces \d/);
+
+      // And with NO detail at all, all three read as labelled absences.
+      const bare = renderCompsForChat(resultFor(golden01) as never);
+      expect(bare, 'a comp with no detail lost its year-built column').toContain('year built —');
+      expect(bare).toContain('days on market —');
+      expect(bare).toContain('parking spaces —');
+    });
+
+    it('§14.14 YEAR BUILT is not a quantity — no thousands separator', () => {
+      // 1928 is a year. Rendering it as "1,928" is not a rounding nit: it
+      // reads as a quantity, it is what a member screenshots into a rehab
+      // scope, and it makes the column look machine-generated in the one
+      // place the block is asking to be trusted. Every comp built before the
+      // year 10000 is affected, which is all of them.
+      const text = renderCompsForChat(fullyPopulated() as never);
+      expect(text, 'the year is comma-formatted').not.toMatch(/year built \d,\d{3}/);
+      expect(text, 'the year did not render at all').toMatch(/year built (19|20)\d{2}/);
+    });
+
+    it('§14.14 style and condition are CAPTURED but must NOT be rendered', () => {
+      // Operator directive: the client waived them as MATCHING criteria,
+      // which is not the same as approving them for DISPLAY. Display needs
+      // its own ruling. They are carried on the type so that ruling is a
+      // render change rather than a re-scrape — and until it exists, leaking
+      // them into the block is shipping an un-approved claim about a house.
+      const text = renderCompsForChat(fullyPopulated() as never);
+      expect(text, 'architecturalStyle was rendered without a client ruling')
+        .not.toContain('Ranch');
+      expect(text, 'propertyCondition was rendered without a client ruling')
+        .not.toContain('Updated');
+      expect(text.toLowerCase()).not.toMatch(/style|condition/);
     });
 
     it.each([

@@ -31,15 +31,18 @@ import {
   ProviderHttpError,
   ProviderNetworkError,
 } from '../../src/features/comps/providers/types.js';
+import { mapDetailBatchItems } from '../../src/features/comps/providers/apifyZillow.js';
 
 // ===========================================================================
 // Provider spy — CONTRACT §6
 // ===========================================================================
 
 export interface ProviderCall {
-  method: 'lookupSubject' | 'fetchSoldComps';
+  method: 'lookupSubject' | 'fetchSoldComps' | 'fetchDetailBatch';
   arg: string;
   radiusMi?: number;
+  /** fetchDetailBatch only — the addresses the batch was asked for. */
+  addresses?: string[];
 }
 
 export type ProviderFailure =
@@ -62,6 +65,24 @@ export interface ProviderSpyOptions {
   failFirstNCalls?: number;
   /** Resolve after this many ms, to exercise concurrency. */
   delayMs?: number;
+
+  // --- §14.14 detail enrichment -------------------------------------------
+  /**
+   * Raw detail-scraper items, keyed by the address the batch will be asked
+   * for. The spy echoes `addressOrUrlFromInput` verbatim like the real actor
+   * and returns them SHUFFLED by default, because the recorded actor does
+   * (input 1,2,3,4,5 -> 1,4,5,2,3) and a spy that preserves order would let
+   * an index join pass every service-level test.
+   */
+  detailItems?: Record<string, Record<string, unknown>>;
+  /** Throw on fetchDetailBatch — the whole-run detail failure. */
+  failDetail?: ProviderFailure;
+  /** Return items in input order instead of shuffled. Only for order-agnostic cases. */
+  detailInOrder?: boolean;
+  /** Resolve fetchDetailBatch after this many ms — for the 90s ceiling. */
+  detailDelayMs?: number;
+  /** Omit `fetchDetailBatch` entirely, as a provider that predates the slice. */
+  noDetailSupport?: boolean;
 }
 
 export interface ProviderSpy {
@@ -71,6 +92,8 @@ export interface ProviderSpy {
   /** lookupSubject + fetchSoldComps combined — "did we hit the provider at all". */
   readonly callCount: number;
   readonly subjectCalls: number;
+  /** §14.14 rule 6: must be exactly 1 per lookup, never one-per-comp. */
+  readonly detailCalls: number;
   readonly compsCalls: number;
   reset(): void;
 }
@@ -113,8 +136,30 @@ export function makeProviderSpy(options: ProviderSpyOptions = {}): ProviderSpy {
     if (options.delayMs) await new Promise((r) => setTimeout(r, options.delayMs));
   };
 
+  const detailProvider = options.noDetailSupport
+    ? {}
+    : {
+        async fetchDetailBatch(addresses: string[]) {
+          calls.push({ method: 'fetchDetailBatch', arg: addresses.join('|'), addresses: [...addresses] });
+          if (options.detailDelayMs) await new Promise((r) => setTimeout(r, options.detailDelayMs));
+          if (options.failDetail && failuresRemaining > 0) {
+            failuresRemaining--;
+            throw providerError(options.failDetail);
+          }
+          const bank = options.detailItems ?? {};
+          const items = addresses
+            .filter((a) => bank[a] !== undefined)
+            .map((a) => ({ ...bank[a], addressOrUrlFromInput: a }));
+          // OUT OF ORDER by default — see the note on `detailItems`.
+          if (options.detailInOrder || items.length < 3) return mapDetailBatchItems(items);
+          const shuffled = [items[0], ...items.slice(3), ...items.slice(1, 3)];
+          return mapDetailBatchItems(shuffled);
+        },
+      };
+
   const provider = {
     name: options.name ?? 'spy',
+    ...detailProvider,
 
     async lookupSubject(normalizedAddress: string) {
       calls.push({ method: 'lookupSubject', arg: normalizedAddress });
@@ -145,6 +190,9 @@ export function makeProviderSpy(options: ProviderSpyOptions = {}): ProviderSpy {
     },
     get subjectCalls() {
       return calls.filter((c) => c.method === 'lookupSubject').length;
+    },
+    get detailCalls() {
+      return calls.filter((c) => c.method === 'fetchDetailBatch').length;
     },
     get compsCalls() {
       return calls.filter((c) => c.method === 'fetchSoldComps').length;
