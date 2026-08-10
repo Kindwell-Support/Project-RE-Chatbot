@@ -1,92 +1,62 @@
 /**
- * GOLDEN 03 — thin case: exactly 3 comps. ARV is computed, trimCount is 0,
- * confidence is `low`.
+ * GOLDEN 03 — thin case: exactly 3 comps. The n = 3 floor holds, and the
+ * ladder reports the LAST rung it tried.
  *
  * ===========================================================================
- * ALL EXPECTED VALUES BELOW WERE COMPUTED BY HAND FROM CONTRACT.md §5.
+ * ALL EXPECTED VALUES BELOW WERE COMPUTED BY HAND FROM CONTRACT.md §5/§14.
  * ===========================================================================
  *
  * This case sits on MIN_COMPS_TO_COMPUTE (3) — one comp fewer and the whole
- * thing must refuse to produce a number (that's golden 05). It also carries two
- * properties that are easy to get wrong and impossible to notice:
+ * thing must refuse to return a comp set (that's golden 05). It also carries a
+ * property that is easy to get wrong and impossible to notice:
  *
- *   1. radiusTierMi is 2.0, not 0.5, even though every comp is within 0.21 mi.
- *      Three comps never reaches MIN_COMPS_FOR_TIER (5), so the pass escalates
- *      0.5 -> 1.0 -> 2.0, finds the same three every time, and falls through to
- *      "use the 2.0 mi outcome". Reporting 0.5 here — the tier the comps
- *      actually came from — is the natural bug and it materially misleads the
- *      user about how hard we had to search.
- *
- *   2. Confidence is `low` because of the COMP COUNT, even though cv (0.126),
- *      median distance (0.138 mi) and median age (2.96 mo) would all clear the
- *      `high` bar. The count clause has to bind on its own.
+ *   The reported rung is 3.0 mi / 12 mo even though every comp is within
+ *   0.21 mi and none is older than four months. Three comps never reaches
+ *   MIN_COMPS_FOR_TIER (5), so the walk exhausts all six rungs, finds the
+ *   same three every time, and must report the LAST rung tried — the honest
+ *   statement of how hard we searched — not the rung the comps happened to
+ *   come from.
  *
  * Subject: 2,000 sqft, 3 bed / 2 bath, SFR, lot 6,000. `now` = 2025-07-15Z.
  *
  * ---------------------------------------------------------------------------
- * v2 (CONTRACT §14, ALGO_VERSION 2). The arithmetic below the divider is the
- * v1 derivation and is SUPERSEDED — kept only as the record of what changed.
- * The authoritative hand-derivation for every v2 value in this file is
- * `V2-RECOMPUTE.md` in this directory, which walks the new ladder, the 20%
- * band, the cap at 5, the five-term score and the rebased confidence.
+ * v2 (CONTRACT §14, ALGO_VERSION 3). Header rewritten as the v2 derivation;
+ * the retired ARV steps are recorded in V2-RECOMPUTE.md.
  * ---------------------------------------------------------------------------
- * ---------------------------------------------------------------------------
+ *
  * STEP 1 — hard filters. All three pass.
- *   sqft band [1500, 2500]: 2000, 1900, 2400 — inside
+ *   sqft band = 2000 ± 20% => [1600, 2400]: sizes 2000, 1900, 2400 — inside,
+ *     with G3-C3 at 2,400 sitting EXACTLY on the +20% edge. The rule rejects
+ *     OUTSIDE the band, so the edge is kept (golden 04 carries both edges).
  *   NON_ARMS_LENGTH: candidate median (n = 3, odd) of [190, 200, 240] = 200
  *     threshold = 0.4 × 200 = 80; min $/sqft 190 > 80 -> nothing rejected
- *   => 3 kept.
  *
- * STEP 2 — radius tier.
- *   0.5 mi -> 3 kept, 3 < 5, escalate
- *   1.0 mi -> 3 kept, 3 < 5, escalate
- *   2.0 mi -> 3 kept, no tiers left -> use this outcome
- *   radiusTierMi = 2.0
+ * STEP 2 — the LADDER (§14.2). Ages against 2025-07-15, months = days/30.44:
+ *   G3-C1  2025-05-16   60 d = 1.9711 mo
+ *   G3-C2  2025-04-16   90 d = 2.9566 mo
+ *   G3-C3  2025-03-17  120 d = 3.9422 mo   <- outside 3 months
+ *
+ *   1.0/3 -> 2   1.0/6 -> 3   1.0/12 -> 3
+ *   3.0/3 -> 2   3.0/6 -> 3   3.0/12 -> 3
+ *   No rung reaches 5; the walk exhausts and the LAST rung's outcome is used.
+ *   => radiusTierMi = 3.0, recencyTierMonths = 12, kept = C1, C2, C3.
+ *   3 >= MIN_COMPS_TO_COMPUTE, so this is a SUCCESS.
  *
  * STEP 3 — $/sqft against each comp's own living area:
  *   G3-C1  400,000 / 2,000 = 200
  *   G3-C2  361,000 / 1,900 = 190
  *   G3-C3  576,000 / 2,400 = 240
  *
- * STEP 4 — trim.
- *   n = 3. The rule is `n >= 5 ? max(1, floor(n * 0.15)) : 0`, so the ternary
- *   short-circuits and trimCount = 0. All three values are used.
+ *   The 240 is a fifth above its neighbours and it is SHOWN, not trimmed —
+ *   there is no trim any more. The member sees the spread and judges it;
+ *   that visibility is what replaced the confidence grade.
  *
- *   Note what the max() would have done if the n ≥ 5 guard were dropped:
- *   max(1, floor(3 × 0.15)) = max(1, 0) = 1, which would trim a 3-element set
- *   down to a ONE-element "mean". The values below are deliberately asymmetric
- *   so that mistake changes the answer — see wrongAnswers.
- *
- * STEP 5 — ARV.
- *   sum = 190 + 200 + 240 = 630
- *   arvPerSqft = 630 / 3 = 210
- *   arv = round(210 × 2,000 / 1,000) × 1,000 = round(420.000) × 1,000 = 420,000
- *
- * STEP 6 — spread (sample, n−1).
- *   mean 210; deviations −20, −10, +30
- *   squares 400, 100, 900  ->  Σd² = 1,400
- *   sample variance = 1,400 / (3 − 1) = 700
- *   sd = √700 = 26.4575131
- *   cv = 26.4575131 / 210 = 0.1259882
- *
- *   (Population sd would be √(1400/3) = 21.6024690 -> a $43,000 band instead of
- *   $53,000. THIS case discriminates sample-vs-population where golden 01
- *   could not, because the difference survives the $1,000 rounding.)
- *
- * STEP 7 — band.
- *   sd × 2,000 = 26.4575131 × 2,000 = 52,915.026
- *   round(52.915026) × 1,000 = 53 × 1,000 = 53,000
- *   arvLow  = 420,000 − 53,000 = 367,000
- *   arvHigh = 420,000 + 53,000 = 473,000
- *
- * STEP 8 — confidence.
- *   compsUsed = 3 under EITHER reading of TEST_PLAN §8 Q1 (kept 3, post-trim 3),
- *   so this case is immune to that ambiguity.
- *   high needs ≥ 6 -> fails.  medium needs ≥ 4 -> fails.  => 'low'
- *   `low` still returns numbers (CONTRACT §5.5) — the rendered copy is what has
- *   to carry the warning, and that is asserted in the format specs, not here.
- * ---------------------------------------------------------------------------
- */
+ * STEPS 4-8 — RETIRED with `arv.ts` (§14.8): trim (this was the trimCount-0
+ *   case), the $420,000 ARV, the sample-vs-population sd discriminator that
+ *   only this case could catch, and the count-bound `low` confidence. All
+ *   recorded in V2-RECOMPUTE.md. `expected.arv` and friends remain in the
+ *   object below but nothing asserts them.
+  */
 import type { GoldenCase, RawComp, SubjectProperty } from './types.js';
 
 const subject: SubjectProperty = {

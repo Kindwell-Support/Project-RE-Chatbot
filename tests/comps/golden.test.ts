@@ -30,6 +30,7 @@ import {
   golden01,
   golden02,
   golden03,
+  golden04,
   golden06,
   golden06MeanInsteadOfMedian,
   type GoldenCase,
@@ -244,6 +245,39 @@ describe(`golden dataset — comp selection correctness${sliceNote(...MODS)}`, (
       expect(tier.kept, 'the n=3 boundary rejects instead of keeping').toHaveLength(3);
       expect(ranked).toHaveLength(3);
       expect(MIN_COMPS_TO_COMPUTE).toBe(3);
+    });
+
+    it('golden-04 REPURPOSED: both ±20% band edges are kept, and the damage of `<` is loud', () => {
+      // G4-C2 is 1,600 sqft (exactly −20% of the 2,000 sqft subject) and
+      // G4-C4 is 2,400 (exactly +20%). The rule rejects OUTSIDE the band, so
+      // both must be KEPT — and this is the case that shows why the edge
+      // matters at the golden level rather than as a unit detail.
+      //
+      // Hand-derived counterfactual (fixture header): under an exclusive band
+      // the two edge comps reject, rung 2 keeps three instead of five, and the
+      // walk exhausts to 3.0/12. The bug does not shave an edge off a table —
+      // it turns a five-comp answer found close and recent into a three-comp
+      // answer reported as a wide, year-deep search.
+      const { tier, ranked } = runPipeline(golden04);
+
+      const kept = ranked.map((r) => r.comp.zpid);
+      expect(kept, 'the exactly-−20% comp was rejected — the band edge is exclusive')
+        .toContain('G4-C2');
+      expect(kept, 'the exactly-+20% comp was rejected — the band edge is exclusive')
+        .toContain('G4-C4');
+      expect(
+        tier.rejected.map((r) => r.reason),
+        'an edge comp was rejected out of the band',
+      ).not.toContain('SQFT_OUT_OF_RANGE');
+
+      // The rung stop: exactly 5 at 1.0/6 must STOP (`>=`, not `>`). Under
+      // either failure shape — exclusive band, or `>` at the rung test — the
+      // walk lands on 3.0/12 instead, so this one assertion discriminates both.
+      expect(ranked).toHaveLength(5);
+      expect(
+        [tier.radiusTierMi, tier.recencyTierMonths],
+        'the walk did not stop at 1.0/6 — either the band edges rejected or the rung test is >',
+      ).toEqual([1.0, 6]);
     });
   });
 

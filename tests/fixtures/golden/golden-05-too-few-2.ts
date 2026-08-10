@@ -42,16 +42,17 @@
  *   excluded from the median entirely. Median of [200, 200, 210] = 200,
  *   threshold 0.4 × 200 = 80. Neither survivor is anywhere near it.
  *
- * STEP 2 — radius tier. C3 and C4 fail for reasons that have nothing to do with
- *   distance, so widening the search cannot rescue them:
- *     0.5 mi -> 2 kept, 2 < 5, escalate
- *     1.0 mi -> 2 kept, 2 < 5, escalate
- *     2.0 mi -> 2 kept, out of tiers -> use this outcome
- *   radiusTierMi = 2.0
+ * STEP 2 — the LADDER (§14.2). C3 and C4 fail for reasons no rung can cure:
+ *   C3 is unsold at every rung, and C4 at 400 d = 13.14 mo is outside even the
+ *   12-month wall. So every one of the six rungs keeps the same two, the walk
+ *   exhausts, and the LAST rung's outcome is used:
+ *     1.0/3 -> 2   1.0/6 -> 2   1.0/12 -> 2
+ *     3.0/3 -> 2   3.0/6 -> 2   3.0/12 -> 2
+ *   radiusTierMi = 3.0, recencyTierMonths = 12
  *
  * STEP 3 — the gate. 2 < MIN_COMPS_TO_COMPUTE (3).
- *   => { ok: false, code: 'TOO_FEW_COMPS', algoVersion: 1,
- *        detail: { kept: 2, needed: 3, radiusTierMi: 2.0 } }
+ *   => { ok: false, code: 'TOO_FEW_COMPS', algoVersion: 3,
+ *        detail: { kept: 2, needed: 3, radiusTierMi: 3.0 } }
  *
  * WHAT MUST NOT HAPPEN, in order of how badly it ends:
  *   - an ARV of $410,000 from the two survivors
