@@ -80,14 +80,37 @@ const arvControl = () =>
   document.querySelector<HTMLInputElement>('#james-bot .jb-calc [name="after_repair_value"]');
 const card = () => document.querySelector<HTMLElement>('#james-bot .jb-calc');
 
+/**
+ * RE-POINTED (§14.8 / §14.15). These fixtures were `arvSource: 'comps'` with a
+ * "Pre-filled from your comps on ..." label — a shape that can no longer reach
+ * this widget at all: `formPrefill.ts:54` returns the form untouched for any
+ * block that is not `'manual'`, so the server never emits a comps prefill.
+ * Testing the label surface with it meant BUG-008's guarantee was only ever
+ * exercised against a payload production cannot produce.
+ *
+ * The MANUAL ARV is the shape that still pre-fills, and it still carries the
+ * whole label requirement — a number in the box that the member did not type,
+ * with nothing saying where it came from, reads as their own input.
+ */
 const LABEL =
-  'Pre-filled from your comps on 123 MAIN STREET, SEATTLE, WA 98101 — edit to override.';
+  'Pre-filled from the ARV you set for 123 MAIN STREET, SEATTLE, WA 98101 — edit to override.';
 const PREFILL = {
   value: 403000,
   subjectAddress: '123 MAIN STREET, SEATTLE, WA 98101',
-  arvSource: 'comps',
-  confidence: 'high',
+  arvSource: 'manual',
   label: LABEL,
+};
+
+/**
+ * §14.15's second shape: a manual ARV the member gave without naming a
+ * property. `subjectAddress` is null, so the label names no address — but it
+ * is still a label, and the value still pre-fills.
+ */
+const UNBOUND_PREFILL = {
+  value: 450000,
+  subjectAddress: null,
+  arvSource: 'manual',
+  label: 'Pre-filled from the ARV you set earlier — edit to override.',
 };
 
 describe('the pre-fill label as the member sees it', () => {
@@ -116,25 +139,57 @@ describe('the pre-fill label as the member sees it', () => {
       .toMatch(/edit|override|change/);
   });
 
+  it('an UNBOUND manual ARV pre-fills too, and is still labelled', async () => {
+    // §14.15: an ARV the member set without naming a property. The label
+    // names no address — there is none — but the requirement is unchanged.
+    // Without this case the labelled path is only tested with an address
+    // present, and the null-binding shape reaches the member untested.
+    await openWithForm(UNBOUND_PREFILL);
+
+    expect(card(), 'no calculator card rendered').not.toBeNull();
+    const control = arvControl();
+    expect(control, 'the ARV field did not render').not.toBeNull();
+    expect(control!.value, 'an unbound manual ARV did not reach the input').toBe('450000');
+
+    const note = card()!.textContent ?? '';
+    expect(note, 'an unbound pre-fill arrived with no label at all').toContain('Pre-filled');
+    expect(note.toLowerCase(), 'the member is not told they can change it')
+      .toMatch(/edit|override|change/);
+    // It must not invent a property, and must not render the retired placeholder.
+    expect(note, 'the widget invented an address for an unbound ARV').not.toMatch(/\d+ [A-Z][A-Z ]+(STREET|ST|AVE)/);
+    expect(note.toLowerCase(), 'the retired placeholder reached the member')
+      .not.toContain('manual entry');
+  });
+
   it('a value with NO label does not render a bare number, or the word "undefined"', async () => {
     // A correct number with no label is a FAIL — it reads as something the
     // member typed. And the naive `note.textContent = prefill.label` renders
     // the literal string "undefined" when the label is missing, which is worse.
-    await openWithForm({ value: 403000, subjectAddress: '123 MAIN STREET', arvSource: 'comps' });
+    await openWithForm({ value: 403000, subjectAddress: '123 MAIN STREET', arvSource: 'manual' });
 
     expect(card(), 'no card rendered').not.toBeNull();
     const text = card()!.textContent ?? '';
     expect(text, 'the widget rendered the literal word "undefined" at the member')
       .not.toMatch(/undefined/i);
 
-    // Either it declines to pre-fill without a label, or it supplies its own.
+    // MEASURED, not tolerated. This was written as "either it declines to
+    // pre-fill, or it supplies its own label" — an `if` around the assertion.
+    // The widget DECLINES, every time, so the branch never executed and the
+    // assertion inside was dead: the case was green on the "undefined" check
+    // alone. A guard written to tolerate the correct path is what killed it.
+    //
+    // Declining IS BUG-008's fix, so it is asserted directly. If the widget
+    // ever starts supplying its own label instead, this fails and the
+    // alternative is spelled out in the message rather than hidden in a branch.
     const control = arvControl();
-    if (control?.value === '403000') {
-      expect(
-        text.toLowerCase(),
-        'a value was pre-filled with no explanation of where it came from',
-      ).toMatch(/pre-?fill|comps|from your/);
-    }
+    expect(
+      control!.value,
+      'an UNLABELLED value was pre-filled into the box — it reads as something ' +
+        'the member typed. If the widget now supplies its own label instead, ' +
+        'assert that here; do not restore the conditional.',
+    ).toBe('');
+    expect(text, 'a pre-fill note was rendered for a value that was not pre-filled')
+      .not.toContain('Pre-filled');
   });
 
   it('renders the label as TEXT, never as markup', async () => {
