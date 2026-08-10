@@ -688,4 +688,90 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       expect(text, 'the degraded row broke the block').toContain('NORTH MAIN');
     });
   });
+  // =========================================================================
+  // §14.5 MARKER EXCLUSIVITY ACROSS EVERY RENDER STATE.
+  //
+  // The rule surfaced on one shape (a fully-populated comp table) and was
+  // fixed there. It then broke twice more as sections were added — the census
+  // header used an em dash as punctuation, and so did the neighbourhood
+  // header — because each new section is a new render state and the
+  // precondition only ever saw one of them.
+  //
+  // A rule verified on one state is not verified. This sweeps the product of
+  // the optional sections instead.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('the em dash is the null marker in EVERY render state', () => {
+    const DETAIL = {
+      daysOnMarket: 25, parkingSpaces: 2, yearBuilt: 1990,
+      architecturalStyle: null, propertyCondition: null,
+    };
+    const NEIGHBORHOOD = {
+      radiusMi: 1, windowMonths: 12, windowTruncated: false, totalSales: 193,
+      avgSoldPrice: 432_100, avgPricePerSqft: 214, avgBeds: 3.2, avgBaths: 2.1,
+      earliestSaleDate: '2025-08-11', latestSaleDate: '2026-08-05',
+      avgDomOfDisplayedComps: 26, domCompCount: 5,
+    };
+    const DEMOGRAPHICS = {
+      tractGeoid: '04013111700', tractName: 'Census Tract 1117', acsYear: 2023,
+      medianHouseholdIncome: 93333, medianAge: 37.9,
+      ownerOccupiedPct: 62.2, renterOccupiedPct: 37.8,
+    };
+
+    /** Every combination of the optional sections, all values POPULATED. */
+    const STATES: Array<[string, Record<string, unknown>]> = [
+      ['comps only', {}],
+      ['+ neighbourhood', { neighborhood: NEIGHBORHOOD }],
+      ['+ demographics', { demographics: DEMOGRAPHICS }],
+      ['+ both', { neighborhood: NEIGHBORHOOD, demographics: DEMOGRAPHICS }],
+    ];
+
+    it.each(STATES)('%s: a fully-populated render contains ZERO em dashes', (_name, extra) => {
+      const base = resultFor(golden01) as { comps: Array<Record<string, unknown>> };
+      const text = renderCompsForChat({
+        ...base,
+        comps: base.comps.map((c) => ({ ...c, detail: DETAIL })),
+        ...extra,
+      } as never);
+      expect(
+        String(text).includes('\u2014'),
+        'an em dash appears in a fully-populated render of this state — either a ' +
+          'field was nulled by accident, or a section is using the null marker ' +
+          'as punctuation, which is how this rule broke twice before',
+      ).toBe(false);
+    });
+
+    it('the UNAVAILABLE lines carry no em dash either', () => {
+      // Both null-section lines previously separated their clauses with a
+      // dash. They are not null VALUES — they are prose about an absent
+      // section — so the marker must not appear in them.
+      const base = resultFor(golden01) as { comps: Array<Record<string, unknown>> };
+      const text = String(renderCompsForChat({
+        ...base,
+        comps: base.comps.map((c) => ({ ...c, detail: DETAIL })),
+        neighborhood: null, demographics: null,
+      } as never));
+      expect(text.toLowerCase(), 'the unavailable lines did not render').toMatch(/unavailable/);
+      expect(
+        text.includes('\u2014'),
+        'an unavailable-section line uses the null marker as punctuation',
+      ).toBe(false);
+    });
+
+    it('and a NULLED field still produces the marker — the rule has teeth', () => {
+      // The control. Without it, "zero em dashes" passes for a renderer that
+      // stopped emitting the marker at all.
+      const base = resultFor(golden01) as { comps: Array<Record<string, unknown>> };
+      const text = String(renderCompsForChat({
+        ...base,
+        comps: base.comps.map((c, i) => ({
+          ...c, detail: i === 0 ? { ...DETAIL, yearBuilt: null } : DETAIL,
+        })),
+        neighborhood: NEIGHBORHOOD, demographics: DEMOGRAPHICS,
+      } as never));
+      expect(
+        text.includes('\u2014'),
+        'a nulled field produced no marker — the em dash has stopped meaning anything',
+      ).toBe(true);
+    });
+  });
 });

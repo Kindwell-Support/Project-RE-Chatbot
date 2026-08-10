@@ -523,7 +523,13 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       };
     }
 
-    it('a cold lookup costs exactly THREE runs: subject + search + ONE batched detail', async () => {
+    it('a cold lookup costs ONE detail run, and FOUR runs in total', async () => {
+      // The total moved 3 -> 4 when §14.16 added the dedicated neighbourhood
+      // fetch. That is the ruled bound, not a regression: subject + search +
+      // ONE batched detail + ONE aggregate. This case is about the DETAIL
+      // contribution, so it asserts that per-call-type as well as the total —
+      // a bare total goes stale every time a slice lands, and worse, it goes
+      // stale in the direction that hides a real increase inside an expected one.
       const spy = makeProviderSpy({ subject: SUBJECT, comps: FRESH, detailItems: detailBank() });
       const out = await runComps(ADDRESS, { provider: spy.provider as never });
 
@@ -535,7 +541,12 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         `${spy.detailCalls} detail runs — §14.14 rule 6 pins ONE batched run. ` +
           'Per-comp runs are the ~40-runs-per-lookup failure.',
       ).toBe(1);
-      expect(spy.callCount, 'total actor runs per lookup').toBe(3);
+      expect(
+        spy.callCount,
+        `${spy.callCount} total actor runs — the ruled bound is FOUR ` +
+          '(subject + search + detail + aggregate). More than four means a ' +
+          'slice added a per-item run without anyone deciding to.',
+      ).toBe(4);
     });
 
     it('the ONE detail run carries the FINAL kept set, not the fetched pool', async () => {
@@ -616,7 +627,10 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       const spy = makeProviderSpy({ subject: SUBJECT, comps: FRESH, noDetailSupport: true });
       const out = await runComps(ADDRESS, { provider: spy.provider as never });
       expect(out.ok).toBe(true);
-      expect(spy.callCount, 'a provider without detail support cost more than two runs').toBe(2);
+      expect(spy.detailCalls, 'a provider with no detail support was asked for detail').toBe(0);
+      // Three, not two: the neighbourhood fetch is a separate optional method
+      // and this provider still supports it.
+      expect(spy.callCount, 'a provider without detail support cost more than three runs').toBe(3);
     });
 
     it('THE 90s CEILING: with no time left, detail is skipped and comps still render', async () => {

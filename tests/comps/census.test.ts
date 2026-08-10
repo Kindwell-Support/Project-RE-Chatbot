@@ -41,6 +41,7 @@ import {
   ACS_VARIABLES,
   mapDemographicsFromAcs,
   mapTractFromGeocoder,
+  tenurePercentagesReconcile,
   type TractRef,
 } from '../../src/features/comps/providers/census.js';
 
@@ -518,6 +519,54 @@ describe(`census demographics${sliceNote(...MODS)}`, () => {
       expect(served!.medianAge, 'the cached anomaly re-served as a figure').toBeNull();
       expect(served!.medianHouseholdIncome, 'the good sibling was lost in the cache')
         .toBe(93333);
+    });
+  });
+  // =========================================================================
+  // The reconciliation backstop, now DIRECTLY testable (MASON exported the
+  // predicate after I recorded that I could not reach it through the seam).
+  // The disclosed gap is closed: the branch is exercised, not inferred.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('tenurePercentagesReconcile — the backstop branch', () => {
+    it('accepts every in-range pair, including both boundaries', () => {
+      for (const [o, r] of [[0, 100], [100, 0], [62.2, 37.8], [50, 50], [0, 0]] as const) {
+        expect(tenurePercentagesReconcile(o, r), `${o}/${r} was rejected`).toBe(true);
+      }
+    });
+
+    it('REJECTS the shapes BUG-013 produced — negative and over 100', () => {
+      // The exact pair from the original repro: owner -50 / renter 150.
+      expect(tenurePercentagesReconcile(-50, 150), 'the BUG-013 pair reconciles').toBe(false);
+      expect(tenurePercentagesReconcile(-0.1, 100), 'a fractional negative reconciles').toBe(false);
+      expect(tenurePercentagesReconcile(100.1, 0), 'a fractional overshoot reconciles').toBe(false);
+      expect(tenurePercentagesReconcile(150, -50), 'the mirrored pair reconciles').toBe(false);
+    });
+
+    it('a NULL pair reconciles — unavailable is not a contradiction', () => {
+      // Null means "we have no figure", which cannot be out of range. Treating
+      // it as a failure would fire the backstop on every suppressed tract and
+      // report an anomaly for ordinary, expected suppression — the same
+      // signal-drowning failure the enumerated/floor split exists to avoid.
+      expect(tenurePercentagesReconcile(null, null)).toBe(true);
+      expect(tenurePercentagesReconcile(62.2, null)).toBe(true);
+      expect(tenurePercentagesReconcile(null, 37.8)).toBe(true);
+    });
+
+    it('the mapper AGREES with the predicate on everything it produces', () => {
+      // The two must not drift: whatever the mapper emits has to satisfy the
+      // predicate that exists to catch what it emits.
+      const probes = [0, 1, 7, 99, 1427, 869, 1e6];
+      for (const o of probes) {
+        for (const r of probes) {
+          const out = mapDemographicsFromAcs(body({
+            [ACS_VARIABLES.tenureOwner]: o, [ACS_VARIABLES.tenureRenter]: r,
+          }), TRACT);
+          expect(
+            tenurePercentagesReconcile(out.ownerOccupiedPct, out.renterOccupiedPct),
+            `the mapper produced ${out.ownerOccupiedPct}/${out.renterOccupiedPct} from ` +
+              `${o}/${r}, which its own backstop rejects`,
+          ).toBe(true);
+        }
+      }
     });
   });
 });

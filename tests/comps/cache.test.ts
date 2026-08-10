@@ -242,9 +242,22 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
 
       const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
 
+      // SCOPED to the comps fetches. §14.16 added `raw_neighborhood`, and a
+      // legacy row written before that column has no cached aggregate raw —
+      // so ONE neighbourhood fetch on first re-serve is correct, and paying it
+      // once per legacy row is a migration cost, not a permanent one.
+      //
+      // The recompute guarantee is specifically that SUBJECT and SEARCH are
+      // not re-billed, because those are what the version bump would otherwise
+      // re-run across the entire corpus. Asserting `callCount` conflated the
+      // two the moment a fourth call type existed.
       expect(
-        spy.callCount,
-        'an ALGO_VERSION bump re-billed Apify — this re-bills the ENTIRE cached corpus',
+        spy.subjectCalls,
+        'an ALGO_VERSION bump re-billed the SUBJECT lookup — this re-bills the ENTIRE cached corpus',
+      ).toBe(0);
+      expect(
+        spy.compsCalls,
+        'an ALGO_VERSION bump re-billed the comps SEARCH — this re-bills the ENTIRE cached corpus',
       ).toBe(0);
       expect(out.ok, 'the recompute did not produce a result').toBe(true);
       if (out.ok) {
@@ -432,6 +445,49 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       expect(all, 'the raw address was logged').not.toContain('123 Main St, Seattle WA');
       expect(all).not.toMatch(/apify_api_|Bearer\s+\S+/i);
       expect(all).not.toContain(process.env.APIFY_TOKEN ?? '__NO_TOKEN_IN_ENV__');
+    });
+  });
+  // =========================================================================
+  // §14.16 raw_neighborhood — the aggregate raw rides the comps row, and the
+  // COMPUTED aggregates are never stored (they recompute per serve from raw).
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('the aggregate raw rides the cached comps row', () => {
+    it('a cached entry WITH raw neighbourhood costs ZERO provider runs', async () => {
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache } = makeCache();
+
+      // Cold: pays for everything, and stores the aggregate raw alongside.
+      const cold = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(cold.ok, 'the cold run failed').toBe(true);
+      const paid = spy.callCount;
+      expect(paid, 'the cold run cost nothing — nothing to compare against')
+        .toBeGreaterThan(0);
+
+      // Warm: a full cache hit must add NOTHING, neighbourhood included.
+      const warm = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(warm.ok).toBe(true);
+      expect(
+        spy.callCount - paid,
+        'a warm serve re-fetched — the aggregate raw is not riding the cached row',
+      ).toBe(0);
+    });
+
+    it('the COMPUTED aggregates are not stored — they recompute per serve', async () => {
+      // §14.16: raw is cached, the averages are not. Storing them would mean a
+      // cached row keeps serving figures computed under an older rule, which
+      // is the ALGO_VERSION problem in a place the version stamp does not
+      // reach.
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache, rows } = makeCache();
+      await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+
+      const stored = JSON.stringify([...rows.values()]);
+      expect(stored.length, 'nothing was cached').toBeGreaterThan(0);
+      expect(
+        stored,
+        'a computed aggregate was stored on the cache row — it must be derived ' +
+          'from raw on every serve, or a stale rule outlives its version stamp',
+      ).not.toMatch(/"avgSoldPrice"|"avgPricePerSqft"|"totalSales"/);
     });
   });
 });

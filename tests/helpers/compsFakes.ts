@@ -38,9 +38,11 @@ import { mapDetailBatchItems } from '../../src/features/comps/providers/apifyZil
 // ===========================================================================
 
 export interface ProviderCall {
-  method: 'lookupSubject' | 'fetchSoldComps' | 'fetchDetailBatch';
+  method: 'lookupSubject' | 'fetchSoldComps' | 'fetchDetailBatch' | 'fetchNeighborhoodSales';
   arg: string;
   radiusMi?: number;
+  /** fetchNeighborhoodSales only — the §14.16 window, asserted by CASE 1. */
+  windowMonths?: number;
   /** fetchDetailBatch only — the addresses the batch was asked for. */
   addresses?: string[];
 }
@@ -83,6 +85,14 @@ export interface ProviderSpyOptions {
   detailDelayMs?: number;
   /** Omit `fetchDetailBatch` entirely, as a provider that predates the slice. */
   noDetailSupport?: boolean;
+
+  // --- §14.16 neighbourhood aggregates -------------------------------------
+  /** Returned by fetchNeighborhoodSales — the DEDICATED 1mi/12mo fetch. */
+  neighborhoodSales?: unknown[];
+  /** Throw on fetchNeighborhoodSales — the aggregate-only failure. */
+  failNeighborhood?: ProviderFailure;
+  /** Omit `fetchNeighborhoodSales`, as a provider predating the slice. */
+  noNeighborhoodSupport?: boolean;
 }
 
 export interface ProviderSpy {
@@ -157,9 +167,29 @@ export function makeProviderSpy(options: ProviderSpyOptions = {}): ProviderSpy {
         },
       };
 
+  const neighborhoodProvider = options.noNeighborhoodSupport
+    ? {}
+    : {
+        async fetchNeighborhoodSales(
+          subject: { address?: string },
+          radiusMi: number,
+          windowMonths: number,
+        ) {
+          calls.push({
+            method: 'fetchNeighborhoodSales', arg: subject?.address ?? '', radiusMi, windowMonths,
+          });
+          if (options.failNeighborhood && failuresRemaining > 0) {
+            failuresRemaining--;
+            throw providerError(options.failNeighborhood);
+          }
+          return options.neighborhoodSales ?? [];
+        },
+      };
+
   const provider = {
     name: options.name ?? 'spy',
     ...detailProvider,
+    ...neighborhoodProvider,
 
     async lookupSubject(normalizedAddress: string) {
       calls.push({ method: 'lookupSubject', arg: normalizedAddress });
