@@ -9,10 +9,85 @@ carried into the GREEN message with its severity).
 
 ---
 
+## FINDING-006 — a literal U+0008 inside a regex literal, and the class behind it
+
+- **Status**: CLOSED (repaired + swept)
+- **Severity**: high as a CLASS — one instance was loud, the other was silent
+
+`format.test.ts` carried **five** U+0008 (backspace) characters across two
+lines, where `\b` (word boundary) was intended. MASON found the first; the
+sweep found the rest.
+
+| line | assertion | effect |
+| --- | --- | --- |
+| 617 | `toMatch(/year built (19\|20)\d{2}<BS>/)` | can never match ⇒ **always FAILS** — loud |
+| 631 | `not.toMatch(/<BS>style<BS>\|<BS>condition<BS>/)` | can never match ⇒ **always PASSES** — silent |
+
+617 was the visible one and it blocked BUG-012's gate. **631 is the dangerous
+one**: it is the guard on the operator's directive that style/condition must
+not be rendered without a client ruling, and it was vacuous. It would not have
+noticed un-approved claims about someone's house shipping to a member.
+
+**Root cause, mine**: authoring test files through shell heredocs. `\\b` in a
+heredoc reaches Python as `\b`, which Python resolves to U+0008 inside a
+string literal. It compiles, it runs, it silently never matches. Fixed by
+writing generator scripts with the Write tool instead of heredocs.
+
+**Both repaired predicates were then mutation-checked** against renders that
+should fail them, and the pre-repair forms proven blind to every one.
+
+**Sweep**: 49 files under `tests/`, scanning for C0 controls, DEL, zero-width
+and bidi characters. `format.test.ts` was the only carrier. Now clean.
+
+---
+
+## FINDING-007 — assertions that never execute (THE SIXTH SHAPE)
+
+- **Status**: 8 fixed; 8 classified benign; 1 open coverage gap (below)
+- **Severity**: high as a class — these are green tests proving nothing
+
+Findings 1-6 each broke a different link in the same chain:
+
+> file runs → test runs → subject is what I think → predicate is what I think → predicate discriminates
+
+Link 2 had been checked at FILE level (dead imports) and SUITE level (skips),
+never at STATEMENT level. Measured by instrumenting every `if (...)` block
+containing an `expect` with a tripwire, running the suite, and reverting:
+**31 guarded blocks, 56 assertions, of which 16 blocks never took their
+branch.**
+
+The eight that mattered were the wrong-house leak guards
+(`if (flip?.inputs_used) { expect(...).not.toBe(403000) }`). The mismatch guard
+REFUSES the call every time — correctly — so the condition was false every
+time and **the leak assertion never ran once**. Those tests were passing on
+their other assertion only.
+
+The guard was never necessary: `flip?.inputs_used?.after_repair_value` is
+`undefined` on a refusal, and `undefined !== 403000` passes. The unguarded form
+passes on refusal AND fails on a leak, with no branch to go dead. All eight
+converted.
+
+Classified benign: `golden.test.ts` x2 (parameterized, legitimately vary),
+`normalize.test.ts` (fires only on a collision — none, which is the desired
+result), `agent.test.ts` / `invariants.test.ts` (conditional RULES that apply
+only to a shape not currently present).
+
+**Open**: `formPrefill.widget.test.ts:132` — `if (control?.value === '403000')`
+never fires, because post-§14.8 the widget no longer pre-fills in that
+scenario at all. The labelled-pre-fill path (BUG-008's guarantee) is therefore
+unexercised at the widget layer. Needs re-pointing onto a MANUAL ARV, same as
+the state/form suites were. Not a product defect; a coverage hole left by the
+removal.
+
+---
+
 ## BUG-012 — `year built 1,928`: the year is rendered as a quantity
 
-- **Status**: OPEN — reported in mailbox `0027`. Repro is live and red in
-  `tests/comps/format.test.ts` ("YEAR BUILT is not a quantity").
+- **Status**: CLOSED — fixed at `3cde09d` (a `year()` formatter; `num()`
+  correctly keeps separators for sqft and lot). Verified against the build:
+  the renderer emits `year built 1990` bare, `format.test.ts` 53/53.
+- **My gate was broken too**, and that is the more useful half: the repro
+  could not have passed against ANY fix. See FINDING-006.
 - **Severity**: low mechanically, but member-visible on EVERY comp and in the
   one column that is asking to be trusted.
 - **Found**: writing the §14.14 render spec.

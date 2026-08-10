@@ -320,13 +320,19 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         ).toBe(g.yearBuilt);
       }
 
+      // MEASURED, not assumed: the failed item joins to NOTHING (detail
+      // undefined), never to an empty detail object. The `if` this used to sit
+      // behind never executed, so the three assertions inside were dead — the
+      // accept-either-shape wrapper made them unreachable on the shape that
+      // actually occurs. Asserting the real shape directly, with the
+      // alternative spelled out in the message rather than in a branch.
       const badDetail = detailFor(bad.addressOrUrlFromInput);
-      if (badDetail !== undefined) {
-        // Present-but-empty is an acceptable shape; present-with-values is not.
-        expect(badDetail.daysOnMarket, 'an INVALID item produced a DOM').toBeNull();
-        expect(badDetail.yearBuilt, 'an INVALID item produced a yearBuilt').toBeNull();
-        expect(badDetail.parkingSpaces, 'an INVALID item produced parking').toBeNull();
-      }
+      expect(
+        badDetail,
+        'a FAILED item produced a detail object — if an empty-but-present shape ' +
+          'is now intended, assert its three null fields here rather than behind ' +
+          'a conditional that goes dead when the shape changes back',
+      ).toBeUndefined();
       expect(missing, 'the failed item was not counted as missing').toBe(1);
     });
 

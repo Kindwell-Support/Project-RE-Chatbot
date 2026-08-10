@@ -564,12 +564,14 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
         followUp: 'run the flip on 456 Oak Ave',
         explicitArv: 403000,
       });
-      if (flip?.inputs_used) {
-        expect(
-          flip.inputs_used.after_repair_value,
-          "123 Main's ARV priced a deal the member asked about at 456 Oak",
-        ).not.toBe(403000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "123 Main's ARV priced a deal the member asked about at 456 Oak",
+      ).not.toBe(403000);
       expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('403000');
     });
 
@@ -597,14 +599,16 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // 400,000 is not the member's number: it appears nowhere in their message.
       // It is 123 Main's ARV, rounded, applied to a property the member named
       // as different.
-      if (flip?.inputs_used) {
-        expect(
-          flip.inputs_used.after_repair_value,
-          "a rounded carry of 123 Main's ARV priced the deal at 456 Oak — " +
-            'the mismatch guard is keyed on exact equality and a transformed ' +
-            'carry walks straight past it',
-        ).not.toBe(400000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "a rounded carry of 123 Main's ARV priced the deal at 456 Oak — " +
+          'the mismatch guard is keyed on exact equality and a transformed ' +
+          'carry walks straight past it',
+      ).not.toBe(400000);
       expect(
         reply.output.replace(/[$,\s]/g, ''),
         'the reply prices 456 Oak with a number derived from 123 Main',
@@ -704,12 +708,14 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
         (r) => (r as { calculator?: string }).calculator === 'brrrr',
       ) as { inputs_used?: Record<string, unknown> } | undefined;
 
-      if (brrrr?.inputs_used) {
-        expect(
-          brrrr.inputs_used.after_repair_value,
-          "123 Main's ARV priced a BRRRR the member asked about at 456 Oak",
-        ).not.toBe(403000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        brrrr?.inputs_used?.after_repair_value,
+        "123 Main's ARV priced a BRRRR the member asked about at 456 Oak",
+      ).not.toBe(403000);
       expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('403000');
     });
 
@@ -813,12 +819,14 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       const flip = toolResults(openai.calls).find(
         (r) => (r as { calculator?: string }).calculator === 'flip',
       ) as { inputs_used?: Record<string, unknown> } | undefined;
-      if (flip) {
-        expect(
-          flip.inputs_used!.after_repair_value,
-          "123 Main's ARV was applied to a flip the member asked for on 456 Oak",
-        ).not.toBe(403000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "123 Main's ARV was applied to a flip the member asked for on 456 Oak",
+      ).not.toBe(403000);
       expect(reply.output.replace(/[$,\s]/g, ''), "123 Main's ARV was quoted for 456 Oak")
         .not.toContain('403000');
     });
@@ -862,10 +870,14 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       const flip = toolResults(openaiB.calls).find(
         (r) => (r as { calculator?: string }).calculator === 'flip',
       ) as { inputs_used?: Record<string, unknown>; error?: string } | undefined;
-      if (flip?.inputs_used) {
-        expect(flip.inputs_used.after_repair_value, "Alice's ARV reached Bob's calculator")
-          .not.toBe(450000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "Alice's ARV reached Bob's calculator",
+      ).not.toBe(450000);
       expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('450000');
       // Alice's own state is untouched by Bob's turn.
       expect(supabase.compsBlockFor('session-alice')!.arv).toBe(450000);

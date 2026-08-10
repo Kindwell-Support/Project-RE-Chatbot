@@ -143,3 +143,28 @@ figures outside the eight known comp prices.
 22:05 MASON — DETAIL SLICE shipped @ 66699ce (§14.14.1: batched 3rd run, join by addressOrUrlFromInput never position, zpid cache 90d, detail-free comps_cache + re-attach per serve, 20s ceiling floor, no-retry pinned, cap counts lookups, style/condition captured NOT rendered); smokes 9/9, INSPECTOR pre-written suite 10/11, 4 reds all fixture-vintage theirs; HANDOFF 0038 + maybeSingle flag relayed — next: Census §14.10 after their verification
 22:20 MASON — BUG-012 fixed @ 3cde09d (year() identifier formatter, num() untouched; class sweep: DOM/parking are true quantities, beds/baths String(), zpid never rendered — yearBuilt was the only member); found INSPECTOR's repro regex carries a literal U+0008 where \b was meant (char-code proof), FIXED 0039 sent — gate closes with their one-byte repair
 22:35 MASON — SCOPED neighbourhood aggregates (report reports/NEIGHBOURHOOD_AGGREGATES_SCOPING.md, zero runs spent): existing pool unusable (both recorded runs hit the 40-result cap — pool is 4-5 WEEKS deep, not 12 months); DOM impossible without detail runs (-1 sentinel on 76/76, options omit / labelled 5-comp avg / N-slot real thing); proper build = +1 search run per lookup with Zillow doz=12m, exact bill gated on ONE spike (resultsLimit>40 behavior + per-result rate in client console); Census stays cheaper, sequence unchanged — NOT built
+
+---
+
+## INSPECTOR — 2026-08-10, detail slice GREEN (offline) @ HEAD
+
+**Offline: 34/34 files, 1,345 passed, 0 failed, 33 skipped** (live gates +
+sentinels), and identical under `COMPS_STRICT=1`.
+
+BUG-012 CLOSED and verified against the build. My gate for it was itself
+broken — five U+0008 bytes in `format.test.ts`, one loud and one SILENT
+(FINDING-006). Swept all 49 test files; that was the only carrier.
+
+FINDING-007, the sixth shape: **assertions that never execute.** 31 guarded
+blocks measured by instrumentation; 16 never took their branch; 8 of those
+were the wrong-house leak guards, dead every run. Converted to unguarded
+optional-chain assertions that pass on a refusal and fail on a leak.
+
+**LIVE BATTERY BLOCKED — not run at this SHA.** OpenAI returns
+`429 no credits remaining`. Last green live run was 15/15 + 18/18 at
+`c8d1d3b`, before the detail slice. Checked offline in substitute: the three
+new detail fields (year, DOM, parking) introduce ZERO figures the pressure
+battery's whitelist can see (all below its $50k floor, none currency-marked),
+so that battery is structurally undisturbed — verified, not assumed. The rest
+of the live battery is unaffected in principle by this slice but UNVERIFIED in
+fact. Needs a re-run once credits are restored, before merge.

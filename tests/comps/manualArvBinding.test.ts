@@ -127,12 +127,14 @@ describe(`manual ARV binding — the four states${sliceNote(...MODS)}`, () => {
       const reply = await chat(b.app, 'run the flip numbers on 456 Oak Ave', 'b-conflict');
 
       const flip = flipOf(b.openai.calls);
-      if (flip?.inputs_used) {
-        expect(
-          flip.inputs_used.after_repair_value,
-          "the ARV bound to 123 Main silently priced a flip on 456 Oak — the guard is gone",
-        ).not.toBe(450000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "the ARV bound to 123 Main silently priced a flip on 456 Oak — the guard is gone",
+      ).not.toBe(450000);
       expect(String(reply.body.output).replace(/[$,\s]/g, '')).not.toContain('450000');
 
       // And the guard's question must name the REAL stored address — a member

@@ -614,7 +614,7 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       // year 10000 is affected, which is all of them.
       const text = renderCompsForChat(fullyPopulated() as never);
       expect(text, 'the year is comma-formatted').not.toMatch(/year built \d,\d{3}/);
-      expect(text, 'the year did not render at all').toMatch(/year built (19|20)\d{2}/);
+      expect(text, 'the year did not render at all').toMatch(/year built (19|20)\d{2}\b/);
     });
 
     it('§14.14 style and condition are CAPTURED but must NOT be rendered', () => {
@@ -628,7 +628,7 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
         .not.toContain('Ranch');
       expect(text, 'propertyCondition was rendered without a client ruling')
         .not.toContain('Updated');
-      expect(text.toLowerCase()).not.toMatch(/style|condition/);
+      expect(text.toLowerCase()).not.toMatch(/\bstyle\b|\bcondition\b/);
     });
 
     it.each([
