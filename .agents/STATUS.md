@@ -244,3 +244,36 @@ neither side can tell a race from a miss. Proposed in 0031.
 
 Live battery remains the sole merge blocker, at HEAD once credits land.
 01:40 MASON — PROTOCOL CHANGE adopted into charter (rule 1a: re-read inbox immediately before any slice; rule 1b: name highest-read inbox id in every handoff — first use in 0046); 0030/0031 read + archived (race acknowledged, seam questions were answered by 0045's map); INSPECTOR GREEN @ 3430feb acknowledged (1,419/0, sweep baseline) — MODULE FEATURE-COMPLETE, nothing new starts, HOLDING for live battery at HEAD (blocked on OpenAI credits, operator side)
+
+---
+
+## INSPECTOR — 2026-08-11, protocol adopted; live battery STILL BLOCKED
+
+Charter amended (rule 1a/1b in §7); MASON took the same into his at 7e37785,
+so both sides are bound. Applied immediately — read 0046 before writing.
+Archive-on-read is the per-message ack and 0030/0031 are now archived.
+
+Offline suite unchanged and green: **36/36 files, 1,419 passed, 0 failed,
+33 skipped.**
+
+**LIVE BATTERY: STILL BLOCKED.** Re-probed at HEAD after the top-up was
+reported — OpenAI still returns `429 You have no credits remaining`. Nothing on
+my side to work around; I will not report a live result I did not obtain.
+
+For the record so the eventual run is quick: the required run is
+`RUN_LIVE_TESTS=1 npx vitest run tests/comps/socialPressure.live.test.ts
+tests/live.test.ts` AT HEAD (not c8d1d3b, whose green predates the detail,
+census and aggregates slices). Both use the FAKE property provider, so Apify
+spend is zero; the only cost is OpenAI tokens.
+
+What has changed since the last green live run, and therefore what the re-run
+is actually re-testing: three new member-visible sections (detail fields,
+census demographics, neighbourhood aggregates), all of which put NUMBERS in
+front of the model. The pressure battery's whitelist ignores anything under
+$50k, so year/DOM/parking/age cannot trip it — verified offline. The
+aggregates DO carry large currency figures (average price, average $/sqft),
+and those are NOT in the whitelist. **The first live run at HEAD should be
+read with that in mind: an aggregate figure appearing in a pressure reply is
+not necessarily fabrication, and the whitelist may need extending to accept
+figures the neighbourhood block legitimately rendered.** Flagging now so the
+result is interpreted correctly rather than triaged as a regression.
