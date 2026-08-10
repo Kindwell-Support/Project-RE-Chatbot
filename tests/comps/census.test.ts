@@ -32,6 +32,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { pendingSlice, sliceNote } from '../helpers/compsGate.js';
+import { makeProviderSpy } from '../helpers/compsFakes.js';
+import { runComps } from '../../src/features/comps/service.js';
+import { golden01 } from '../fixtures/golden/index.js';
+import type { Demographics } from '../../src/features/comps/types.js';
 import {
   ACS_SENTINELS,
   ACS_VARIABLES,
@@ -256,42 +260,264 @@ describe(`census demographics${sliceNote(...MODS)}`, () => {
     });
   });
   // =========================================================================
-  // BUG-013 — the enumerated set has no floor under it.
+  // BUG-013 VERIFICATION — the two layers, and that they do DIFFERENT jobs.
+  //
+  // An enumerated sentinel that LOGS is as wrong as an unlisted negative that
+  // does not: the first floods the log with expected suppression until nobody
+  // reads it, the second is the silence that let "renter-occupied 150%" ship.
+  // The split is the fix, so the split is what gets asserted.
   // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('an UNLISTED negative is still not a figure', () => {
-    it('a negative that is not an enumerated sentinel must not render', () => {
-      // §14.10: "suppression sentinels (large negatives) AND ANYTHING
-      // NON-FINITE/NEGATIVE map to null". `acsNumber` only rejects the six
-      // listed values, so -5 passes through as a figure.
-      //
-      // The enumeration is the right PRIMARY mechanism and the operator ruled
-      // so — a threshold alone silently absorbs a seventh annotation value the
-      // day Census adds one, and masks genuinely bad data as if it were
-      // suppression. But removing the floor entirely leaves nothing between a
-      // malformed payload and the member. None of these four measures can be
-      // negative: not an income, not an age, not a household count.
-      for (const bad of [-5, -1, -100, -12345]) {
-        const out = mapDemographicsFromAcs(body({
-          [ACS_VARIABLES.medianHouseholdIncome]: bad,
-          [ACS_VARIABLES.medianAge]: bad,
-        }), TRACT);
-        expect(out.medianHouseholdIncome, `median income rendered as ${bad}`).toBeNull();
-        expect(out.medianAge, `median age rendered as ${bad}`).toBeNull();
-      }
+  describe.skipIf(pendingSlice(...MODS))('BUG-013 — the enumerated set is SILENT', () => {
+    it.each([...ACS_SENTINELS])('sentinel %i nulls WITHOUT reporting', (sent) => {
+      const seen: unknown[] = [];
+      const out = mapDemographicsFromAcs(
+        body(Object.fromEntries(ALL.map((v) => [v, sent]))), TRACT, undefined,
+        (a) => seen.push(a),
+      );
+      expect(out.medianHouseholdIncome, `sentinel ${sent} rendered`).toBeNull();
+      expect(
+        seen,
+        `documented suppression reported as an anomaly. Every tract with a ` +
+          `suppressed field would log, the WARN stops being read, and the one ` +
+          `line that means "Census added an annotation" is lost in it.`,
+      ).toEqual([]);
+    });
+  });
+
+  describe.skipIf(pendingSlice(...MODS))('BUG-013 — the domain floor REPORTS', () => {
+    const FIELDS: Array<[string, string]> = [
+      ['median income', ACS_VARIABLES.medianHouseholdIncome],
+      ['median age', ACS_VARIABLES.medianAge],
+      ['owner count', ACS_VARIABLES.tenureOwner],
+      ['renter count', ACS_VARIABLES.tenureRenter],
+    ];
+
+    it.each(FIELDS)('%s: an unlisted negative nulls AND reports', (label, variable) => {
+      // Each field independently — a floor applied to three of four is the
+      // partial-enumeration failure one level up.
+      const seen: Array<{ variable: string; value: number; tractGeoid: string }> = [];
+      const out = mapDemographicsFromAcs(
+        body({ [variable]: -5 }), TRACT, undefined, (a) => seen.push(a),
+      );
+
+      expect(seen.length, `${label}: an unlisted negative was not reported`).toBe(1);
+      // The log CONTENT is the guarantee, not that something fired. A WARN
+      // without the variable and the raw value cannot tell you Census added
+      // an annotation, which is the only reason the line exists.
+      expect(seen[0].variable, `${label}: the report does not name the variable`)
+        .toBe(variable);
+      expect(seen[0].value, `${label}: the report does not carry the RAW value`).toBe(-5);
+      expect(seen[0].tractGeoid, `${label}: the report does not name the tract`)
+        .toBe('04013111700');
+
+      // ...and the member still sees nothing.
+      const rendered = [
+        out.medianHouseholdIncome, out.medianAge, out.ownerOccupiedPct, out.renterOccupiedPct,
+      ];
+      expect(rendered, `${label}: a negative reached the member`).toEqual([null, null, null, null]);
     });
 
-    it('a negative COUNT must not produce a percentage over 100', () => {
-      // The sharpest consequence, because the arithmetic launders it. A
-      // negative owner count makes the denominator smaller than the renter
-      // count, and the member is shown "renter-occupied 150%" — visibly
-      // impossible, rendered as a measured fact, with a real tract name and a
-      // real ACS vintage beside it lending it authority.
+    it('the original repro: no negative figure, and no percentage over 100', () => {
+      const seen: unknown[] = [];
       const out = mapDemographicsFromAcs(body({
         [ACS_VARIABLES.tenureOwner]: -50,
         [ACS_VARIABLES.tenureRenter]: 150,
-      }), TRACT);
+      }), TRACT, undefined, (a) => seen.push(a));
       expect(out.ownerOccupiedPct, 'a negative tenure percentage reached the member').toBeNull();
-      expect(out.renterOccupiedPct, 'a tenure percentage over 100% reached the member').toBeNull();
+      expect(out.renterOccupiedPct, 'a percentage over 100% reached the member').toBeNull();
+      expect(seen.length, 'the anomaly was swallowed').toBe(1);
+    });
+
+    it('a NON-negative unlisted value is NOT reported — the floor is a floor', () => {
+      // The inverse. A floor that reports ordinary data is noise, and noise is
+      // how the one line that matters gets missed.
+      const seen: unknown[] = [];
+      mapDemographicsFromAcs(body({
+        [ACS_VARIABLES.medianHouseholdIncome]: 93333,
+        [ACS_VARIABLES.medianAge]: 0,
+        [ACS_VARIABLES.tenureOwner]: 0,
+        [ACS_VARIABLES.tenureRenter]: 250,
+      }), TRACT, undefined, (a) => seen.push(a));
+      expect(seen, 'ordinary values were reported as anomalies').toEqual([]);
+    });
+
+    it('the observer is OPTIONAL — omitting it must not throw', () => {
+      // `onUnrecognized?.()` — asserted because a required observer would make
+      // every direct caller of the mapper a crash risk on bad data, which is
+      // exactly when you least want one.
+      expect(() => mapDemographicsFromAcs(
+        body({ [ACS_VARIABLES.medianAge]: -5 }), TRACT,
+      )).not.toThrow();
+    });
+  });
+
+  describe.skipIf(pendingSlice(...MODS))('BUG-013 — the reconciliation backstop', () => {
+    it('is UNREACHABLE through this seam while the floor holds — proven, not assumed', () => {
+      // The operator asked me to exercise it with the floor bypassed. I cannot
+      // through the public seam, and that is worth stating precisely rather
+      // than faking: the floor nulls every negative, so both counts are >= 0,
+      // so part/(owner+renter) is in [0,1], so the percentage is in [0,100].
+      // Math.round(x*1000)/10 cannot exceed 100 when x <= 1.
+      //
+      // Swept rather than argued. If any pair escapes the range, the backstop
+      // is reachable and this case fails, which is the signal I actually want.
+      const probes = [0, 1, 2, 7, 99, 1427, 869, 1e6, 1e15, Number.MAX_SAFE_INTEGER];
+      const computed: Array<{ pair: string; who: string; pct: number }> = [];
+      for (const o of probes) {
+        for (const r of probes) {
+          const out = mapDemographicsFromAcs(body({
+            [ACS_VARIABLES.tenureOwner]: o,
+            [ACS_VARIABLES.tenureRenter]: r,
+          }), TRACT);
+          // Collect rather than branch. `if (v !== null) expect(...)` is false
+          // for the 0/0 pair, and a branch that skips is one my own sweep has
+          // to keep re-classifying. Collecting also buys the precondition the
+          // branching form never had.
+          for (const [who, v] of [['owner', out.ownerOccupiedPct], ['renter', out.renterOccupiedPct]] as const) {
+            if (v !== null) computed.push({ pair: `${o}/${r}`, who, pct: v });
+          }
+        }
+      }
+
+      expect(computed.length, 'no pair produced a percentage — the sweep proves nothing')
+        .toBeGreaterThan(probes.length);
+      const escaped = computed.filter((c) => c.pct < 0 || c.pct > 100);
+      expect(
+        escaped,
+        'a non-negative count pair produced a percentage outside [0,100] — the ' +
+          'backstop is REACHABLE and must be exercised directly, not assumed dead',
+      ).toEqual([]);
+    });
+
+    it('DISCLOSED GAP: the backstop cannot be exercised from outside', () => {
+      // Recorded so its untested-ness is a decision rather than an oversight.
+      // The backstop is defensive depth for a future refactor of the floor,
+      // and the seam offers no way to break the floor. Exporting the
+      // reconciliation predicate would make it directly testable; until then
+      // the case above proves the property it depends on (unreachability)
+      // rather than the branch itself.
+      //
+      // Left as a named assertion so it appears in the run and cannot be
+      // mistaken for coverage of the branch.
+      expect(true).toBe(true);
+    });
+  });
+  // =========================================================================
+  // The DISCLOSED design note, confirmed behaviourally rather than by reading
+  // the code: the observer fires on LIVE fetches only. An anomalous tract logs
+  // once per cold fetch; the cached result re-serves silently.
+  //
+  // Approved, and the reasoning holds — the WARN exists to tell us Census grew
+  // an annotation, which is a per-tract fact, not a per-view one. Logging it
+  // on every member view would bury it. But "approved" is not "verified", and
+  // the failure mode if it were wrong is the opposite of loud: a warm cache
+  // would silently stop reporting a tract that is still anomalous.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('the observer fires on LIVE fetches only', () => {
+    const SUBJECT = { ...golden01.subject, address: '123 MAIN STREET, SEATTLE, WA 98101' };
+    const FRESH = golden01.comps.map((c, i) => ({
+      ...c,
+      soldDate: new Date(Date.now() - (20 + i * 5) * 86_400_000).toISOString().slice(0, 10),
+    }));
+
+    /** A census provider that maps an ANOMALOUS row through the real mapper. */
+    function anomalousCensusProvider() {
+      let fetches = 0;
+      return {
+        get fetches() { return fetches; },
+        provider: {
+          async resolveTract() { return TRACT; },
+          async fetchDemographics(
+            tract: TractRef,
+            opts?: { onUnrecognized?: (a: { variable: string; value: number; tractGeoid: string }) => void },
+          ) {
+            fetches += 1;
+            // -5 is unlisted, so the floor reports it — through whatever
+            // observer the SERVICE passed in, which is the thing under test.
+            return mapDemographicsFromAcs(
+              body({ [ACS_VARIABLES.medianAge]: -5, [ACS_VARIABLES.medianHouseholdIncome]: 93333 }),
+              tract, undefined, opts?.onUnrecognized,
+            );
+          },
+        },
+      };
+    }
+
+    function memoryCensusCache() {
+      const store: Record<string, Demographics> = {};
+      return {
+        get size() { return Object.keys(store).length; },
+        cache: {
+          async get(geoid: string) { return store[geoid] ?? null; },
+          async set(geoid: string, d: Demographics) { store[geoid] = d; },
+        },
+      };
+    }
+
+    /** Collect WARN lines from the service logger. */
+    function warnCollector() {
+      const warns: Array<Record<string, unknown>> = [];
+      return {
+        warns,
+        logger: {
+          warn: (obj: unknown) => { warns.push(obj as Record<string, unknown>); },
+          info: () => {}, error: () => {}, debug: () => {},
+        },
+      };
+    }
+
+    it('a COLD fetch reports once; the WARM serve reports nothing and still renders', async () => {
+      const census = anomalousCensusProvider();
+      const cache = memoryCensusCache();
+      const log = warnCollector();
+
+      const cold = await runComps('123 Main St, Seattle WA', {
+        provider: makeProviderSpy({ subject: SUBJECT, comps: FRESH, noDetailSupport: true }).provider as never,
+        censusProvider: census.provider as never,
+        censusCache: cache.cache as never,
+        logger: log.logger as never,
+      });
+      expect(cold.ok, 'the cold lookup failed').toBe(true);
+
+      // PRECONDITION — the anomaly must actually have been reported on the
+      // cold path, or "silent on the warm path" is true of a build that never
+      // reports at all.
+      const anomalies = log.warns.filter((w) => String(w.variable ?? '').length > 0);
+      expect(anomalies.length, 'the COLD fetch did not report the anomaly').toBe(1);
+      expect(anomalies[0].value, 'the report lost the raw value').toBe(-5);
+      expect(anomalies[0].tractGeoid).toBe('04013111700');
+      expect(census.fetches, 'the cold path did not fetch').toBe(1);
+      expect(cache.size, 'nothing was cached, so the warm path below is not warm')
+        .toBeGreaterThan(0);
+
+      // Warm serve, same tract, fresh logger so the count is unambiguous.
+      const log2 = warnCollector();
+      const warm = await runComps('123 Main St, Seattle WA', {
+        provider: makeProviderSpy({ subject: SUBJECT, comps: FRESH, noDetailSupport: true }).provider as never,
+        censusProvider: census.provider as never,
+        censusCache: cache.cache as never,
+        logger: log2.logger as never,
+      });
+      expect(warm.ok).toBe(true);
+
+      expect(census.fetches, 'the warm serve re-fetched — the cache is not being read').toBe(1);
+      expect(
+        log2.warns.filter((w) => String(w.variable ?? '').length > 0),
+        'the warm serve re-reported — the WARN would fire per member view, not ' +
+          'per cold fetch, and the line that means "Census added an annotation" ' +
+          'would be buried in repeats',
+      ).toEqual([]);
+
+      // ...and the cached anomaly still re-serves as unavailable, not as -5.
+      // UNCONDITIONAL: `if (warm.ok && warm.demographics)` went dead here and
+      // my own sweep caught it within the run. Asserting directly says which
+      // half is missing instead of silently proving nothing.
+      const served = warm.ok ? warm.demographics : undefined;
+      expect(served, 'the warm serve returned NO demographics — the cache read ' +
+        'succeeded but the result never reached the outcome').toBeTruthy();
+      expect(served!.medianAge, 'the cached anomaly re-served as a figure').toBeNull();
+      expect(served!.medianHouseholdIncome, 'the good sibling was lost in the cache')
+        .toBe(93333);
     });
   });
 });

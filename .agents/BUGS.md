@@ -43,8 +43,17 @@ and bidi characters. `format.test.ts` was the only carrier. Now clean.
 
 ## BUG-013 — the ACS sentinel enumeration has no floor under it
 
-- **Status**: OPEN — reported in mailbox `0029`. Repro red in
-  `tests/comps/census.test.ts` (two cases).
+- **Status**: CLOSED — fixed at `68a97c6`, exactly to the ruling. Re-verified
+  over the fix at `abd135b`: the two layers do DIFFERENT jobs (enumerated set
+  nulls SILENTLY, domain floor nulls AND reports), the floor covers all four
+  fields independently, the WARN carries variable + raw value + tract, and the
+  live-only observer behaves as disclosed. 42/42.
+- **One disclosed gap**, recorded so it is a decision: the reconciliation
+  backstop cannot be exercised through the public seam — the floor makes an
+  out-of-range percentage unreachable. Proven by a 10x10 non-negative sweep
+  rather than argued. Exporting the reconciliation predicate would make the
+  branch directly testable; until then the case asserts the property the
+  backstop depends on, not the branch.
 - **Severity**: medium reachability, HIGH consequence — a visibly impossible
   figure rendered as a measured fact with correct provenance beside it.
 
