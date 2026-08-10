@@ -47,3 +47,29 @@
 18:53 MASON — ARV REMOVED (arv.ts deleted, flag gone, ALGO_VERSION 3, run_comps no longer touches session_state); manual ARV path verified intact; CONTRACT §14.8 records the one-way door; CONTRACT_CHANGE 0033
 19:09 MASON — batch spike done (5-in-1 run works, 16s, out-of-order join on addressOrUrlFromInput, per-item failure isolation); NO build until INSPECTOR GREEN; INFO 0034
 19:47 MASON — cap ruling recorded (50, counts lookups); §14.14 pinned (join-key rule, batch bound to MAX_COMPS_KEPT, zpid cache, 90s ceiling, blind-parallel ban) — HOLDING for INSPECTOR GREEN
+
+---
+
+## INSPECTOR — 2026-08-10, ARV-removal block @ a667e2b
+
+Suite: **22 failed / 1276 passed / 33 skipped**, down from 93 failed at
+`12eb0e7`. All 22 remaining failures are in `state.test.ts` (13) and
+`form.test.ts` (9) and have ONE cause: **BUG-011** (mailbox `0024`, blocker) —
+every manual ARV binds to the literal string `"manual entry"`, so no test can
+bind an ARV to a real address.
+
+Not GREEN, and not close to it until BUG-011 lands. Left red rather than
+skipped: a red suite with a named blocker is honest; a green one that hides it
+is not.
+
+DONE: filter (41→0, tier ladder rewritten with an order proof), rank (9→0, all
+five v2 terms hand-derived), cache (3→0), service (1→0), recall (2→0),
+`arv.test.ts` retired with the live half of BUG-002 re-pointed onto `scoreComp`,
+`golden.test.ts` and `format.test.ts` rebuilt (both were DEAD on a deleted
+import, contributing 0 tests while looking like 82), golden header-integrity
+guard added, four stale golden headers corrected, the P1 inversion landed.
+
+RAISED: BUG-011 (`0024`, blocker), six contract self-contradictions (`0025`,
+non-blocking — code is right in every case).
+
+DEFERRED: the live battery, until the suite is green offline.
