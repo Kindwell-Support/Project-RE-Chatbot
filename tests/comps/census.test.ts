@@ -1,171 +1,297 @@
 /**
- * CENSUS DEMOGRAPHICS — CONTRACT §14.10 + the operator's four guarantees.
- * Written BEFORE the build, from the ruling, so the shape is pinned by
- * intent rather than by whatever the ACS adapter happens to return.
+ * CENSUS DEMOGRAPHICS — CONTRACT §14.10, guarantees 1–4.
  *
- * The four:
- *   1. a Census failure is NON-FATAL — comps render in full, the section
- *      says unavailable
- *   2. never infer a figure the API did not return
- *   3. suppressed or missing values render UNAVAILABLE, never zero
- *   4. every figure names its GEOGRAPHY and its VINTAGE
+ * Re-pointed onto the shipped seams (`providers/census.ts`) and onto the REAL
+ * recordings rather than my hand-built fixture, which is now unused. Expected
+ * values are hand-derived from the recording below, not read out of the
+ * implementation.
  *
- * WHY (3) IS THE ONE THAT WILL BITE. The ACS API does not omit unavailable
- * values — it returns negative sentinels in the same numeric field:
+ *   spike-census-acs.json — Phoenix tract 04013111700, REAL:
+ *     income 93333 · age 37.9 · total 2296 · owner 1427 · renter 869
+ *     ownerOccupiedPct  = 1427/2296 = 0.62151568 → ×1000 = 621.51568 → 622 → 62.2
+ *     renterOccupiedPct =  869/2296 = 0.37848432 → ×1000 = 378.48432 → 378 → 37.8
+ *     (62.2 + 37.8 = 100.0, and 1427 + 869 = 2296 matches the returned total —
+ *      the denominator is the SUM of the two counts, not the returned total,
+ *      and this recording cannot tell those apart. See the case that can.)
  *
- *     -666666666  estimate not computable for this geography
- *     -999999999  suppressed (too few samples to publish)
- *     -888888888  not applicable
- *     -222222222  too few samples for a reliable estimate
+ *   spike-census-acs-sentinel.json — Phoenix tract 04013061017, REAL:
+ *     income -666666666 · age 39.5 · total 0 · owner 0 · renter 0
+ *     A live sentinel AND a zero denominator in one real tract. This is the
+ *     answer to "does a sentinel actually occur" — it does, in Phoenix, in the
+ *     client's own market.
  *
- * These are the `daysOnZillow: -1` class exactly, and this project has already
- * shipped that class once. Two ways to get it wrong and both are worse than
- * silence: pass it through and render "median household income −$666,666,666",
- * or coalesce with `|| 0` and render "$0" — a real-looking figure claiming a
- * neighbourhood has no income. Unavailable is the only honest render.
- *
- * WHY (4) IS NOT COSMETIC. A tract is a few thousand people. A figure from the
- * NEIGHBOURING tract is a confident, invisible, wrong fact about the member's
- * property — the wrong-house bug in demographic clothing. Naming the geography
- * is what makes it checkable. And ACS 5-year estimates lag ~2 years, so an
- * unvintaged figure reads as current when it is not; a member cannot verify a
- * number without knowing which release it came from.
- *
- * CONTRACT GAP, raised in the mailbox: §14.10 carries guarantees 1 and 2 but
- * NOT 3 and 4. They are the operator's ruling and are pinned here; they need a
- * CONTRACT_CHANGE to become binding, and the contract is the referee.
+ * WHY THE SENTINEL CLASS IS THE ONE THAT BITES. ACS does not omit unavailable
+ * values; it returns them as negatives in the same numeric field. Pass one
+ * through and the member reads "median household income −$666,666,666";
+ * coalesce it with `|| 0` and they read "$0", a real-looking figure claiming a
+ * neighbourhood has no income. This is the THIRD appearance of the class after
+ * `daysOnZillow: -1` and the detail DOM.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { pendingSlice, sliceNote } from '../helpers/compsGate.js';
+import {
+  ACS_SENTINELS,
+  ACS_VARIABLES,
+  mapDemographicsFromAcs,
+  mapTractFromGeocoder,
+  type TractRef,
+} from '../../src/features/comps/providers/census.js';
 
-const MODS = ['census'] as const;
+const MODS = ['providers/census'] as const;
 
-/**
- * The ACS sentinel set. Kept as data, not scattered through cases, so adding a
- * newly-observed sentinel extends every test at once.
- */
-const ACS_SENTINELS = [-666666666, -999999999, -888888888, -222222222] as const;
+const FIX = resolve(
+  dirname(fileURLToPath(import.meta.url)), '..', '..',
+  'src', 'features', 'comps', '__fixtures__',
+);
+const load = (n: string) => JSON.parse(readFileSync(resolve(FIX, n), 'utf8'));
+
+const REAL = load('spike-census-acs.json') as string[][];
+const REAL_SENTINEL = load('spike-census-acs-sentinel.json') as string[][];
+const GEOCODE = load('spike-census-geocode.json');
+
+const TRACT: TractRef = { geoid: '04013111700', name: 'Census Tract 1117' } as TractRef;
+
+/** Build an ACS body from a header→value map, so cases read as data. */
+const body = (cols: Record<string, string | number>): string[][] => [
+  Object.keys(cols),
+  Object.values(cols).map(String),
+];
+
+const ALL = [
+  ACS_VARIABLES.medianHouseholdIncome,
+  ACS_VARIABLES.medianAge,
+  ACS_VARIABLES.tenureOwner,
+  ACS_VARIABLES.tenureRenter,
+];
 
 describe(`census demographics${sliceNote(...MODS)}`, () => {
   // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('suppressed and missing values (guarantee 3)', () => {
-    it.each(ACS_SENTINELS)('the %i sentinel renders UNAVAILABLE, never a number', async (sentinel) => {
-      const { mapCensusFigures } = await import('../../src/features/comps/census.js');
-      const out = mapCensusFigures({ medianHouseholdIncome: sentinel } as never);
+  describe.skipIf(pendingSlice(...MODS))('the recording still says what §14.10 was written from', () => {
+    it('the real tract carries the values the derivation below assumes', () => {
+      const [headers, values] = REAL;
+      const at = (n: string) => values[headers.indexOf(n)];
+      expect(at(ACS_VARIABLES.medianHouseholdIncome)).toBe('93333');
+      expect(at(ACS_VARIABLES.medianAge)).toBe('37.9');
+      expect(at(ACS_VARIABLES.tenureOwner)).toBe('1427');
+      expect(at(ACS_VARIABLES.tenureRenter)).toBe('869');
+    });
+
+    it('a REAL Phoenix tract returns a sentinel — this is not a fixture assumption', () => {
+      const [headers, values] = REAL_SENTINEL;
+      const income = Number(values[headers.indexOf(ACS_VARIABLES.medianHouseholdIncome)]);
+      expect(ACS_SENTINELS.has(income), `${income} is not in the enumerated set`).toBe(true);
+      expect(income).toBe(-666666666);
+    });
+  });
+
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('guarantee 3 — suppressed values are unavailable, never zero', () => {
+    it('all SIX enumerated sentinels are present, as a set not a threshold', () => {
+      // The operator's ruling: a partial enumeration is the same failure as a
+      // threshold. Asserted as an exact set so adding one is a visible decision
+      // and dropping one is a failure.
+      expect([...ACS_SENTINELS].sort((a, b) => a - b)).toEqual([
+        -999999999, -888888888, -666666666, -555555555, -333333333, -222222222,
+      ].sort((a, b) => a - b));
+    });
+
+    it.each([...ACS_SENTINELS])('sentinel %i nulls EVERY numeric field it appears in', (s) => {
+      const out = mapDemographicsFromAcs(
+        body(Object.fromEntries(ALL.map((v) => [v, s]))), TRACT,
+      );
+      expect(out.medianHouseholdIncome, `income survived sentinel ${s}`).toBeNull();
+      expect(out.medianAge, `age survived sentinel ${s}`).toBeNull();
+      expect(out.ownerOccupiedPct, `owner% survived sentinel ${s}`).toBeNull();
+      expect(out.renterOccupiedPct, `renter% survived sentinel ${s}`).toBeNull();
+    });
+
+    it.each([...ACS_SENTINELS])('sentinel %i is never coalesced to ZERO', (s) => {
+      // `?? 0` / `|| 0` renders "$0" — a measured-looking claim that a
+      // neighbourhood has no income. Worse than a dash, because it is legible.
+      const out = mapDemographicsFromAcs(
+        body(Object.fromEntries(ALL.map((v) => [v, s]))), TRACT,
+      );
+      // UNGUARDED, and my own dead-guard sweep is why. This was
+      // `if (typeof v === 'number') expect(v).not.toBe(0)` — false for every
+      // field precisely when the mapper is CORRECT (all sentinels null), so
+      // the assertion never ran. The exact pattern I documented, in a test I
+      // had just written. Asserting null directly subsumes "not zero" and
+      // cannot go dead.
       expect(
-        out.medianHouseholdIncome,
-        `the ACS sentinel ${sentinel} was carried through as a value — it renders ` +
-          'as a real dollar figure to the member',
-      ).toBeNull();
+        [out.medianHouseholdIncome, out.medianAge, out.ownerOccupiedPct, out.renterOccupiedPct],
+        `sentinel ${s} produced a figure — if any is 0 the member reads a measured ` +
+          'claim that a neighbourhood has no income or nobody owns their home',
+      ).toEqual([null, null, null, null]);
     });
 
-    it('a sentinel is not coalesced to ZERO — that is a worse lie than a dash', async () => {
-      // `value || 0` and `value ?? 0` both produce "$0", which reads as a
-      // measured fact: this neighbourhood has no income / nobody owns their
-      // home. Null is the only honest mapping.
-      const { mapCensusFigures } = await import('../../src/features/comps/census.js');
-      for (const sentinel of ACS_SENTINELS) {
-        const out = mapCensusFigures({
-          medianHouseholdIncome: sentinel,
-          medianAge: sentinel,
-          ownerOccupiedPct: sentinel,
-        } as never);
-        for (const [k, v] of Object.entries(out)) {
-          if (typeof v === 'number') {
-            expect(v, `${k} became ${v} from sentinel ${sentinel}`).not.toBe(0);
-          }
-        }
-      }
-    });
-
-    it('a genuine ZERO is still a value', async () => {
-      // The inverse trap, and the one that a too-eager sentinel filter creates.
-      // 0% owner-occupied is real in a tract that is all rentals.
-      const { mapCensusFigures } = await import('../../src/features/comps/census.js');
-      const out = mapCensusFigures({ ownerOccupiedPct: 0 } as never);
+    it('THE INVERSE: a genuine 0 count is a value, not an absence', () => {
+      // An all-rental tract really is 0% owner-occupied. A "drop anything <= 0"
+      // filter eats it and reports unavailable for a fact we actually have.
+      const out = mapDemographicsFromAcs(body({
+        [ACS_VARIABLES.tenureOwner]: 0,
+        [ACS_VARIABLES.tenureRenter]: 250,
+      }), TRACT);
       expect(out.ownerOccupiedPct, 'a real 0% was discarded as if it were a sentinel').toBe(0);
+      expect(out.renterOccupiedPct).toBe(100);
     });
 
-    it('an ABSENT field is null, not zero and not omitted', async () => {
-      const { mapCensusFigures } = await import('../../src/features/comps/census.js');
-      const out = mapCensusFigures({} as never);
-      for (const [k, v] of Object.entries(out)) {
-        if (k === 'geography' || k === 'vintage') continue;
-        expect(v, `${k} was invented from an absent field`).toBeNull();
+    it('the REAL sentinel tract: income nulls, age survives, both percentages null', () => {
+      // Hand-derived from spike-census-acs-sentinel.json. One real tract
+      // exercising the sentinel AND the zero-denominator guard together —
+      // and proving a sibling field is not collateral damage.
+      const out = mapDemographicsFromAcs(REAL_SENTINEL, TRACT);
+      expect(out.medianHouseholdIncome, 'the -666666666 reached the member').toBeNull();
+      expect(out.medianAge, 'a GOOD field was nulled because a sibling was suppressed')
+        .toBe(39.5);
+      expect(out.ownerOccupiedPct, '0/0 produced a percentage').toBeNull();
+      expect(out.renterOccupiedPct).toBeNull();
+    });
+
+    it('a zero DENOMINATOR yields null, never NaN and never 0', () => {
+      const out = mapDemographicsFromAcs(body({
+        [ACS_VARIABLES.tenureOwner]: 0,
+        [ACS_VARIABLES.tenureRenter]: 0,
+      }), TRACT);
+      expect(out.ownerOccupiedPct).toBeNull();
+      expect(Number.isNaN(out.ownerOccupiedPct as number), '0/0 rendered as NaN').toBe(false);
+    });
+
+    it('an ABSENT column is null — never zero, never invented', () => {
+      const out = mapDemographicsFromAcs(body({}), TRACT);
+      expect(out.medianHouseholdIncome).toBeNull();
+      expect(out.medianAge).toBeNull();
+      expect(out.ownerOccupiedPct).toBeNull();
+      expect(out.renterOccupiedPct).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('guarantee 2 — arithmetic on returned counts, never inference', () => {
+    it('the real tract computes both percentages to the hand-derived figures', () => {
+      const out = mapDemographicsFromAcs(REAL, TRACT);
+      expect(out.medianHouseholdIncome).toBe(93333);
+      expect(out.medianAge).toBe(37.9);
+      expect(out.ownerOccupiedPct, '1427/2296 = 62.2 to 1dp').toBe(62.2);
+      expect(out.renterOccupiedPct, '869/2296 = 37.8 to 1dp').toBe(37.8);
+    });
+
+    it('a percentage needs BOTH counts — one suppressed nulls both', () => {
+      // The inference boundary. With only the owner count returned, a
+      // percentage can still be computed against the returned TOTAL — and that
+      // is inference, because the total counts households the tenure split does
+      // not. Both counts or neither.
+      const out = mapDemographicsFromAcs(body({
+        [ACS_VARIABLES.tenureOwner]: 1427,
+        [ACS_VARIABLES.tenureRenter]: -666666666,
+        [ACS_VARIABLES.tenureTotal ?? 'B25003_001E']: 2296,
+      }), TRACT);
+      expect(
+        out.ownerOccupiedPct,
+        'a percentage was computed against the returned TOTAL while the renter ' +
+          'count was suppressed — that denominator was not measured for this split',
+      ).toBeNull();
+      expect(out.renterOccupiedPct).toBeNull();
+    });
+
+    it('the denominator is the SUM of the two counts, not the returned total', () => {
+      // The recording cannot distinguish these (1427 + 869 = 2296 exactly), so
+      // this case makes them disagree. A total that exceeds the split is
+      // ordinary — it counts households the tenure variables do not classify.
+      const out = mapDemographicsFromAcs(body({
+        [ACS_VARIABLES.tenureOwner]: 300,
+        [ACS_VARIABLES.tenureRenter]: 100,
+        [ACS_VARIABLES.tenureTotal ?? 'B25003_001E']: 500,
+      }), TRACT);
+      expect(out.ownerOccupiedPct, '300/400 = 75; against the total it would read 60').toBe(75);
+      expect(out.renterOccupiedPct).toBe(25);
+    });
+  });
+
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('columns are located BY NAME, never by position', () => {
+    it('a re-ordered ACS response maps every field correctly', () => {
+      // The detail-batch lesson, in a second place. ACS is array-of-arrays: a
+      // positional read produces a full set of real-looking numbers with the
+      // income in the age column, and nothing about it looks broken.
+      const ordered = mapDemographicsFromAcs(REAL, TRACT);
+      const [headers, values] = REAL;
+      const idx = headers.map((_h, i) => i).reverse();
+      const shuffled: string[][] = [idx.map((i) => headers[i]), idx.map((i) => values[i])];
+
+      expect(shuffled[0], 'the fixture is not actually re-ordered').not.toEqual(headers);
+      const out = mapDemographicsFromAcs(shuffled, TRACT);
+      expect(out.medianHouseholdIncome, 'a positional read put another column in income')
+        .toBe(ordered.medianHouseholdIncome);
+      expect(out.medianAge).toBe(ordered.medianAge);
+      expect(out.ownerOccupiedPct).toBe(ordered.ownerOccupiedPct);
+    });
+  });
+
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('guarantee 4 — geography and vintage', () => {
+    it('the tract resolves from the geocoder recording, with a checkable name', () => {
+      const tract = mapTractFromGeocoder(GEOCODE);
+      expect(tract, 'the recorded geocoder response did not resolve a tract').not.toBeNull();
+      expect(tract!.geoid, 'the GEOID is not the recorded tract').toBe('04013111700');
+      expect(String(tract!.name), 'the tract has no member-checkable name').toContain('1117');
+    });
+
+    it('a geocoder response with NO tract resolves to null, never a nearby one', () => {
+      // A tract is a few thousand people. Falling back to a neighbouring tract
+      // is the wrong-house bug in demographic clothing — invisible, confident,
+      // and about someone's actual property.
+      expect(mapTractFromGeocoder({ result: { geographies: {} } })).toBeNull();
+      expect(mapTractFromGeocoder({})).toBeNull();
+      expect(mapTractFromGeocoder(null)).toBeNull();
+    });
+
+    it('the mapped result carries its vintage', () => {
+      const out = mapDemographicsFromAcs(REAL, TRACT);
+      expect(out.acsYear, 'no ACS vintage on the figures').toBeTypeOf('number');
+      expect(out.acsYear, 'the vintage is not a plausible ACS year').toBeGreaterThan(2015);
+      expect(out.tractGeoid, 'no geography on the figures').toBe('04013111700');
+    });
+  });
+  // =========================================================================
+  // BUG-013 — the enumerated set has no floor under it.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('an UNLISTED negative is still not a figure', () => {
+    it('a negative that is not an enumerated sentinel must not render', () => {
+      // §14.10: "suppression sentinels (large negatives) AND ANYTHING
+      // NON-FINITE/NEGATIVE map to null". `acsNumber` only rejects the six
+      // listed values, so -5 passes through as a figure.
+      //
+      // The enumeration is the right PRIMARY mechanism and the operator ruled
+      // so — a threshold alone silently absorbs a seventh annotation value the
+      // day Census adds one, and masks genuinely bad data as if it were
+      // suppression. But removing the floor entirely leaves nothing between a
+      // malformed payload and the member. None of these four measures can be
+      // negative: not an income, not an age, not a household count.
+      for (const bad of [-5, -1, -100, -12345]) {
+        const out = mapDemographicsFromAcs(body({
+          [ACS_VARIABLES.medianHouseholdIncome]: bad,
+          [ACS_VARIABLES.medianAge]: bad,
+        }), TRACT);
+        expect(out.medianHouseholdIncome, `median income rendered as ${bad}`).toBeNull();
+        expect(out.medianAge, `median age rendered as ${bad}`).toBeNull();
       }
     });
-  });
 
-  // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('nothing is inferred (guarantee 2)', () => {
-    it('no figure is derived from another figure', async () => {
-      // The tempting inference: renterPct = 100 - ownerOccupiedPct. It is
-      // arithmetic, it looks free, and it is wrong whenever the ACS
-      // denominator differs (vacant units are neither). A derived figure the
-      // API did not return is indistinguishable from one it did.
-      const { mapCensusFigures } = await import('../../src/features/comps/census.js');
-      const out = mapCensusFigures({ ownerOccupiedPct: 62 } as never);
-      const values = Object.entries(out)
-        .filter(([, v]) => typeof v === 'number')
-        .map(([k, v]) => `${k}=${v}`);
-      expect(values, 'a second figure appeared from a single returned field')
-        .toEqual(['ownerOccupiedPct=62']);
-    });
-  });
-
-  // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('every figure names geography and vintage (guarantee 4)', () => {
-    it('the mapped result carries both, and they are not blank', async () => {
-      const { mapCensusFigures } = await import('../../src/features/comps/census.js');
-      const out = mapCensusFigures({
-        medianHouseholdIncome: 74500,
-        geography: 'Census Tract 1132.04, Maricopa County, AZ',
-        vintage: 'ACS 2019-2023 5-Year Estimates',
-      } as never);
-      expect(String(out.geography ?? ''), 'the figure names no geography').toContain('Tract');
-      expect(String(out.vintage ?? ''), 'the figure names no vintage').toMatch(/\d{4}/);
-    });
-
-    it('a figure WITHOUT a vintage does not render — same rule as an unlabelled ARV', async () => {
-      // BUG-008's shape, one surface over. A number the member did not supply,
-      // shown with nothing saying where or when it came from, is a number they
-      // will treat as current and local. If the provenance cannot render, the
-      // figure must not render.
-      const { renderCensusSection } = await import('../../src/features/comps/census.js');
-      const text = renderCensusSection({
-        medianHouseholdIncome: 74500,
-        geography: 'Census Tract 1132.04, Maricopa County, AZ',
-        vintage: null,
-      } as never);
-      expect(String(text ?? ''), 'a demographic figure rendered with no vintage')
-        .not.toContain('74,500');
-    });
-
-    it('a figure WITHOUT a geography does not render either', async () => {
-      const { renderCensusSection } = await import('../../src/features/comps/census.js');
-      const text = renderCensusSection({
-        medianHouseholdIncome: 74500,
-        geography: null,
-        vintage: 'ACS 2019-2023 5-Year Estimates',
-      } as never);
-      expect(String(text ?? ''), 'a demographic figure rendered with no geography')
-        .not.toContain('74,500');
-    });
-  });
-
-  // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('failure is NON-FATAL (guarantee 1)', () => {
-    it('the section says unavailable rather than vanishing', async () => {
-      // A section that disappears on failure is indistinguishable from a
-      // section that was never requested. The member cannot tell "we could not
-      // get this" from "this does not exist", and only one of those is worth
-      // retrying.
-      const { renderCensusSection } = await import('../../src/features/comps/census.js');
-      const text = String(renderCensusSection(null as never) ?? '');
-      expect(text.length, 'the section vanished entirely on failure').toBeGreaterThan(0);
-      expect(text.toLowerCase(), 'the failure does not say it is unavailable')
-        .toMatch(/unavailable|couldn't|could not|not available/);
-      expect(text, 'a figure appeared in a FAILED section').not.toMatch(/\$\s?\d/);
+    it('a negative COUNT must not produce a percentage over 100', () => {
+      // The sharpest consequence, because the arithmetic launders it. A
+      // negative owner count makes the denominator smaller than the renter
+      // count, and the member is shown "renter-occupied 150%" — visibly
+      // impossible, rendered as a measured fact, with a real tract name and a
+      // real ACS vintage beside it lending it authority.
+      const out = mapDemographicsFromAcs(body({
+        [ACS_VARIABLES.tenureOwner]: -50,
+        [ACS_VARIABLES.tenureRenter]: 150,
+      }), TRACT);
+      expect(out.ownerOccupiedPct, 'a negative tenure percentage reached the member').toBeNull();
+      expect(out.renterOccupiedPct, 'a tenure percentage over 100% reached the member').toBeNull();
     });
   });
 });

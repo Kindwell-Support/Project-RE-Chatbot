@@ -41,6 +41,43 @@ and bidi characters. `format.test.ts` was the only carrier. Now clean.
 
 ---
 
+## BUG-013 — the ACS sentinel enumeration has no floor under it
+
+- **Status**: OPEN — reported in mailbox `0029`. Repro red in
+  `tests/comps/census.test.ts` (two cases).
+- **Severity**: medium reachability, HIGH consequence — a visibly impossible
+  figure rendered as a measured fact with correct provenance beside it.
+
+`acsNumber` rejects the six enumerated sentinels and nothing else, so an
+unlisted negative renders:
+
+```
+-5      -> median income -5,  median age -5
+owner=-50 renter=150 -> owner% = -50,  renter% = 150
+```
+
+**Contract disagrees with code.** §14.10: *"suppression sentinels (large
+negatives) and anything non-finite/negative map to null"*.
+
+The tenure case is the sharp one. A negative owner count shrinks the
+denominator below the renter count and the member reads **"renter-occupied
+150%"**. Guarantee 4 makes it worse rather than better: the tract name and ACS
+vintage render correctly beside it, so the provenance lends authority to
+nonsense.
+
+**Not asking for the threshold back.** MASON removed it for a good reason — a
+bare `< 0` check silently absorbs the seventh annotation value the day Census
+adds one, and masks malformed data as suppression. Wrong shape for a sentinel
+class (third appearance after `daysOnZillow: -1`). The proposal is both, with
+different jobs: the enumerated set stays primary and silent (expected,
+documented suppression); a domain floor catches unlisted negatives — none of
+these four measures can be negative — maps them to null AND **logs** them. The
+logging is what earns it: a threshold alone hides a new sentinel; enumeration
+plus a logging floor means the member never sees nonsense and we learn when
+Census adds a value, rather than finding out from a screenshot.
+
+---
+
 ## FINDING-008 — one-shot tooling that persists state between runs
 
 - **Status**: CLOSED (rule adopted)
@@ -97,6 +134,34 @@ code.
 
 **Corollary rule:** verify a repair by re-reading the artifact, not by
 observing that the repair command exited 0.
+
+### SCOPE CORRECTION — it was worse than I reported, and undetectably so
+
+I reported this as costing ONE file. Measured after the Census sweep: the
+stale-backup revert also clobbered the un-guarding in `arvRemoved.test.ts` (2
+sites) and `manualArvBinding.test.ts` (1), and **I committed the clobbered
+state in `38dedb0` without noticing** — its diff shows my explanatory comment
+being removed and `if (flip?.inputs_used) {` being added back.
+
+**Why no check I ran could have caught it.** Un-guarding an assertion does not
+change pass/fail — the guarded version passes too, it simply proves less. So
+"the tests still pass" is not evidence the fix survived, and neither is
+`git status` (the file genuinely matched HEAD). The ONLY instrument that sees
+this is the dead-guard sweep, which is what found it, four commits later.
+
+**Rule extended:** a fix whose effect is invisible to the suite must be
+verified by the instrument that measures the effect, not by the suite. For
+dead guards that is the sweep — so the sweep is now the verification step for
+its own class of fix, not only the discovery step.
+
+Also learned the hard way: the re-application script matched exact strings and
+silently reported `MISS` five times when the restored copy had drifted.
+One-shot repair tooling should transform structurally (parse the block) or
+fail loudly on a miss — never no-op quietly.
+
+---
+
+
 
 ---
 

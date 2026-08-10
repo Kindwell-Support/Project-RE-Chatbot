@@ -37,7 +37,7 @@ export type CompsModule =
   | 'detail' | 'cache/detailCache'
   // §14.10 Census demographics — spec written pre-build from the operator's
   // four guarantees. Skips until the module lands; fails under COMPS_STRICT.
-  | 'census';
+  | 'providers/census';
 
 export function hasModule(...mods: CompsModule[]): boolean {
   return mods.every((m) => existsSync(resolve(SRC, `${m}.ts`)));

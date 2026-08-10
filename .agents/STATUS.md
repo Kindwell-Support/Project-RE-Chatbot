@@ -171,3 +171,37 @@ fact. Needs a re-run once credits are restored, before merge.
 00:15 MASON — CENSUS shipped @ 4623e7f (§14.10 built: key now REQUIRED by the API — CENSUS_API_KEY gate, three-state demographics, tract cache 180d, emit order extended, no retry, geocoder fixture RECORDED / ACS hand-built pending key; smokes 9/9, suite 1,346/0); §14.16 records both aggregate rulings + outlier candidate; SPIKE run (authorized): 235 items @ 6.4s, doz=12m holds, our resultsLimit was the wall, fixture recorded — aggregates NOT built, awaiting operator go; HANDOFF 0040. OPERATOR ACTION: register free CENSUS_API_KEY
 00:25 MASON — RULING executed @ a292bc8: §14.10 Guarantee 3 (ACS_SENTINELS enumerated set — operator's four + two documented completions flagged; threshold check gone; zero survives) + Guarantee 4 (standing provenance rule, INSPECTOR framing, three surfaces cross-referenced); smokes 10/10, suite 1,346/0; CONTRACT_CHANGE 0041 sent. Pricing pulled from actor API: search $0.002/result, detail $0.003/result at BRONZE tier (account tier itself 403-hidden to this token) — reported to operator
 00:30 MASON — CENSUS LIVE-VERIFIED @ 1cddcca (keyed ACS real values: $93,333/37.9/62-38 tract 1117; hand-built fixture DELETED, two real recordings incl. tract 061017 with LIVE -666666666 sentinel + 0/0/0 tenure; county sweep 35 sentinel hits / 1,009 tracts all -666666666, zero negative non-sentinels; rendered section verbatim in contract, emit order holds); six-sentinel list stands per ruling; HANDOFF 0042 — HOLDING for INSPECTOR census verification before aggregates
+
+---
+
+## INSPECTOR — 2026-08-11, Census verified @ 2e8c466 + working tree
+
+**26 of 28 census cases pass.** Every hand-derived figure matches the real
+recording (62.2 / 37.8 from 1427 and 869 over 2296). Six sentinels asserted as
+an exact SET. Columns confirmed located by NAME — re-ordered the recorded
+headers and every field still lands, which is the detail-batch join lesson in
+a second place. Denominator confirmed as the SUM of the two counts, with a case
+that makes sum and returned-total disagree since the recording cannot.
+
+**The live sentinel question is answered by the recording**: tract
+`04013061017` really does return `-666666666` income with a zero denominator in
+the same row. Not a fixture assumption.
+
+**BUG-013 open** (mailbox `0029`): the enumeration has no floor. An unlisted
+negative renders, and a negative tenure count yields "renter-occupied 150%"
+with correct provenance beside it. Contract says negatives map to null; code
+nulls only the six listed values.
+
+**Dead-guard sweep, per the checklist**: 21 blocks, **5 dead, identical to
+baseline**, all conditional rules. It caught one new dead guard on the way and
+it was MINE, in the census spec I had just written — `if (typeof v ===
+'number')` is false for every field exactly when the mapper is correct.
+Replaced with an unconditional assertion.
+
+**FINDING-008 scope corrected**: the stale-backup clobber cost three files, not
+one, and I committed the clobbered state in `38dedb0`. Nothing I ran could have
+caught it — un-guarding does not change pass/fail — which is why the sweep is
+now the verification step for its own class of fix, not just the discovery step.
+
+Live battery still outstanding, still blocked on credits, still required at
+HEAD before merge.
