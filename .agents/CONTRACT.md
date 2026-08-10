@@ -360,7 +360,13 @@ not instead of it.** The two layers have different jobs:
   not reconcile to their denominator — any computed percentage outside
   [0,100] — BOTH lines render unavailable and the anomaly is reported. We
   do not repair data we do not understand. (Structurally unreachable while
-  the floor holds; kept so the guarantee survives refactors.)
+  the floor holds; kept so the guarantee survives refactors. **Operator
+  approved as built**, with the backstop's independence from the floor
+  called out as the point: a guarantee that depends on the floor staying
+  correct is weaker than one that holds if the floor breaks.)
+- **Observer fires on LIVE fetches only** (approved): a null cached from
+  an anomalous row re-serves silently, so the WARN fires once per cold
+  fetch per tract — not per member view.
 - The denominator for the percentages is the SUM of the two returned
   counts, never the returned B25003 total — computing owner% against a
   total that counts households the tenure split does not classify would be
@@ -428,6 +434,17 @@ Cost: one run × ~235 per-result billing units in an urban market; the
 per-result rate is in the client's console. Recorded:
 `__fixtures__/spike-agg-1mi-12mo.json`. Full table in
 `reports/NEIGHBOURHOOD_AGGREGATES_SCOPING.md`.
+
+**Build authorization + test-design principle (operator, post-spike):**
+the aggregates START once INSPECTOR re-issues census verification.
+Dedicated 1-mile fetch, `doz=12m` server-side, `dedupeSales` before any
+average, DOM as the labelled 5-comp average with the label load-bearing —
+all as ruled above. **The window-truncation tests are the design: a
+truncated window produces a PLAUSIBLE number, so the assertions must be on
+the CALL (bounds, doz parameter, resultsLimit) and the SPAN (the date
+range actually covered), never on the figure.** A test that checks the
+average is a number would pass on four weeks of data wearing a 12-month
+label — the exact failure the dedicated fetch exists to prevent.
 
 **Candidate, recorded NOT built (operator):** once the aggregate pool exists
 (potentially hundreds of sales), it is a far better basis for outlier
