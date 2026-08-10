@@ -407,9 +407,24 @@ describe(`service: retry policy and the honesty contract${sliceNote(...MODS)}`, 
       expect(shown.length).toBeGreaterThan(0);
       const text = shown.join('\n');
 
-      // The rendered block is prose+table: it contains the ARV as formatted
-      // currency, not as a bare JSON field the model must format itself.
-      expect(text).toMatch(/\$\s?403,000/);
+      // Re-pointed for the ARV removal. There is no computed figure to look
+      // for any more, so the thing that proves "rendered, not raw" is the
+      // formatted COMP data: sold prices as currency and $/sqft, laid out as a
+      // table. A bag of numbers would carry `soldPrice: 405000`, never
+      // "$405,000" in a row with a pipe in it.
+      // `shown` is one entry per tool result — parse the run_comps one, do not
+      // join them first and hope the result is still JSON.
+      const block = shown
+        .map((t) => { try { return JSON.parse(t) as { rendered_block?: string }; } catch { return null; } })
+        .map((p) => (p && typeof p.rendered_block === 'string' ? p.rendered_block : ''))
+        .find((b) => b.length > 0) ?? '';
+      expect(block.length, 'no rendered block came back at all').toBeGreaterThan(200);
+      expect(block, 'sold prices are not rendered as currency').toMatch(/\$\d{3},\d{3}/);
+      expect(block, 'no per-comp lines').toMatch(/^- \*\*.+\*\* . sold \$/m);
+      expect(block, 'no $/sqft rendered').toMatch(/\$\d+\/sqft/);
+      // ...and it is prose, not the raw field names behind it.
+      expect(block, 'raw field names leaked into member-facing copy')
+        .not.toMatch(/soldPrice|livingArea|pricePerSqft|zpid/);
 
       let parsed: unknown;
       try { parsed = JSON.parse(text); } catch { parsed = undefined; }

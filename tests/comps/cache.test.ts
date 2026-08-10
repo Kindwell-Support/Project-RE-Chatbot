@@ -99,17 +99,47 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       expect(counts.set, 'nothing was written to the cache').toBeGreaterThan(0);
     });
 
-    it('the cached result carries the same ARV as the live one', async () => {
+    it('the cached result is the SAME COMP SET as the live one', async () => {
+      // Re-pointed: there is no ARV to compare any more, so the cache identity
+      // is the comp set and the tier that produced it. That is a stricter test
+      // than the ARV was — two different comp sets can round to the same ARV,
+      // but they cannot have the same zpids, prices and $/sqft.
       const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
       const { cache } = makeCache();
       const live = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       const hit = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       expect(live.ok && hit.ok).toBe(true);
       if (live.ok && hit.ok) {
-        expect(hit.arv.arv).toBe(live.arv.arv);
-        expect(hit.arv.arv).toBe(403000); // golden 01, hand-computed
+        // POSITIVE PRECONDITION — two empty comp sets are trivially identical.
+        expect(live.comps.length, 'the live run produced no comps to compare')
+          .toBeGreaterThanOrEqual(3);
+
+        const fingerprint = (r: typeof live) => r.comps.map(
+          (c) => `${c.comp.zpid}|${c.comp.soldPrice}|${c.pricePerSqft.toFixed(6)}|${c.score.toFixed(9)}`,
+        );
+        expect(fingerprint(hit), 'the cache hit returned a different comp set')
+          .toEqual(fingerprint(live));
+        expect(hit.radiusTierMi).toBe(live.radiusTierMi);
+        expect(hit.recencyTierMonths, 'the recency rung did not survive the round trip')
+          .toBe(live.recencyTierMonths);
+        expect(hit.subject.zpid).toBe(live.subject.zpid);
+
         expect(hit.fromCache, 'a cache hit is not flagged fromCache').toBe(true);
         expect(live.fromCache).toBe(false);
+      }
+    });
+
+    it('a cache hit carries nothing ARV-shaped either', async () => {
+      // The removal has to hold on BOTH sides of the cache. A pre-removal entry
+      // shape that still round-trips an `arv` key would resurrect the number
+      // for every session that hits a warm key.
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const { cache } = makeCache();
+      await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      const hit = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(hit.ok && hit.fromCache, 'precondition: this was not a cache hit').toBe(true);
+      for (const k of ['arv', 'arvLow', 'arvHigh', 'confidence', 'arvConfidence']) {
+        expect(hit, `a cache hit still carries "${k}"`).not.toHaveProperty(k);
       }
     });
 
@@ -185,7 +215,16 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
         rawSubject: SUBJECT as never,
         rawComps: COMPS as never,
         // A result computed by an OLDER algorithm — deliberately wrong now.
-        result: { ok: true, arv: { arv: 1 } } as never,
+        // Re-pointed off the ARV: the stale marker is now a comp set that
+        // could not possibly be the right answer. If the recompute is skipped
+        // and the stored result is served, STALE-1 comes back and the assertion
+        // below fails loudly instead of matching a plausible number.
+        result: {
+          ok: true, algoVersion: ALGO_VERSION - 1, runId: 'stale-run',
+          subject: SUBJECT, radiusTierMi: 99, recencyTierMonths: 99,
+          comps: [{ comp: { zpid: 'STALE-1' }, score: 0, pricePerSqft: 1 }],
+          rejected: [], fromCache: true, provider: 'stub',
+        } as never,
         algoVersion: ALGO_VERSION - 1,
         provider: 'stub',
         expiresAt: iso(CACHE_TTL_DAYS),
@@ -200,7 +239,11 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       expect(out.ok, 'the recompute did not produce a result').toBe(true);
       if (out.ok) {
         // Recomputed from raw with the CURRENT algorithm, not the stale result.
-        expect(out.arv.arv).toBe(403000);
+        expect(out.comps.map((c) => c.comp.zpid), 'the STALE result was served verbatim')
+          .not.toContain('STALE-1');
+        expect(out.comps.length, 'the recompute produced nothing').toBeGreaterThanOrEqual(3);
+        expect(out.radiusTierMi, 'the stale tier came through').not.toBe(99);
+        expect(out.recencyTierMonths).not.toBe(99);
         expect(out.algoVersion).toBe(ALGO_VERSION);
       }
       expect(counts.set, 'the recomputed result was not written back').toBeGreaterThan(0);
@@ -269,7 +312,13 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       };
       const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       expect(out.ok, 'a cache write failure lost the result').toBe(true);
-      if (out.ok) expect(out.arv.arv).toBe(403000);
+      if (out.ok) {
+        // Re-pointed off the ARV: a cache WRITE failure must still return the
+        // full comp set, not a degraded one.
+        expect(out.comps.length, 'a cache write failure cost us the comps')
+          .toBeGreaterThanOrEqual(3);
+        expect(out.fromCache, 'a failed write was reported as a cache hit').toBe(false);
+      }
     });
 
     it('runs at all with no cache injected', async () => {
@@ -372,7 +421,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       const all = lines.join('\n');
       expect(all, 'the raw address was logged').not.toContain('123 Main St, Seattle WA');
       expect(all).not.toMatch(/apify_api_|Bearer\s+\S+/i);
-      expect(all).not.toContain(process.env.APIFY_TOKEN ?? ' never-matches ');
+      expect(all).not.toContain(process.env.APIFY_TOKEN ?? '__NO_TOKEN_IN_ENV__');
     });
   });
 });

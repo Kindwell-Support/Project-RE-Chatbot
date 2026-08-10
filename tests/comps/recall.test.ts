@@ -153,8 +153,11 @@ describe(`the transcript-recall path${sliceNote(...MODS)}`, () => {
       const a = buildApp(config, {
         openai: makeFakeOpenAI([
           runComps('765 N Don Frank Ln'),
-          // The model relays the rendered block, as §9 instructs. This is what
-          // lands in chat_messages and is replayed as history.
+          // NOTE, post-removal: this scripted line is no longer the model
+          // relaying a rendered figure — the tool does not produce one. It is
+          // the model AUTHORING an ARV, which is precisely the non-compliant
+          // turn this block exists to characterise. Kept verbatim for that
+          // reason. What lands in chat_messages is replayed as history.
           say('Here are the comps for 765 N Don Frank Ln — ARV $403,000 (range $394,000–$412,000).'),
         ]).client,
         supabase: supabase.client,
@@ -206,20 +209,33 @@ describe(`the transcript-recall path${sliceNote(...MODS)}`, () => {
       expect(history).toContain('8531 W Vale Dr');
     });
 
-    it('session_state binds ONLY the most recent address — the earlier one is unrecoverable', async () => {
-      // The structural asymmetry that makes a mis-recall unfixable downstream.
-      // State knows B. A's number exists only as prose in the transcript, with
-      // no binding, no confidence, and no provenance the code can check.
+    it('a comps run now binds NOTHING — the old asymmetry is gone, and so is the cross-check', async () => {
+      // RE-POINTED. This used to read "state binds only the most recent
+      // address, so A's number is unrecoverable". After the removal there is
+      // no comps ARV to bind at ALL: `run_comps` writes nothing to
+      // session_state.
+      //
+      // That is a net improvement — state can no longer hold the wrong house's
+      // number — but it is worth being honest about what it costs. Before,
+      // state at least held ONE authoritative figure that a downstream guard
+      // could compare against. Now there is nothing in state to contradict a
+      // recalled number, whatever it is.
       const { supabase } = await runTwoAddresses('recall-binding');
-      const block = supabase.compsBlockFor('recall-binding');
 
-      expect(block, 'no block was bound at all').toBeDefined();
-      expect(block!.arv, 'state should bind the LATEST run').toBe(362000);
-      expect(block!.subjectAddress).toContain('8531 W VALE');
+      // POSITIVE PRECONDITION — "nothing was bound" is trivially true if the
+      // runs never happened. Both must have reached the provider and produced
+      // a rendered block.
+      const blocks = supabase.inserts
+        .filter((i) => i.table === 'chat_messages')
+        .flatMap((i) => (Array.isArray(i.payload) ? i.payload : [i.payload]))
+        .map((r) => String((r as { content?: string }).content ?? ''));
+      expect(blocks.join('\n'), 'precondition: neither comps run produced output')
+        .toContain('765 N Don Frank Ln');
 
-      // So if the model recalls A's $403,000, nothing in state disagrees with
-      // it — because state is not consulted on a turn where no calculator runs.
-      expect(block!.arv, "A's ARV is not in state to be checked against").not.toBe(403000);
+      expect(
+        supabase.compsBlockFor('recall-binding'),
+        'run_comps wrote a comps block to session_state — nothing should any more',
+      ).toBeUndefined();
     });
 
     it('a recall turn runs NO tool, so no guard in this module engages', async () => {
@@ -343,6 +359,15 @@ describe(`the transcript-recall path${sliceNote(...MODS)}`, () => {
       // discussing, from a path that believes it is being helpful.
       const { supabase } = await runTwoAddresses('recall-divergence');
 
+      // Prove the tool never produced either figure. Every ARV in this
+      // transcript was authored by the model.
+      const toolBlocks = supabase.inserts
+        .filter((i) => i.table === 'chat_messages')
+        .flatMap((i) => (Array.isArray(i.payload) ? i.payload : [i.payload]))
+        .map((r) => String((r as { content?: string }).content ?? ''))
+        .join('\n');
+      expect(toolBlocks, 'precondition: the comps runs produced no output').toContain('Don Frank');
+
       const openai = makeFakeOpenAI([
         say('You ran 765 N Don Frank Ln already — it came back around $403,000.'),
       ]);
@@ -358,9 +383,21 @@ describe(`the transcript-recall path${sliceNote(...MODS)}`, () => {
       await app.close();
 
       expect(String(res.json().output)).toContain('403,000');
-      // State disagrees with what the member was just told, and nothing
-      // reconciles the two.
-      expect(supabase.compsBlockFor('recall-divergence')!.arv).toBe(362000);
+
+      // RE-POINTED, and the hazard is now sharper rather than softer. It used
+      // to be "state disagrees with what the member was just told". It is now:
+      // the module never computed an ARV for either address, so $403,000 has
+      // no origin anywhere in the system. It is not the wrong house's number —
+      // it is not a number at all until the model says it.
+      //
+      // Nothing structural can catch this. There is no stored figure to
+      // compare against, and a recall turn calls no tool. This is the residual
+      // risk the ruling accepts, stated as plainly as I can state it, and it is
+      // why the gated live battery is now the load-bearing test for honesty.
+      expect(
+        supabase.compsBlockFor('recall-divergence'),
+        'a comps block exists — if it ever does again, this hazard changes shape',
+      ).toBeUndefined();
     });
   });
 });
