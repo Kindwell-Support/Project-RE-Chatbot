@@ -468,3 +468,83 @@ them without the client ruling ships an un-approved claim about a house.
 
 **BUG-012 open**: `year built 1,928` — the year goes through the sqft/lot
 formatter. Repro live and red in `format.test.ts`.
+
+
+---
+
+# APPENDIX — THE ASSERTION-REACH FAILURES (carry this past the project)
+
+Seven findings on this project shared one root, and none of them was a wrong
+expected value. Every one was an assertion that no longer reached the thing it
+named, while staying green (or, once, red for the wrong reason).
+
+The chain between a test's NAME and the guarantee has five links, and each can
+break silently:
+
+| # | link | how it broke here |
+| --- | --- | --- |
+| 1 | the recorded arithmetic matches the data | golden headers drifted from their own fixtures after a re-spread |
+| 2 | the file runs at all | three suites failed at IMPORT — 82 cases counted as coverage while contributing zero |
+| 3 | the system is in the state the test claims | `makeFakeSupabase` lacked `maybeSingle`; 155 tests ran through a caught TypeError and a degraded path |
+| 4 | the predicate is applied to the right subject | a fixed 3-line row slice; a new render line pushed the target out of it |
+| 5 | the predicate is what it looks like | a literal U+0008 where `\b` was intended — one always-failed, one always-PASSED |
+| 6 | the assertion executes | 16 of 31 `expect`s inside `if` blocks never took their branch |
+
+## THE ONE WORTH CARRYING: a defensive guard tolerating the correct path kills the assertion
+
+The eight leak guards are the sharpest instance, and the pattern generalises
+well beyond this codebase.
+
+```ts
+// The wrong-house protection. Written defensively, because a CORRECT
+// implementation refuses the call and `flip` is legitimately undefined.
+if (flip?.inputs_used) {
+  expect(flip.inputs_used.after_repair_value).not.toBe(403000);
+}
+```
+
+The reasoning that produces it is sound: *"the guard may refuse, and a refusal
+is a pass, so don't fail on it."* The consequence is not: the guard refuses
+**every time** — that is the correct behaviour — so the condition is false
+every time and the assertion **never runs once**. The test is green on its
+other assertions, and the guarantee in its title is unverified.
+
+**The tell**: the guard's condition is false precisely when the system is
+behaving correctly. Any time you write a conditional whose false-branch is the
+expected outcome, the assertion inside is dead in the normal case and only
+alive in the abnormal one — the exact inverse of what you want.
+
+**The fixes, in order of preference:**
+
+1. **Delete the guard.** Usually it was never needed. `flip?.inputs_used?.x`
+   is `undefined` on a refusal, and `undefined !== 403000` passes — so the
+   unguarded assertion passes on the correct path AND fails on a leak, with no
+   branch to go dead. This is strictly stronger and it was available all along.
+2. **Assert the actual behaviour**, with the alternative in the failure
+   MESSAGE rather than in a branch: "the widget declines to pre-fill an
+   unlabelled value; if it now supplies its own label instead, assert that
+   here — do not restore the conditional."
+3. **Assert the disjunction explicitly** where both outcomes really are
+   acceptable, so at least one is proven to have happened and a dead harness
+   cannot pass.
+
+Never leave form (0): `if (correct-path) { expect(...) }`.
+
+## HOW TO FIND THEM, without coverage tooling
+
+Instrument every `if (...) {` block containing an `expect` with a tripwire —
+`expect(Boolean(cond), 'BRANCH-NEVER-TAKEN <file>:<line>').toBe(true)` —
+inserted immediately before the block. Run the suite, collect the failures,
+revert. Failures are branches that were false at least once; for a
+non-parameterized test that means never taken at all.
+
+Run it after any change that alters which path the system takes. The eight
+leak guards went dead the moment the mismatch guard started working — the
+tests did not change, the system did.
+
+## A NOTE ON DIAGNOSIS
+
+I closed the widget instance by explaining it (`§14.8 removed the pre-fill`)
+rather than measuring it, and the explanation was wrong — it pointed away from
+the real gap, which was a fixture shape that production can no longer emit. A
+plausible cause for a dead assertion is not a cause. Probe it.

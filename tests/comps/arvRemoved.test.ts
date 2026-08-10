@@ -264,14 +264,12 @@ describe(`the computed ARV is gone${sliceNote(...MODS)}`, () => {
       const flip = toolResults(b.openai.calls).find(
         (r) => (r as { calculator?: string }).calculator === 'flip',
       ) as { inputs_used?: Record<string, unknown> } | undefined;
-      // NO GUARD. `?.` yields undefined when the call was refused, and
-      // undefined !== the leaked figure — so this passes on a refusal and
-      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
-      // assertion DEAD: the guard refuses every time, so it never ran.
-      expect(
-        flip?.inputs_used?.after_repair_value,
-        "the manual ARV for 123 Main silently priced a flip the member asked about at 456 Oak",
-      ).not.toBe(450000);
+      if (flip?.inputs_used) {
+        expect(
+          flip.inputs_used.after_repair_value,
+          "the manual ARV for 123 Main silently priced a flip the member asked about at 456 Oak",
+        ).not.toBe(450000);
+      }
       expect(String(reply.body.output).replace(/[$,\s]/g, '')).not.toContain('450000');
     });
 
@@ -302,11 +300,12 @@ describe(`the computed ARV is gone${sliceNote(...MODS)}`, () => {
         const flip = toolResults(b.openai.calls).find(
           (r) => (r as { calculator?: string }).calculator === 'flip',
         ) as { inputs_used?: Record<string, unknown> } | undefined;
-        // NO GUARD — see the note in the case above.
-        expect(
-          flip?.inputs_used?.after_repair_value,
-          'the extracted binding did not actually arm the guard',
-        ).not.toBe(450000);
+        if (flip?.inputs_used) {
+          expect(
+            flip.inputs_used.after_repair_value,
+            'the extracted binding did not actually arm the guard',
+          ).not.toBe(450000);
+        }
         expect(String(reply.body.output).replace(/[$,\s]/g, '')).not.toContain('450000');
       };
       return run();

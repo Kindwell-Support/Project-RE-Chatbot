@@ -72,12 +72,29 @@ Classified benign: `golden.test.ts` x2 (parameterized, legitimately vary),
 result), `agent.test.ts` / `invariants.test.ts` (conditional RULES that apply
 only to a shape not currently present).
 
-**Open**: `formPrefill.widget.test.ts:132` — `if (control?.value === '403000')`
-never fires, because post-§14.8 the widget no longer pre-fills in that
-scenario at all. The labelled-pre-fill path (BUG-008's guarantee) is therefore
-unexercised at the widget layer. Needs re-pointing onto a MANUAL ARV, same as
-the state/form suites were. Not a product defect; a coverage hole left by the
-removal.
+**CLOSED — and my first diagnosis of it was wrong, which is worth recording.**
+I reported `formPrefill.widget.test.ts:132` as dead "because post-§14.8 the
+widget no longer pre-fills". That was inference, not measurement. The file
+feeds the widget a form descriptor through a mocked fetch and never touches
+the server, so §14.8 cannot reach it.
+
+Probed instead. The widget declines to pre-fill because the fixture has **no
+label** — which is BUG-008's fix working exactly as designed. The branch is
+dead for a good reason, and the honest form is to assert the declining
+directly rather than tolerate either outcome. Done.
+
+The REAL staleness in that file was elsewhere and the dead branch hid it: every
+fixture was `arvSource: 'comps'` with a "Pre-filled from your comps on ..."
+label — a shape that can no longer reach the widget at all, because
+`formPrefill.ts:54` returns the form untouched for any block that is not
+`'manual'`. BUG-008's label guarantee was being exercised solely against a
+payload production cannot produce. Fixtures re-pointed to the manual shape,
+and §14.15's unbound variant (null `subjectAddress`, label naming no property)
+added — it reaches the member and had no coverage at all.
+
+Lesson, logged because it is the same failure I keep finding in others' work:
+I explained a dead branch from a plausible cause instead of measuring it. The
+plausible cause was wrong and it pointed away from the real gap.
 
 ---
 
