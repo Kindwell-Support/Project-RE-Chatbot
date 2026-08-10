@@ -263,6 +263,53 @@ When built: cache by tract/ZIP with its own TTL; a Census failure is
 NON-FATAL (comps still render in full, the demographics section says
 unavailable); never infer a figure the API did not return.
 
+**BUILT (2026-08-11). Shapes and discoveries:**
+
+- **The "no key at light volume" assumption above is STALE**: the Census
+  data API now 302s every keyless request to a "Missing Key" page (verified
+  live across vintages, incl. with a bogus key). The key is FREE
+  (api.census.gov/data/key_signup.html) — **OPERATOR ACTION: register one
+  and set `CENSUS_API_KEY`**. Until then the feature is dormant by design:
+  no key ⇒ no provider ⇒ `CompsResult.demographics` stays ABSENT ⇒ **no
+  section renders at all** — an unconfigured feature is not a failure (same
+  gate pattern as `run_comps`/APIFY_TOKEN). The free GEOCODER still works
+  keyless; its payload is recorded (`spike-census-geocode.json`).
+- **Three-state field**: `CompsResult.demographics?: Demographics | null` —
+  ABSENT = never attempted (no section); NULL = attempted, failed or no
+  tract (section renders the plain "unavailable" line, comps unaffected);
+  PRESENT = tract figures. Attached on EVERY serve, never stored in
+  comps_cache — same decoration pattern as detail.
+- **Two calls per cold tract** (providers/census.ts): geocoder lat/lng →
+  tract (GEOID/name), then ACS 5-year (`CENSUS_ACS_YEAR = 2023`) for
+  B19013_001E (median household income), B01002_001E (median age), B25003
+  tenure counts. Columns located BY HEADER NAME never position; ACS values
+  arrive as STRINGS; suppression sentinels (large negatives) and anything
+  non-finite/negative map to null. Tenure percentages are ARITHMETIC ON
+  RETURNED COUNTS (owner/(owner+renter), 1dp) — allowed arithmetic, never
+  inference; 0 counts are values.
+- **Cache**: `census_cache` (tract_geoid PK, demographics jsonb;
+  `sql/add_census_cache.sql`, migrate.ts probes it),
+  `CENSUS_CACHE_TTL_DAYS = 180` — ACS changes once a year; the cache buys
+  latency and key-quota headroom, not dollars. Tract resolution runs per
+  serve (free); only the ACS figures cache.
+- **Ceiling**: each Census call is clamped to
+  `min(CENSUS_TIMEOUT_MS = 10s, remaining pipeline headroom)`; zero
+  headroom ⇒ skip to null non-fatally. **NO retry** (same pinned posture as
+  the detail batch — the "unavailable" line is the retry). The provider
+  fetches with `redirect: 'error'` so the API's 302-to-HTML failure mode
+  for key problems surfaces as an HTTP-class failure, not a parse error;
+  the key rides only in the query string and typed errors carry no URL.
+- **Render** (§14.8 emit order EXTENDED): opening → header → table →
+  **[demographics]** → closing → footer — `COMPS_CLOSING` remains the last
+  content before the footer exactly as pinned. Section copy: tract name +
+  "US Census ACS 5-year, <year>" + income (USD) · median age · owner/renter
+  % (rounded), em-dash nulls. Unavailable line: *"Neighborhood demographics
+  are unavailable right now — the comps above are unaffected."*
+- **Fixtures**: `spike-census-geocode.json` is RECORDED (real geocoder,
+  subject-2 coords → tract 04013111700). `census-acs-handbuilt.json` is
+  HAND-BUILT to the documented shape — replace with a recording on the
+  first keyed run; the name marks the difference on purpose.
+
 ### 14.11 Out of scope
 
 - ~~**Neighbourhood summary** — all of it. Separate block.~~ Superseded:

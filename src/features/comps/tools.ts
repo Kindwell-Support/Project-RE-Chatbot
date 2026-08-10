@@ -14,7 +14,9 @@ import type OpenAI from 'openai';
 import { normalizeAddress } from './normalize.js';
 import { renderCompsForChat } from './format.js';
 import { runComps, type CompsCacheLike, type RunBudgetLike } from './service.js';
+import type { CensusCacheLike } from './cache/censusCache.js';
 import type { DetailCacheLike } from './cache/detailCache.js';
+import type { DemographicsProviderLike } from './providers/census.js';
 import type { PropertyDataProvider } from './providers/types.js';
 
 /** The §8 atomic block. `state.comps` holds this whole object or nothing. */
@@ -57,6 +59,9 @@ export interface CompsToolContext {
   cache?: CompsCacheLike;
   /** Zpid-keyed detail cache (§14.14). Optional — absent degrades to live detail fetches. */
   detailCache?: DetailCacheLike;
+  /** Census demographics (§14.10). Provider absent ⇒ no section renders (CENSUS_API_KEY gate). */
+  censusProvider?: DemographicsProviderLike;
+  censusCache?: CensusCacheLike;
   budget?: RunBudgetLike;
   stateStore?: SessionStateStore;
   logger?: { warn(obj: Record<string, unknown>, msg: string): void };
@@ -162,6 +167,8 @@ export async function runCompsToolHandler(
     provider: ctx.provider,
     cache: ctx.cache,
     detailCache: ctx.detailCache,
+    censusProvider: ctx.censusProvider,
+    censusCache: ctx.censusCache,
     budget: ctx.budget,
     logger: ctx.logger,
     now: ctx.now,

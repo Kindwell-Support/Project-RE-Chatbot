@@ -148,6 +148,27 @@ export interface ScoredComp {
   detail?: CompDetail;
 }
 
+/**
+ * Neighbourhood demographics (CONTRACT §14.10) — US Census ACS 5-year, keyed
+ * off the subject's tract. Decoration like detail: never blocks a comps run.
+ * Every figure is from the API or arithmetic on returned counts (the tenure
+ * percentages) — never inferred. ACS suppression sentinels (large negatives)
+ * map to null and render as em-dashes.
+ */
+export interface Demographics {
+  /** 11-digit census tract GEOID (state+county+tract) — the cache key. */
+  tractGeoid: string;
+  /** Display name from the geocoder, e.g. "Census Tract 1117". */
+  tractName: string;
+  /** ACS 5-year vintage the figures come from. */
+  acsYear: number;
+  medianHouseholdIncome: number | null;
+  medianAge: number | null;
+  /** 0–100, computed from RETURNED B25003 tenure counts; null when counts are missing/zero. */
+  ownerOccupiedPct: number | null;
+  renterOccupiedPct: number | null;
+}
+
 export interface CompsResult {
   ok: true;
   algoVersion: number;
@@ -161,6 +182,14 @@ export interface CompsResult {
   rejected: RejectedComp[];
   fromCache: boolean;
   provider: string;
+  /**
+   * §14.10 three-state field: ABSENT = demographics never attempted (no
+   * CENSUS_API_KEY configured — no section renders; an unconfigured feature
+   * is not a failure); NULL = attempted and failed/unresolvable — the
+   * section renders its "unavailable" line; PRESENT = the tract's figures.
+   * Attached by the service on every serve, never stored in comps_cache.
+   */
+  demographics?: Demographics | null;
 }
 
 export type CompsFailureCode =

@@ -162,6 +162,25 @@ export const COMPS_RUNS_PER_SESSION_PER_HOUR = 5;
  */
 export const COMPS_DAILY_RUN_CAP = 50;
 
+// --- Census demographics (CONTRACT §14.10) -----------------------------------
+
+/**
+ * ACS 5-year vintage queried. Bump once a year when the new release lands —
+ * the value is stamped on every Demographics object so a member-visible
+ * figure always names its vintage.
+ */
+export const CENSUS_ACS_YEAR = 2023;
+
+/** Per Census HTTP call (geocoder or ACS). Free API, but a member is waiting. */
+export const CENSUS_TIMEOUT_MS = 10_000;
+
+/**
+ * Tract demographics cache TTL. ACS data changes ONCE A YEAR (new vintage);
+ * 180 days means at most one stale half-year against a free source, while
+ * keeping us far under the API key's daily request quota.
+ */
+export const CENSUS_CACHE_TTL_DAYS = 180;
+
 // --- Shared math constants ---------------------------------------------------
 
 /**

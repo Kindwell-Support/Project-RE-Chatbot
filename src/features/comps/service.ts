@@ -16,6 +16,8 @@
 import { randomUUID } from 'node:crypto';
 import {
   ALGO_VERSION,
+  CENSUS_CACHE_TTL_DAYS,
+  CENSUS_TIMEOUT_MS,
   DETAIL_CACHE_TTL_DAYS,
   DETAIL_MIN_REMAINING_MS,
   MIN_COMPS_TO_COMPUTE,
@@ -28,7 +30,9 @@ import { FAILURE_COPY } from './format.js';
 import { selectTiers } from './filter.js';
 import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
 import { rankComps } from './rank.js';
+import type { CensusCacheLike } from './cache/censusCache.js';
 import type { DetailCacheLike } from './cache/detailCache.js';
+import type { DemographicsProviderLike } from './providers/census.js';
 import type {
   CompDetail,
   CompsFailure,
@@ -112,6 +116,13 @@ export interface RunCompsDeps {
   cache?: CompsCacheLike;
   /** Zpid-keyed detail cache (§14.14 rule 4). Absent ⇒ every serve re-fetches detail live (within budget/ceiling). */
   detailCache?: DetailCacheLike;
+  /**
+   * Census demographics (§14.10). Provider absent ⇒ demographics never
+   * attempted, no section renders (the CENSUS_API_KEY gate). Cache absent ⇒
+   * every serve re-queries the (free) Census API.
+   */
+  censusProvider?: DemographicsProviderLike;
+  censusCache?: CensusCacheLike;
   budget?: RunBudgetLike;
   logger?: LoggerLike;
   /** Injectable clock — pure code below never reads it directly. */
@@ -223,7 +234,7 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     // detail is attached on EVERY serve and never stored in comps_cache).
     if (cached.result && cached.algoVersion === ALGO_VERSION) {
       if (!cached.result.ok) return cached.result;
-      return enrichWithDetail({ ...cached.result, fromCache: true }, deps, key, now, startedAtMs, false);
+      return enrichAll({ ...cached.result, fromCache: true }, deps, key, now, startedAtMs, false);
     }
     // Raw payload cached under an older algo: recompute WITHOUT re-billing.
     if (cached.rawSubject) {
@@ -233,7 +244,7 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
         result: recomputed,
         algoVersion: ALGO_VERSION,
       });
-      return recomputed.ok ? enrichWithDetail(recomputed, deps, key, now, startedAtMs, false) : recomputed;
+      return recomputed.ok ? enrichAll(recomputed, deps, key, now, startedAtMs, false) : recomputed;
     }
   }
 
@@ -296,10 +307,95 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     expiresAt: new Date(now().getTime() + CACHE_TTL_MS).toISOString(),
   });
 
-  return outcome.ok ? enrichWithDetail(outcome, deps, key, now, startedAtMs, true) : outcome;
+  return outcome.ok ? enrichAll(outcome, deps, key, now, startedAtMs, true) : outcome;
 }
 
 const DETAIL_CACHE_TTL_MS = DETAIL_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+const CENSUS_CACHE_TTL_MS = CENSUS_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+/** The full post-compute decoration chain: detail (§14.14) then demographics (§14.10). */
+async function enrichAll(
+  result: CompsResult,
+  deps: RunCompsDeps,
+  key: string,
+  now: () => Date,
+  startedAtMs: number,
+  budgetConsumed: boolean,
+): Promise<CompsResult> {
+  const withDetail = await enrichWithDetail(result, deps, key, now, startedAtMs, budgetConsumed);
+  return enrichWithDemographics(withDetail, deps, key, now, startedAtMs);
+}
+
+/**
+ * Census demographics (§14.10) — decoration, never a dependency, and free:
+ * no budget interaction at all. Three-state outcome on the result:
+ * `demographics` stays ABSENT when no provider is configured (no section
+ * renders), becomes NULL on any failure (the section renders "unavailable"),
+ * and carries the tract figures on success. Tract resolution runs per serve
+ * (free, fast); the ACS figures come from the tract-keyed cache when they
+ * can — they change once a year.
+ */
+async function enrichWithDemographics(
+  result: CompsResult,
+  deps: RunCompsDeps,
+  key: string,
+  now: () => Date,
+  startedAtMs: number,
+): Promise<CompsResult> {
+  const provider = deps.censusProvider;
+  if (!provider) return result;
+  const logger = deps.logger;
+
+  // The §14.14 rule-5 ceiling covers the WHOLE pipeline, demographics
+  // included: clamp each Census call to the remaining headroom and give up
+  // (non-fatally) when none is left.
+  const remainingMs = PROVIDER_TIMEOUT_MS - (now().getTime() - startedAtMs);
+  if (remainingMs <= 0) {
+    logger?.info?.({ cacheKey: key }, 'demographics skipped — whole-pipeline ceiling');
+    return { ...result, demographics: null };
+  }
+  const timeoutMs = Math.min(CENSUS_TIMEOUT_MS, remainingMs);
+
+  try {
+    const tract = await provider.resolveTract(result.subject.lat, result.subject.lng, { timeoutMs });
+    if (!tract) {
+      logger?.info?.({ cacheKey: key }, 'demographics unavailable — coordinates resolved to no census tract');
+      return { ...result, demographics: null };
+    }
+
+    if (deps.censusCache) {
+      try {
+        const cached = await deps.censusCache.get(tract.geoid, now());
+        if (cached) return { ...result, demographics: cached };
+      } catch (err) {
+        logger?.warn({ err, cacheKey: key }, 'census cache read failed — querying live');
+      }
+    }
+
+    const demographics = await provider.fetchDemographics(tract, { timeoutMs });
+    if (deps.censusCache) {
+      try {
+        await deps.censusCache.set(
+          tract.geoid,
+          demographics,
+          new Date(now().getTime() + CENSUS_CACHE_TTL_MS).toISOString(),
+        );
+      } catch (err) {
+        logger?.warn({ err, cacheKey: key }, 'census cache write failed — demographics served uncached');
+      }
+    }
+    return { ...result, demographics };
+  } catch (err) {
+    // Every Census failure — timeout, HTTP, network, parse — degrades to the
+    // "unavailable" line (§14.10). NO retry: free API, decorative data; the
+    // rendered line is the retry.
+    logger?.warn(
+      { err: err instanceof Error ? err.message : String(err), cacheKey: key },
+      'census lookup failed — demographics unavailable',
+    );
+    return { ...result, demographics: null };
+  }
+}
 
 /**
  * Detail enrichment (§14.14) — decoration, never a dependency: every exit

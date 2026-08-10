@@ -29,6 +29,11 @@ export async function ensureCompsTables(supabase: SupabaseClient): Promise<boole
       sqlFile: 'sql/add_comps_detail_cache.sql',
       degradation: 'no detail caching (every lookup re-runs the detail batch)',
     },
+    {
+      table: 'census_cache',
+      sqlFile: 'sql/add_census_cache.sql',
+      degradation: 'no demographics caching (every lookup re-queries the Census API)',
+    },
   ];
   for (const { table, sqlFile, degradation } of tables) {
     const { error } = await supabase.from(table).select('*', { head: true, count: 'exact' }).limit(0);

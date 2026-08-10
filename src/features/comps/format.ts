@@ -150,6 +150,31 @@ function compLine(s: ScoredComp): string {
   );
 }
 
+/**
+ * Demographics section (§14.10). Three states, mirroring the type: absent
+ * field ⇒ NO section (unconfigured is not a failure); null ⇒ the
+ * "unavailable" line — plain, blames nothing, promises nothing; present ⇒
+ * the tract figures, every value from the API (or arithmetic on returned
+ * counts), em-dash nulls, the ACS vintage named so a figure is never
+ * presented as current-year truth.
+ */
+function renderDemographics(demographics: CompsResult['demographics']): string | null {
+  if (demographics === undefined) return null;
+  if (demographics === null) {
+    return '_Neighborhood demographics are unavailable right now — the comps above are unaffected._';
+  }
+  const d = demographics;
+  const income = d.medianHouseholdIncome === null ? NA : USD.format(d.medianHouseholdIncome);
+  const age = d.medianAge === null ? NA : String(d.medianAge);
+  const owner = d.ownerOccupiedPct === null ? NA : `${Math.round(d.ownerOccupiedPct)}%`;
+  const renter = d.renterOccupiedPct === null ? NA : `${Math.round(d.renterOccupiedPct)}%`;
+  return (
+    `**Neighborhood snapshot** — ${d.tractName} (US Census ACS 5-year, ${d.acsYear})\n` +
+    `Median household income ${income} · median age ${age} · ` +
+    `owner-occupied ${owner} · renter-occupied ${renter}`
+  );
+}
+
 function renderSuccess(result: CompsResult): string {
   const { subject, comps, rejected, radiusTierMi, recencyTierMonths } = result;
 
@@ -164,14 +189,18 @@ function renderSuccess(result: CompsResult): string {
   const table = [`**${comps.length} sold comps** (best match first):`, ...comps.map(compLine)].join('\n');
 
   /**
-   * THE emit order (CONTRACT §14.8). The ARV block that used to sit between
-   * the table and the closing copy is GONE — removed with arv.ts, not gated.
-   * Reinstating it would be a rebuild from the contract, not a line here.
+   * THE emit order (CONTRACT §14.8, extended by §14.10): opening → header →
+   * table → [demographics] → closing → footer. The ARV block that used to
+   * sit after the table is GONE — removed with arv.ts, not gated;
+   * reinstating it would be a rebuild from the contract, not a line here.
+   * The demographics section slots where it does so COMPS_CLOSING stays the
+   * LAST content before the footer, exactly as pinned.
    */
   const sections: Array<string | null> = [
     COMPS_OPENING,
     header,
     table,
+    renderDemographics(result.demographics),
     COMPS_CLOSING,
     FOOTER,
   ];
