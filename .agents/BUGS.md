@@ -11,7 +11,21 @@ carried into the GREEN message with its severity).
 
 ## BUG-011 — the ARV removal orphaned `subjectAddress`; every manual ARV binds to the literal string "manual entry"
 
-- **Status**: OPEN — reported in mailbox `0024`, blocker
+- **Status**: CLOSED — fixed at `0b7dcab` (operator-ruled: optional `address`
+  arg, current-message-only, null when unbound, guard skips null). Verified
+  independently at `c8d1d3b` by the four-state battery in
+  `tests/comps/manualArvBinding.test.ts` (6/6), written from the ruling text
+  before reading the implementation. The never-conflict blur did NOT happen:
+  a bound A still refuses B (STATE 2 control). The fix is stronger than the
+  ruling required — `bindAddressToCurrentMessage` structurally verifies the
+  model-supplied address against the current message, and a legacy shim
+  coerces stored `'manual entry'` rows to null at read.
+- **Residual, documented**: binding depends on the model PASSING the address
+  argument. Member names the property, model omits the arg → ARV stores
+  unbound → guard skips → the number is portable. Characterised with
+  tripwires in `arvRemoved.test.ts`; closing it (current-message extraction
+  fallback on omission) needs a ruling — raised in `0026`.
+- **Original report**: mailbox `0024`, blocker
 - **Severity**: high, member-visible on both symptoms
 - **Found**: while re-pointing the P1 state suite after the ARV removal (`12eb0e7`)
 

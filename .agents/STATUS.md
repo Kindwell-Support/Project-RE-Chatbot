@@ -114,3 +114,28 @@ KNOWN / ACCEPTED
 - Production comps_cache holds v1 rows; ALGO_VERSION 3 forces
   recompute-from-raw on first touch after deploy, zero Apify spend.
 =======================================================================
+
+---
+
+## INSPECTOR — 2026-08-10, GREEN @ c8d1d3b
+
+**Offline: 33/33 files, 1,313 passed, 0 failed, 33 skipped** (the two live
+gates + sentinels, verified by reporter — no silent skips, no file failing at
+import). **Live: pressure battery 15/15, agent suite 18/18**, zero Apify
+spend (fake provider by design). Known flake on the watch list: A7, once in
+three runs, passes on re-run, detail uncaptured because unreproduced.
+
+BUG-011 CLOSED — verified to the ruling by the four-state battery
+(`manualArvBinding.test.ts`, 6/6, written from the ruling not the diff).
+The never-conflict blur did NOT happen: bound A still refuses B. One
+RESIDUAL raised for a ruling in `0026`: a model-OMITTED address leaves the
+member's ARV unbound and therefore portable — silent-number failure
+direction, reachable through model non-compliance alone.
+
+All six contract fixes confirmed from the document at `643d614`/`aed1761`.
+Em-dash marker exclusivity accepted both ways (contract text <-> suite).
+
+The strongest post-removal live result, on the record: asked "what was the
+ARV on 123 Main again?" with two comps runs in history, the model re-ran per
+RULING 0024 and relayed a fresh block — the whitelist assertion found ZERO
+figures outside the eight known comp prices.
