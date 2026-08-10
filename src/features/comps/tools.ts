@@ -197,8 +197,10 @@ export async function runCompsToolHandler(
  * suffix counts as "naming an address" — "350k purchase, 75k rehab" never
  * trips it.
  */
-const ADDRESS_FRAGMENT_RE =
-  /\b\d{1,6}\s+(?:[NSEW]\.?\s+)?[A-Za-z][A-Za-z0-9'.\- ]{0,40}?\s?(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|ln|lane|ct|court|pl|place|way|ter|terrace)\b/gi;
+const ADDRESS_FRAGMENT_SRC = String.raw`\d{1,6}\s+(?:[NSEW]\.?\s+)?[A-Za-z][A-Za-z0-9'.\- ]{0,40}?\s?(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|ln|lane|ct|court|pl|place|way|ter|terrace)`;
+const ADDRESS_FRAGMENT_RE = new RegExp(String.raw`\b${ADDRESS_FRAGMENT_SRC}\b`, 'gi');
+/** The same pattern, anchored — one source string, so the two cannot drift. */
+const ADDRESS_FRAGMENT_ANCHORED_RE = new RegExp(`^${ADDRESS_FRAGMENT_SRC}$`, 'i');
 
 /**
  * The first address fragment in the message that is NOT the stored subject,
@@ -263,14 +265,62 @@ export function bindAddressToCurrentMessage(
 }
 
 /**
+ * Trim the fragment regex's known over-capture: a pure dollar figure before
+ * the address is swallowed into the match ("my ARV is 620000 for 830 W
+ * America St" fragments as "620000 for 830 W America St"). The refined
+ * fragment starts at the LAST pure-digit run whose tail still parses as a
+ * complete address on its own — "830 W America St" above. A digit word that
+ * is part of the street name ("2000 Highway 7 Ct") does not parse as an
+ * address start, so real addresses pass through untrimmed.
+ */
+function refineAddressFragment(fragment: string): string {
+  let best = fragment;
+  for (const digits of fragment.matchAll(/\b\d{1,6}\b/g)) {
+    const tail = fragment.slice(digits.index);
+    if (tail !== fragment && ADDRESS_FRAGMENT_ANCHORED_RE.test(tail)) best = tail;
+  }
+  return best;
+}
+
+/**
+ * RULING 0026: extract the ONE address the member's CURRENT message names,
+ * or nothing. The fallback for a model that omits the address argument —
+ * without it, model non-compliance alone reached the guard-free path and
+ * failed toward a silent number on the wrong property.
+ *
+ *  - CURRENT message only. This function never sees history.
+ *  - Zero fragments, or two DISTINCT fragments (compared normalized) ⇒ null.
+ *    Ambiguity is not guessed at; the same fragment stated twice is one.
+ *  - Over-captured fragments are refined first (refineAddressFragment), so
+ *    the stored binding is the address, not the dollar figure beside it.
+ */
+export function extractAddressFromMessage(
+  userMessage: string | undefined,
+  normalize: (raw: string) => string,
+): string | null {
+  const message = String(userMessage ?? '');
+  const distinct = new Map<string, string>(); // normalized -> as the member typed it
+  for (const match of message.matchAll(ADDRESS_FRAGMENT_RE)) {
+    const refined = refineAddressFragment(match[0]).trim();
+    const normalized = normalize(refined);
+    if (normalized && !distinct.has(normalized)) distinct.set(normalized, refined);
+  }
+  if (distinct.size !== 1) return null;
+  return distinct.values().next().value ?? null;
+}
+
+/**
  * set_manual_arv handler. Same block shape, arvSource 'manual' (CONTRACT §8).
  *
  * BUG-011: the block no longer inherits ANYTHING from a previous block. The
  * old code carried `subjectAddress` forward (falling back to the literal
  * 'manual entry' once run_comps stopped writing state — which bound every
  * manual ARV to a placeholder the guard then "defended"). A manual ARV is a
- * fresh statement: bound to the address the member named in THIS message, or
- * bound to nothing.
+ * fresh statement: bound to the address the member named in THIS message —
+ * via the model's argument or, failing that, extraction (RULING 0026) — or
+ * bound to nothing. When a fresh statement drops a previous binding, the
+ * result says so (`unbound_from`), so the member sees the address clause
+ * disappear instead of discovering it at the calculator.
  */
 export async function setManualArvToolHandler(
   args: Record<string, unknown>,
@@ -281,7 +331,32 @@ export async function setManualArvToolHandler(
     return { error: 'set_manual_arv requires a positive dollar amount. Ask the member for their ARV as a number.' };
   }
 
-  const boundAddress = bindAddressToCurrentMessage(args.address, ctx.userMessage, normalizeAddress);
+  // Binding order (RULING 0026): the model's argument first, verified; when
+  // that yields nothing — omitted, or unverifiable against the current
+  // message — fall back to extracting from the member's CURRENT message,
+  // and verify the extraction through the SAME check. History is never
+  // consulted on either route. "Unbound" now means: no address verifiable
+  // in the current message by argument OR extraction.
+  const argumentBound = bindAddressToCurrentMessage(args.address, ctx.userMessage, normalizeAddress);
+  const boundAddress =
+    argumentBound ??
+    bindAddressToCurrentMessage(
+      extractAddressFromMessage(ctx.userMessage, normalizeAddress),
+      ctx.userMessage,
+      normalizeAddress,
+    );
+
+  // Read-only look at the previous block, SOLELY to make an unbinding
+  // visible (RULING 0026): if the member had an ARV bound to a property and
+  // this fresh statement binds nothing, the address clause disappears — the
+  // member must be told now, not discover it at the calculator. No field is
+  // inherited from `previous`; the fresh-statement rule (§14.15) stands.
+  const previous = (await ctx.stateStore?.getCompsBlock(ctx.sessionId)) ?? null;
+  const unboundFrom =
+    boundAddress === null && previous?.arvSource === 'manual' && previous.subjectAddress !== null
+      ? previous.subjectAddress
+      : null;
+
   const block: CompsStateBlock = {
     subjectAddress: boundAddress,
     subjectSqft: 0,
@@ -298,16 +373,23 @@ export async function setManualArvToolHandler(
   await ctx.stateStore?.setCompsBlock(ctx.sessionId, block);
 
   const formatted = arv.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  const instruction = boundAddress
+    ? `Confirm in one short line that you'll use ${formatted} as the ARV for ${boundAddress} ` +
+      '(it now pre-fills Flip/BRRRR), and remind them it is their number, not a comp-derived one.'
+    : unboundFrom
+      ? `Confirm that you'll use ${formatted} as the ARV for this conversation, and SAY EXPLICITLY that it ` +
+        `replaces the ARV they had set for ${unboundFrom} and is no longer tied to that property — if they ` +
+        'meant it for that address, they should restate it with the address. Remind them it is their ' +
+        'number, not a comp-derived one. Do NOT attach the new ARV to any property address.'
+      : `Confirm in one short line that you'll use ${formatted} as the ARV for this conversation ` +
+        '(it now pre-fills Flip/BRRRR), and remind them it is their number, not a comp-derived one. ' +
+        'Do NOT attach it to any property address — none was stated.';
   return {
     stored: true,
     arv,
     arvSource: 'manual',
     ...(boundAddress ? { bound_address: boundAddress } : {}),
-    instruction: boundAddress
-      ? `Confirm in one short line that you'll use ${formatted} as the ARV for ${boundAddress} ` +
-        '(it now pre-fills Flip/BRRRR), and remind them it is their number, not a comp-derived one.'
-      : `Confirm in one short line that you'll use ${formatted} as the ARV for this conversation ` +
-        '(it now pre-fills Flip/BRRRR), and remind them it is their number, not a comp-derived one. ' +
-        'Do NOT attach it to any property address — none was stated.',
+    ...(unboundFrom ? { unbound_from: unboundFrom } : {}),
+    instruction,
   };
 }

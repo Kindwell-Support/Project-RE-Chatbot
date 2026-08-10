@@ -348,7 +348,9 @@ Ruling, binding:
    `bindAddressToCurrentMessage`).
 2. **No verifiable address ⇒ `subjectAddress: null`** — a real "unbound"
    state, NOT a placeholder string. The block inherits nothing from any
-   previous block.
+   previous block. **Amended by RULING 0026:** "no address" means *no
+   address verifiable in the current message, by argument or extraction* —
+   see item 7.
 3. **The guard does not fire on null.** An unbound ARV has nothing to
    conflict with and pre-fills wherever the member takes it (chat and form).
    The value-based stale-figure refusal (§8 explicit-ARV rule, case 3)
@@ -361,6 +363,24 @@ Ruling, binding:
 6. **Legacy shim**: rows already storing the literal `'manual entry'` are
    coerced to null on read (`sessionState.ts`), so the placeholder class
    cannot re-enter from production data.
+7. **RULING 0026 (operator, closes INSPECTOR's residual): extraction
+   fallback on omission.** The original shape bound only when the model
+   PASSED the address — so model non-compliance alone ("use 450k for 123
+   Main St" → `set_manual_arv({arv})`) reached the guard-free unbound path
+   and failed toward a silent number on the wrong property. Now, when the
+   argument yields no binding (omitted or unverifiable), the handler
+   extracts from the member's CURRENT message itself
+   (`extractAddressFromMessage`): the ONE distinct address fragment,
+   over-capture-refined, passed through the SAME verification the argument
+   route uses. Zero or multiple DISTINCT addresses in the message ⇒ stays
+   unbound — **ambiguity is never guessed**. History is never consulted on
+   either route; the prohibition that matters is unchanged.
+8. **RULING 0026, unbinding is announced.** The fresh-statement rule means
+   re-stating a number without an address DROPS a previous binding — that
+   is correct and stands, but it is member-visible: the tool result carries
+   `unbound_from` and the echo must say the new ARV replaces the one set
+   for that property and is no longer tied to it, so the member sees the
+   address clause disappear rather than discovering it at the calculator.
 
 Known, flagged, not fixed (needs its own ruling if wanted):
 `ADDRESS_FRAGMENT_RE` over-captures when a pure dollar figure precedes the
@@ -796,15 +816,30 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
 - `set_manual_arv` (BUG-011, §14.15) writes the shape above with
   `arvSource: 'manual'`, `arvLow/arvHigh/arvConfidence/compsRunId: null`,
   `subjectSqft: 0`, `subjectBeds/Baths: null` — **a fresh statement,
-  inheriting NOTHING from any previous block.** `subjectAddress` is the
-  optional `address` argument **verified against the member's CURRENT
-  message** (`bindAddressToCurrentMessage`: an ADDRESS_FRAGMENT_RE fragment
-  of the message contained in the normalized candidate, OR the candidate's
-  street part contained verbatim in the normalized message — the same
-  normalizer the guard uses, so a binding can never conflict with the
-  message that bound it). Anything the current message does not name —
-  i.e. anything carried from conversation history — binds **null**, never
-  trusted. Failure direction is always "unbound", never "bound wrong".
+  inheriting NOTHING from any previous block.** `subjectAddress` binds in
+  this order (RULING 0026), history never consulted on either route:
+  1. the optional `address` argument, **verified against the member's
+     CURRENT message** (`bindAddressToCurrentMessage`: an
+     ADDRESS_FRAGMENT_RE fragment of the message contained in the
+     normalized candidate, OR the candidate's street part contained
+     verbatim in the normalized message — the same normalizer the guard
+     uses, so a binding can never conflict with the message that bound it);
+  2. failing that (argument omitted OR unverifiable), **extraction from the
+     CURRENT message** (`extractAddressFromMessage`): the message's ONE
+     distinct address fragment, over-capture-refined, then passed through
+     the SAME verification. Zero fragments, or two-plus DISTINCT fragments
+     (compared normalized), extract nothing — **ambiguity is never
+     guessed**. Without this fallback, model non-compliance alone reached
+     the guard-free path and failed toward a silent number.
+  "Unbound" therefore means: **no address verifiable in the current
+  message, by argument or extraction.** Failure direction is always
+  "unbound", never "bound wrong".
+- **Unbinding is announced (RULING 0026)**: when a fresh statement stores
+  `subjectAddress: null` and the previous block was a manual ARV bound to a
+  property, the tool result carries `unbound_from: <that address>` and the
+  echo must SAY the new ARV replaces the one set for that property and is
+  no longer tied to it — the member sees the address clause disappear at
+  the moment it disappears, not at the calculator.
 - Pre-fill: when `flip_calculator` / `brrrr_calculator` is invoked **without**
   `after_repair_value` and `state.comps` exists, the agent layer injects
   `state.comps.arv` before `assertRequired` runs. The reply MUST echo the bound
@@ -901,7 +936,10 @@ the other is worse than no guard, because the tests look green.
 // set_manual_arv — address OPTIONAL (BUG-011, §14.15): the model passes the
 // property the member named IN THE CURRENT MESSAGE, or omits it entirely.
 // The handler verifies the claim structurally (bindAddressToCurrentMessage,
-// §8) — an unverifiable address stores null, it is never trusted.
+// §8) — an unverifiable address is never trusted. On omission or failed
+// verification the handler falls back to extracting the message's ONE
+// unambiguous address itself (RULING 0026), so binding does not depend on
+// model compliance; nothing verifiable ⇒ null.
 { "name": "set_manual_arv",
   "parameters": { "type": "object",
     "properties": {
