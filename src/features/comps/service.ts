@@ -14,16 +14,35 @@
  * NEVER constructs one, which is what keeps every path here drivable offline.
  */
 import { randomUUID } from 'node:crypto';
-import { ALGO_VERSION, MIN_COMPS_TO_COMPUTE, PROVIDER_MAX_RETRIES, RADIUS_TIERS_MI } from './config.js';
+import {
+  ALGO_VERSION,
+  DETAIL_CACHE_TTL_DAYS,
+  DETAIL_MIN_REMAINING_MS,
+  MIN_COMPS_TO_COMPUTE,
+  PROVIDER_MAX_RETRIES,
+  PROVIDER_TIMEOUT_MS,
+  RADIUS_TIERS_MI,
+} from './config.js';
+import { attachDetails, detailBatchFor } from './detail.js';
 import { FAILURE_COPY } from './format.js';
 import { selectTiers } from './filter.js';
 import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
 import { rankComps } from './rank.js';
-import type { CompsFailure, CompsFailureCode, CompsOutcome, CompsResult, RawComp, SubjectProperty } from './types.js';
+import type { DetailCacheLike } from './cache/detailCache.js';
+import type {
+  CompDetail,
+  CompsFailure,
+  CompsFailureCode,
+  CompsOutcome,
+  CompsResult,
+  RawComp,
+  SubjectProperty,
+} from './types.js';
 import {
   ProviderHttpError,
   ProviderNetworkError,
   ProviderTimeoutError,
+  type DetailBatchItem,
   type PropertyDataProvider,
 } from './providers/types.js';
 
@@ -56,10 +75,15 @@ export interface CachedComps {
 }
 
 /**
- * Daily spend guard (CONTRACT §3/§9): counts PROVIDER runs only — cache hits
- * are free. In-memory by design for tonight: it resets on deploy, which can
- * only ever UNDER-count (spend a little more than the cap), never block a
- * member wrongly. Injectable so tests drive it deterministically.
+ * Daily spend guard (CONTRACT §3/§9/§14.14): counts LOOKUPS THAT TOUCH
+ * APIFY — one unit per provider-hitting lookup, no matter how many actor
+ * runs it spawns (up to 3 with detail: subject + search + one batched
+ * detail). Lookups served entirely from cache are free; a cache-hit lookup
+ * needing only a live detail batch consumes one unit, and a denial there
+ * degrades to comps-without-detail, never RATE_LIMITED. In-memory by design:
+ * it resets on deploy, which can only ever UNDER-count (spend a little more
+ * than the cap), never block a member wrongly. Injectable so tests drive it
+ * deterministically.
  */
 export interface RunBudgetLike {
   /** True if a provider run may start now; false ⇒ RATE_LIMITED. */
@@ -86,6 +110,8 @@ export function createDailyRunBudget(dailyCap: number): RunBudgetLike {
 export interface RunCompsDeps {
   provider: PropertyDataProvider;
   cache?: CompsCacheLike;
+  /** Zpid-keyed detail cache (§14.14 rule 4). Absent ⇒ every serve re-fetches detail live (within budget/ceiling). */
+  detailCache?: DetailCacheLike;
   budget?: RunBudgetLike;
   logger?: LoggerLike;
   /** Injectable clock — pure code below never reads it directly. */
@@ -172,6 +198,9 @@ function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, p
 export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<CompsOutcome> {
   const now = deps.now ?? (() => new Date());
   const logger = deps.logger;
+  // The whole-pipeline clock (§14.14 rule 5): the detail batch only gets what
+  // remains of PROVIDER_TIMEOUT_MS after everything before it.
+  const startedAtMs = now().getTime();
   const normalized = normalizeAddress(rawAddress);
   if (!normalized) return failure('ADDRESS_NOT_FOUND');
   const key = cacheKey(normalized);
@@ -190,9 +219,11 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
   }
 
   if (cached && Date.parse(cached.expiresAt) > now().getTime()) {
-    // Fresh hit with current algo: serve as-is.
+    // Fresh hit with current algo: serve as-is (plus detail enrichment —
+    // detail is attached on EVERY serve and never stored in comps_cache).
     if (cached.result && cached.algoVersion === ALGO_VERSION) {
-      return cached.result.ok ? { ...cached.result, fromCache: true } : cached.result;
+      if (!cached.result.ok) return cached.result;
+      return enrichWithDetail({ ...cached.result, fromCache: true }, deps, key, now, startedAtMs, false);
     }
     // Raw payload cached under an older algo: recompute WITHOUT re-billing.
     if (cached.rawSubject) {
@@ -202,7 +233,7 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
         result: recomputed,
         algoVersion: ALGO_VERSION,
       });
-      return recomputed;
+      return recomputed.ok ? enrichWithDetail(recomputed, deps, key, now, startedAtMs, false) : recomputed;
     }
   }
 
@@ -251,6 +282,9 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
 
   const outcome = computeFromRaw(subject, comps, now(), deps.provider.name, false);
 
+  // The cache stores the DETAIL-FREE result on purpose (§14.14 rule 4):
+  // detail lives in its own zpid-keyed cache with a longer TTL and is
+  // re-attached on every serve, so the two lifetimes never entangle.
   await writeCache(deps, logger, {
     cacheKey: key,
     normalizedAddress: normalized,
@@ -262,7 +296,96 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     expiresAt: new Date(now().getTime() + CACHE_TTL_MS).toISOString(),
   });
 
-  return outcome;
+  return outcome.ok ? enrichWithDetail(outcome, deps, key, now, startedAtMs, true) : outcome;
+}
+
+const DETAIL_CACHE_TTL_MS = DETAIL_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * Detail enrichment (§14.14) — decoration, never a dependency: every exit
+ * from this function returns a servable CompsResult, and no throw escapes.
+ *
+ * Order: zpid cache → (ceiling check → budget check → ONE live batch for the
+ * misses) → pure join → cache write for what the batch bought.
+ *
+ * Deviations pinned in the contract:
+ *  - NO retry on the detail batch (unlike the subject/search seam policy):
+ *    a retry doubles the bill for decoration and eats the pipeline ceiling;
+ *    the degradation path (em-dashes) is the retry.
+ *  - `budgetConsumed` distinguishes the live path (this lookup already
+ *    consumed its cap unit — detail rides inside it) from cache-hit paths
+ *    (a live detail batch is this lookup's FIRST actor run, so it consumes
+ *    the unit; denial ⇒ skip, never RATE_LIMITED).
+ */
+async function enrichWithDetail(
+  result: CompsResult,
+  deps: RunCompsDeps,
+  key: string,
+  now: () => Date,
+  startedAtMs: number,
+  budgetConsumed: boolean,
+): Promise<CompsResult> {
+  if (result.comps.length === 0) return result;
+  const logger = deps.logger;
+
+  let cachedDetails: Record<string, CompDetail> = {};
+  if (deps.detailCache) {
+    try {
+      cachedDetails = await deps.detailCache.getMany(
+        result.comps.map((c) => c.comp.zpid).filter((z) => z.length > 0),
+        now(),
+      );
+    } catch (err) {
+      logger?.warn({ err, cacheKey: key }, 'detail cache read failed — enriching without it');
+    }
+  }
+
+  const missing = result.comps.filter((c) => !cachedDetails[c.comp.zpid]);
+  let items: DetailBatchItem[] = [];
+  if (missing.length > 0 && deps.provider.fetchDetailBatch) {
+    const remainingMs = PROVIDER_TIMEOUT_MS - (now().getTime() - startedAtMs);
+    if (remainingMs < DETAIL_MIN_REMAINING_MS) {
+      logger?.info?.(
+        { cacheKey: key, remainingMs },
+        'detail batch skipped — whole-pipeline ceiling; comps render without detail',
+      );
+    } else if (!budgetConsumed && deps.budget && !deps.budget.tryConsume(now())) {
+      logger?.info?.({ cacheKey: key }, 'detail batch skipped — daily cap; comps render without detail');
+    } else {
+      try {
+        // Batch size = the final kept set — already capped through ranking,
+        // and clamped again by detailBatchFor (§14.14 rule 2: bounded by
+        // MAX_COMPS_KEPT, never an independent constant).
+        items = await deps.provider.fetchDetailBatch(
+          detailBatchFor(missing.map((c) => c.comp.address)),
+          { timeoutMs: remainingMs },
+        );
+      } catch (err) {
+        logger?.warn(
+          { err: err instanceof Error ? err.message : String(err), cacheKey: key },
+          'detail batch failed — comps render without detail',
+        );
+      }
+    }
+  }
+
+  const join = attachDetails(result.comps, cachedDetails, items);
+  if (join.fetched.length > 0 && deps.detailCache) {
+    try {
+      await deps.detailCache.setMany(
+        join.fetched,
+        new Date(now().getTime() + DETAIL_CACHE_TTL_MS).toISOString(),
+      );
+    } catch (err) {
+      logger?.warn({ err, cacheKey: key }, 'detail cache write failed — details served uncached');
+    }
+  }
+  if (join.missing > 0) {
+    // Count only — §14.14 rule 3 says which comps failed is visible to US,
+    // and the em-dashes say it to the member; raw addresses stay out of logs.
+    logger?.info?.({ cacheKey: key, missing: join.missing }, 'comps served with missing detail fields');
+  }
+  return { ...result, comps: join.comps };
 }
 
 import { CACHE_TTL_DAYS } from './config.js';

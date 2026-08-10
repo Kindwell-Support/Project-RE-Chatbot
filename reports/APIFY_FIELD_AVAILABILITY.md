@@ -103,3 +103,33 @@ Anything null renders as an explicit em dash (`—`), never omitted, never
 inferred. A comp whose link cannot be built says "link unavailable" — the link
 is the client's stated substitute for the style/condition/quality criteria she
 waived, so its absence is reported rather than hidden.
+
+---
+
+## UPDATE 2026-08-10 — detail batching built (client approved)
+
+The cost table above is superseded: the detail scraper accepts a **batched
+address list**, so the final 5 comps cost ONE extra actor run, not five.
+Approved and shipped as **3 actor runs per lookup** (subject + search + one
+batched detail), with detail facts cached by property for 90 days — repeat
+and nearby lookups usually skip the third run entirely.
+
+**Now rendered per comp, in addition to the list above:**
+
+| Field | Source | Notes |
+| --- | --- | --- |
+| **Year built** | detail `yearBuilt` | 5/5 in the recorded batch |
+| **Days on market** | detail `daysOnZillow` | REAL here (11–34 observed) — unlike the search payload's −1 sentinel |
+| **Parking spaces** | detail `resoFacts.parkingCapacity` (fallback `parking.totalSpaces`) | 0 renders as 0, not as unknown |
+
+Anything missing still renders an explicit em dash. A comp whose detail
+lookup fails keeps all its sale data and shows dashes on these three columns
+only — a detail problem never blocks the comps themselves.
+
+**Available but awaiting a display decision:** architectural style
+(`resoFacts.architecturalStyle` — "Ranch", "Bungalow", "Other" observed 5/5)
+and property condition (`resoFacts.propertyCondition` — "Fixer" observed 1/5,
+often absent). Both are captured and stored with the other detail facts, so
+showing them is a formatting change, not a new scrape — but they were waived
+as MATCHING criteria and displaying them is a separate call the client should
+make explicitly.

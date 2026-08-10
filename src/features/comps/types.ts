@@ -100,6 +100,29 @@ export interface RejectedComp {
   reason: RejectReason;
 }
 
+/**
+ * Per-comp facts from the DETAIL scraper (CONTRACT §14.14) — fetched AFTER
+ * ranking, for the final kept set only, in ONE batched run. Enrichment is
+ * decoration: a missing/failed detail never fails a comps run, it renders
+ * em-dashes. Cached by zpid with its own longer TTL, separate from the comps
+ * result.
+ */
+export interface CompDetail {
+  /** Real daysOnZillow from the detail payload — the search payload's −1 sentinel never reaches here. */
+  daysOnMarket: number | null;
+  /** resoFacts.parkingCapacity, falling back to parking.totalSpaces. 0 is a value, not a null. */
+  parkingSpaces: number | null;
+  yearBuilt: number | null;
+  /**
+   * OBTAINABLE BUT NOT RENDERED (operator directive): the client waived
+   * style/condition as MATCHING criteria, which is not the same as declining
+   * to SEE them. Captured so a display ruling is a render change, not a
+   * re-scrape — format.ts must not emit them until that ruling exists.
+   */
+  architecturalStyle: string | null;
+  propertyCondition: string | null;
+}
+
 export interface ScoredComp {
   comp: RawComp;
   distanceMi: number;
@@ -116,6 +139,13 @@ export interface ScoredComp {
     /** Soft lot term (CONTRACT §14.3); 0 when either lot is unknown. */
     lot: number;
   };
+  /**
+   * Detail enrichment (§14.14). OPTIONAL and attached only by the service's
+   * enrichment step — the pure filter/rank pipeline never sets it, and a
+   * comp without it renders em-dash detail fields. Never cached inside the
+   * comps result (enrichment re-attaches on every serve from the zpid cache).
+   */
+  detail?: CompDetail;
 }
 
 export interface CompsResult {

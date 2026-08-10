@@ -118,6 +118,16 @@ function compLine(s: ScoredComp): string {
   // for judging them. Its absence is a real degradation, so it is stated, not
   // dropped.
   const link = c.detailUrl ? c.detailUrl : 'link unavailable';
+  // Detail enrichment (§14.14): label-first so a null renders as an explicit
+  // "year built —", never a bare dash with no referent. A comp the detail
+  // batch missed renders all three as em-dashes — same §14.5 rule as every
+  // other column. architecturalStyle / propertyCondition are CAPTURED but
+  // deliberately NOT rendered: display needs its own client ruling (operator
+  // directive) — do not add them here without one.
+  const d = s.detail;
+  const detailLine =
+    `  year built ${num(d?.yearBuilt ?? null)} · days on market ${num(d?.daysOnMarket ?? null)} · ` +
+    `parking spaces ${num(d?.parkingSpaces ?? null)}`;
   // No em dash as punctuation anywhere in the success block: "—" is the §14.5
   // NULL MARKER, and a marker that doubles as a separator stops being
   // explicit — a member scanning a row could not tell "missing data" from
@@ -127,6 +137,7 @@ function compLine(s: ScoredComp): string {
     `- **${c.address}** · sold ${price} on ${soldDate}\n` +
     `  ${num(c.livingArea, ' sqft')} · ${ppsf} · ${beds} bd / ${baths} ba · ` +
     `lot ${num(c.lotSize, ' sqft')} · ${s.distanceMi.toFixed(2)} mi away\n` +
+    detailLine + '\n' +
     `  ${link}`
   );
 }

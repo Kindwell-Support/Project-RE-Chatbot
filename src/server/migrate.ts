@@ -13,13 +13,30 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  */
 export async function ensureCompsTables(supabase: SupabaseClient): Promise<boolean> {
   let ok = true;
-  for (const table of ['comps_cache', 'session_state'] as const) {
+  const tables: ReadonlyArray<{ table: string; sqlFile: string; degradation: string }> = [
+    {
+      table: 'comps_cache',
+      sqlFile: 'sql/add_comps_tables.sql',
+      degradation: 'no comps caching (every run bills Apify)',
+    },
+    {
+      table: 'session_state',
+      sqlFile: 'sql/add_comps_tables.sql',
+      degradation: 'no ARV pre-fill',
+    },
+    {
+      table: 'comps_detail_cache',
+      sqlFile: 'sql/add_comps_detail_cache.sql',
+      degradation: 'no detail caching (every lookup re-runs the detail batch)',
+    },
+  ];
+  for (const { table, sqlFile, degradation } of tables) {
     const { error } = await supabase.from(table).select('*', { head: true, count: 'exact' }).limit(0);
     if (error) {
       ok = false;
       console.warn(
-        `[migrate] ${table} table not found. Run sql/add_comps_tables.sql in the Supabase SQL editor. ` +
-          'Comps will work but degrade: no caching (every run bills Apify) and no ARV pre-fill.',
+        `[migrate] ${table} table not found. Run ${sqlFile} in the Supabase SQL editor. ` +
+          `Comps will work but degrade: ${degradation}.`,
       );
     } else {
       console.log(`[migrate] ${table} table exists`);

@@ -9,16 +9,37 @@
  * any test without ceremony.
  */
 import type { RawComp, SubjectProperty } from '../types.js';
-import { mapCompItems, mapSubjectItem } from './apifyZillow.js';
-import type { PropertyDataProvider } from './types.js';
+import { mapCompItems, mapDetailBatchItems, mapSubjectItem } from './apifyZillow.js';
+import type { DetailBatchItem, PropertyDataProvider } from './types.js';
 
 export class StubPropertyDataProvider implements PropertyDataProvider {
   readonly name = 'stub';
 
+  /**
+   * Present ONLY when detail items were provided (assigned in the
+   * constructor): a stub without them is a provider genuinely lacking the
+   * capability, and the service must not treat it as detail-capable —
+   * consume budget for it, or log its "failure". Optionality mirrors the
+   * data, exactly like the real seam.
+   */
+  fetchDetailBatch?: (addresses: string[], opts?: { timeoutMs?: number }) => Promise<DetailBatchItem[]>;
+
   constructor(
     private readonly rawSubjectItems: Array<Record<string, unknown>>,
     private readonly rawCompItems: Array<Record<string, unknown>>,
-  ) {}
+    rawDetailItems?: Array<Record<string, unknown>>,
+  ) {
+    if (rawDetailItems) {
+      this.fetchDetailBatch = async (addresses: string[]) => {
+        // Replay ONLY the requested addresses (matching the real actor,
+        // which answers what it was asked), but in RECORDED order —
+        // deliberately NOT input order, so a positional join fails loudly in
+        // tests (§14.14 rule 1).
+        const requested = new Set(addresses);
+        return mapDetailBatchItems(rawDetailItems).filter((i) => requested.has(i.addressOrUrlFromInput));
+      };
+    }
+  }
 
   async lookupSubject(rawAddress: string): Promise<SubjectProperty | null> {
     if (this.rawSubjectItems.length === 0) return null;

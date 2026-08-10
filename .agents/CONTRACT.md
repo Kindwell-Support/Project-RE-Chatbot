@@ -122,7 +122,13 @@ Evidence: 73 sold comps across both recorded search runs
 | **lot size** | `homeInfo.lotAreaValue` + `lotAreaUnit` | 73/73 (68 sqft, 5 acres → normalized to sqft) |
 | **property link** | `detailUrl` | 73/73 — **LOAD-BEARING (§14.9)**; unbuildable ⇒ explicit "link unavailable" |
 
-**NOT buildable from the comps payload — reported, NOT built (§14.6).**
+**Additional per-comp fields via the DETAIL BATCH (§14.14.1, BUILT):** year
+built, days on market (real `daysOnZillow`), parking spaces — rendered
+label-first on their own line, em-dash nulls. Style/condition captured but
+NOT rendered (display needs its own ruling).
+
+**NOT buildable from the comps SEARCH payload alone — see §14.6; the ones the
+client approved now arrive through the detail batch (§14.14).**
 
 **Null rendering rule (no-fabrication extends to every new field):** a null
 field renders as an explicit **`—`** (em dash). Never omitted silently, never
@@ -147,12 +153,14 @@ whole answer:
 | **Construction quality / condition** | **NO** in search. | DETAIL has `resoFacts.propertyCondition` (observed "Fixer") but only in 1 of 2 recorded subjects — inconsistent even there. |
 | **Garage / basement / ADU** | **NO** in search. | DETAIL has garage fields; **basement absent in both** recorded subjects; no ADU field at all (`hasAdditionalParcels` is not an ADU). |
 
-**The cost fact the client decision turns on:** every one of the missing
-criteria exists in the DETAIL payload. Getting them per comp means one detail
-actor run **per comp** — 5 extra runs on top of the current 2, i.e. **2 → 7
-runs per comps lookup, ~3.5× the Apify cost**, against a quota the client pays
-for. Recommend the client decides whether any of these criteria justify that
-before anything is built. No render slots exist for them today.
+**The cost fact the client decision turned on:** every one of the missing
+criteria exists in the DETAIL payload. The naive shape was one detail run per
+comp (2 → 7 runs, ~3.5×); the spike proved BATCHING (§14.14), and the client
+approved **3 runs per lookup** (subject + search + ONE batched detail). DOM /
+parking / year built are now BUILT per comp (§14.14.1). Style and condition
+are OBTAINABLE and captured; their DISPLAY awaits a separate client ruling
+(§14.9 waived them as matching criteria only — not the same as declining to
+see them).
 
 ### 14.7 Prescribed copy — verbatim, from constants, structural in format.ts
 
@@ -326,10 +334,64 @@ Pinned now, while fresh, so the build cannot drift from the evidence:
 **Daily cap ruling (operator):** `COMPS_DAILY_RUN_CAP` stays **50** and counts
 **LOOKUPS** — the client accepted the 3-runs-per-lookup multiplier knowingly,
 and dropping to a spend-neutral 33 would quietly claw back capacity she did
-not agree to give up. 50 lookups ≈ 150 actor runs/day worst case. The config
-comment currently says "provider runs", which is wrong about what the code
-counts — fixed in the build slice, with the multiplier documented next to the
-value.
+not agree to give up. 50 lookups ≈ 150 actor runs/day worst case. The old
+"provider runs" config comment is fixed; the multiplier is documented next to
+the value. **Precise semantics as built:** one provider-hitting lookup
+consumes ONE unit regardless of actor-run count; lookups served entirely from
+cache are free; a cache-hit lookup that still needs a live detail batch
+consumes one unit (every actor run stays behind the cap), and a denial there
+degrades to comps-without-detail — never `RATE_LIMITED`.
+
+### 14.14.1 BUILT (this slice) — shapes and pinned decisions
+
+- **Types**: `CompDetail { daysOnMarket, parkingSpaces, yearBuilt,
+  architecturalStyle, propertyCondition }` (all `| null`);
+  `ScoredComp.detail?: CompDetail` — attached ONLY by the service's
+  enrichment step; the pure filter/rank pipeline never sets it.
+- **Mapping** (`mapDetailBatchItems`, providers/apifyZillow.ts, pure):
+  `daysOnZillow` real in the detail payload (recorded 11–34); negative =
+  sentinel class ⇒ null; 0 is a value. Parking:
+  `resoFacts.parkingCapacity` falling back to `parking.totalSpaces`
+  (both recorded, agreeing); 0 is a value. Items without
+  `addressOrUrlFromInput` are dropped (unjoinable — attaching them could
+  only be positional). `{isValid:false}` items map to `ok:false` WITH the
+  join key intact.
+- **Join** (`detail.ts`, pure): `attachDetails` / `joinDetailBatch` —
+  address-keyed, exact echo first, §5.1-normalized fallback; items for
+  addresses nobody asked for are ignored; order- and length-preserving.
+  `detailBatchFor` clamps any batch to `MAX_COMPS_KEPT` as a structural
+  rule-2 backstop (tracks the constant, no literal).
+- **Detail cache**: table `comps_detail_cache` (zpid PK, detail jsonb,
+  expires_at; RLS, service-role only — `sql/add_comps_detail_cache.sql`),
+  `DETAIL_CACHE_TTL_DAYS = 90`, expiry enforced on read. Cache rows are
+  keyed by the COMP's zpid (the key future lookups probe), not the batch
+  item's. **The comps_cache result is stored DETAIL-FREE** and enrichment
+  re-attaches on every serve — the 14-day and 90-day lifetimes never
+  entangle, and NO ALGO_VERSION bump was needed for this slice.
+- **Ceiling** (rule 5): the pipeline clock starts at runComps entry; the
+  detail batch gets `PROVIDER_TIMEOUT_MS − elapsed` as its timeout and is
+  skipped entirely below `DETAIL_MIN_REMAINING_MS = 20_000` (spike measured
+  ~16s for a batch of 5 — starting with less mostly buys a timeout we still
+  paid for).
+- **NO retry on the detail batch** — a pinned DEVIATION from the §6 seam
+  policy (one retry on transient): detail is decoration; a retry doubles
+  the bill for it and eats the ceiling. The em-dash degradation IS the
+  retry. Subject/search retry behaviour is unchanged.
+- **Render** (§14.5 extension): one added per-comp line, label-first —
+  `year built <v> · days on market <v> · parking spaces <v>` — em-dash per
+  §14.5 for any missing value or a wholly missing detail. Em-dash marker
+  exclusivity holds: a fully-enriched, fully-populated render still
+  contains zero em dashes.
+- **Style / condition: CAPTURED, NOT RENDERED** (operator directive). The
+  client waived them as MATCHING criteria, which is not the same as
+  declining to SEE them — they ride in `CompDetail` and the detail cache so
+  a display ruling is a render change, not a re-scrape. `format.ts` must
+  not emit them until that ruling exists.
+- **Logs**: skip/failure reasons at info/warn with `cacheKey` and COUNTS
+  only — comp addresses never reach info logs (§3).
+- **Failure posture**: every enrichment failure (cache read, cache write,
+  batch error, ceiling, budget) degrades to comps-without-detail; a detail
+  problem can never turn a working comps run into a failure (rule 3).
 
 ### 14.15 BUG-011 — manual ARV address binding (operator ruling)
 
@@ -404,7 +466,7 @@ hand from this contract — never adjusted to match implementation output.**
 | Config | `loadConfig()` in `src/config.ts`; required keys enforced in `assertRuntimeConfig` | New optional fields (§3). `apifyToken` absent ⇒ tools still registered, provider calls fail soft as `PROVIDER_ERROR` with stub note; caps still enforced |
 | LLM tools | `TOOL_DEFINITIONS` (`src/agent/toolDefs.ts`) + `executeTool` switch (`src/agent/agent.ts`) | Append `run_comps`, `set_manual_arv` defs; add switch cases delegating to `src/features/comps/tools.ts` |
 | Conversation memory | Transcript only — `chat_messages` (`src/server/memory.ts`); **no structured state exists today** | New `session_state` table (§8). Read in `/chat`, threaded through `runAgent` ctx, written by comps tools |
-| Migrations | `sql/*.sql` run in Supabase SQL editor + check-and-warn in `src/server/migrate.ts` | `sql/add_comps_tables.sql` creates `comps_cache` + `session_state`; `migrate.ts` gains the same zero-cost existence checks |
+| Migrations | `sql/*.sql` run in Supabase SQL editor + check-and-warn in `src/server/migrate.ts` | `sql/add_comps_tables.sql` creates `comps_cache` + `session_state`; `sql/add_comps_detail_cache.sql` creates `comps_detail_cache` (§14.14); `migrate.ts` probes all three |
 | Logging | Fastify `request.log` / `Logger` interface (`src/server/logger.ts`) | Same. Log `cacheKey`, never the raw address, at info; never the token |
 | Failure style to model | Tool result objects with `error` string; agent instructed not to invent numbers | Comps failures are returned as rendered failure copy (§10), never bare stacks |
 
@@ -417,10 +479,12 @@ src/features/comps/
   types.ts       config.ts      normalize.ts   filter.ts      rank.ts
   format.ts      service.ts     tools.ts       # arv.ts DELETED (§14.8)
   formPrefill.ts sessionState.ts               # §8/§8.1 state + form surface
+  detail.ts                                    # §14.14 join + batch bound (pure)
   providers/types.ts  providers/apifyZillow.ts  providers/stub.ts   # geocode.ts dropped — detail scraper takes plain addresses (§6.1)
-  cache/compsCache.ts
+  cache/compsCache.ts  cache/detailCache.ts    # detail: zpid-keyed, own TTL (§14.14)
   __fixtures__/            # shared with INSPECTOR — hand-written now, real recordings when token lands
 sql/add_comps_tables.sql
+sql/add_comps_detail_cache.sql
 ```
 
 ## 3. Config — `src/features/comps/config.ts` (named exports; zero magic numbers elsewhere)
@@ -444,10 +508,12 @@ sql/add_comps_tables.sql
 | `DISTANCE_NORM_MI` | `1.0` | score normalizer |
 | `RECENCY_NORM_MONTHS` | `12` | score normalizer |
 | ~~`TRIM_FRACTION` / `ARV_ROUND_TO` / `CONF_HIGH` / `CONF_MEDIUM`~~ | REMOVED | deleted with `arv.ts` (§14.8); values preserved in §5.5's struck spec |
-| `CACHE_TTL_DAYS` | `14` | |
-| `PROVIDER_TIMEOUT_MS` | `90_000` | per Apify run |
-| `PROVIDER_MAX_RETRIES` | `1` | transient only (timeout/5xx/network); **0 on 4xx** |
-| `COMPS_DAILY_RUN_CAP` | `50` | env-overridable. Counts PROVIDER runs only — cache hits are free (change log #9). ~~per-session cap~~ cut (change log #2) |
+| `CACHE_TTL_DAYS` | `14` | comps result + raw payload |
+| `DETAIL_CACHE_TTL_DAYS` | `90` | zpid-keyed detail rows (§14.14 rule 4) — the detail slice's main cost lever |
+| `DETAIL_MIN_REMAINING_MS` | `20_000` | skip the detail batch below this much pipeline headroom (§14.14 rule 5; spike measured ~16s per batch of 5) |
+| `PROVIDER_TIMEOUT_MS` | `90_000` | per Apify run for subject/search AND the whole-pipeline ceiling once detail enters (§14.14 rule 5) |
+| `PROVIDER_MAX_RETRIES` | `1` | transient only (timeout/5xx/network); **0 on 4xx**; **detail batch: 0 retries always** (§14.14.1, pinned deviation) |
+| `COMPS_DAILY_RUN_CAP` | `50` | env-overridable. Counts **LOOKUPS that touch Apify** (§14.14 cap ruling), up to 3 actor runs each; all-cache lookups free. ~~per-session cap~~ cut (change log #2) |
 | `DAYS_PER_MONTH` | `30.44` | the only months↔days conversion used anywhere |
 | `EARTH_RADIUS_MI` | `3958.8` | haversine |
 

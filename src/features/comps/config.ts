@@ -115,9 +115,32 @@ export const RECENCY_NORM_MONTHS = 12;
 
 export const CACHE_TTL_DAYS = 14;
 
+/**
+ * Detail-enrichment cache, keyed by ZPID, SEPARATE from the comps result
+ * (CONTRACT §14.14 rule 4). Property facts — year built, parking, days on
+ * market of a completed sale — barely change, and nearby lookups share comps
+ * and therefore share detail rows. This TTL being much longer than
+ * CACHE_TTL_DAYS is the main cost lever of the detail slice.
+ */
+export const DETAIL_CACHE_TTL_DAYS = 90;
+
+/**
+ * Skip the live detail batch when less than this remains of the whole-pipeline
+ * ceiling (CONTRACT §14.14 rule 5). A batch of 5 measured ~16s in the spike;
+ * starting one with less headroom than that mostly buys a timeout we still
+ * paid Apify for. Comps render without detail — degradation, never failure.
+ */
+export const DETAIL_MIN_REMAINING_MS = 20_000;
+
 // --- Provider + cost guards (CONTRACT §3, §6) --------------------------------
 
-/** Per Apify run. Their runs bill real money on the client's quota. */
+/**
+ * Per Apify run for subject + search, and the WHOLE-PIPELINE ceiling once
+ * detail enrichment enters (CONTRACT §14.14 rule 5): the detail batch only
+ * gets whatever remains of this after the earlier runs, and is skipped
+ * entirely below DETAIL_MIN_REMAINING_MS. Their runs bill real money on the
+ * client's quota.
+ */
 export const PROVIDER_TIMEOUT_MS = 90_000;
 
 /** Transient failures only (timeout / 5xx / network). 4xx retries are always 0. */
@@ -125,6 +148,18 @@ export const PROVIDER_MAX_RETRIES = 1;
 
 /** Env-overridable defaults; the live values come from AppConfig. */
 export const COMPS_RUNS_PER_SESSION_PER_HOUR = 5;
+
+/**
+ * Counts LOOKUPS THAT TOUCH APIFY, not actor runs (operator ruling, CONTRACT
+ * §14.14): one provider-hitting comps lookup consumes ONE unit no matter how
+ * many actor runs it spawns — up to 3 with detail enrichment (subject +
+ * search + one batched detail), so 50 lookups ≈ 150 actor runs/day worst
+ * case. The client accepted that multiplier knowingly; counting runs instead
+ * would quietly claw back capacity she did not agree to give up. Lookups
+ * served ENTIRELY from cache are free; a cache-hit lookup that still needs a
+ * live detail batch consumes one unit (every actor run stays behind the cap),
+ * and a denial there degrades to comps-without-detail, never RATE_LIMITED.
+ */
 export const COMPS_DAILY_RUN_CAP = 50;
 
 // --- Shared math constants ---------------------------------------------------

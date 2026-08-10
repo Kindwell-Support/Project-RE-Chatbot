@@ -17,6 +17,7 @@ import { logExchange } from './logging.js';
 import type { PropertyDataProvider } from '../features/comps/providers/types.js';
 import { ApifyZillowProvider } from '../features/comps/providers/apifyZillow.js';
 import { createCompsCache } from '../features/comps/cache/compsCache.js';
+import { createDetailCache, type DetailCacheLike } from '../features/comps/cache/detailCache.js';
 import { createDailyRunBudget, type CompsCacheLike, type RunBudgetLike } from '../features/comps/service.js';
 import { createSessionStateStore } from '../features/comps/sessionState.js';
 import type { SessionStateStore } from '../features/comps/tools.js';
@@ -84,6 +85,8 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       : undefined);
   let compsCache: CompsCacheLike | undefined;
   const getCompsCache = () => (compsCache ??= createCompsCache(getSupabase()));
+  let detailCache: DetailCacheLike | undefined;
+  const getDetailCache = () => (detailCache ??= createDetailCache(getSupabase()));
   let sessionStateStore: SessionStateStore | undefined;
   const getSessionStateStore = () => (sessionStateStore ??= createSessionStateStore(getSupabase()));
   // One budget per app instance: the daily Apify spend cap. In-memory (resets
@@ -279,6 +282,7 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
           sessionId: session_id,
           provider: getPropertyProvider(),
           cache: getCompsCache(),
+          detailCache: getDetailCache(),
           budget: compsBudget,
           stateStore: getSessionStateStore(),
           logger: request.log,

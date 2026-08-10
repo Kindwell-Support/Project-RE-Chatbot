@@ -18,11 +18,12 @@
  */
 import { PROVIDER_TIMEOUT_MS } from '../config.js';
 import { normalizeAddress } from '../normalize.js';
-import type { PropertyType, RawComp, SubjectProperty } from '../types.js';
+import type { CompDetail, PropertyType, RawComp, SubjectProperty } from '../types.js';
 import {
   ProviderHttpError,
   ProviderNetworkError,
   ProviderTimeoutError,
+  type DetailBatchItem,
   type PropertyDataProvider,
   type SubjectResolutionMismatch,
 } from './types.js';
@@ -209,6 +210,64 @@ export function mapCompItems(items: Array<Record<string, unknown>>): RawComp[] {
   return comps;
 }
 
+/** Non-empty trimmed string or null — detail text fields ("Ranch", "Fixer") arrive blank sometimes. */
+function nonEmptyString(value: unknown): string | null {
+  const s = typeof value === 'string' ? value.trim() : '';
+  return s.length > 0 ? s : null;
+}
+
+/**
+ * daysOnZillow is REAL in the detail payload (recorded: 25/34/23/23/11) —
+ * unlike the search payload, where it is a −1 sentinel on every sold comp
+ * (§14.6) and never reaches this code. Negative values are the sentinel
+ * class and map to null; 0 is a value.
+ */
+function mapDaysOnMarket(value: unknown): number | null {
+  const n = asFiniteNumber(value);
+  return n !== null && n >= 0 ? n : null;
+}
+
+/**
+ * Map detail-scraper batch items (CONTRACT §14.14). Pure, fixture-testable.
+ *
+ *  - `addressOrUrlFromInput` is preserved verbatim on every item — valid AND
+ *    invalid (recorded in spike-detail-batch-mixed.json) — because it is the
+ *    join key. An item WITHOUT it is unjoinable and is dropped here: keeping
+ *    it could only ever be attached by position, which §14.14 rule 1 bans.
+ *  - `{isValid:false, invalidReason}` items come through as ok:false with the
+ *    key intact, so the caller can say WHICH input failed (rule 3).
+ *  - Style/condition are captured but NOT rendered (operator directive):
+ *    waived as matching criteria ≠ declined as display; display needs its own
+ *    client ruling and then it is a render change, not a re-scrape.
+ */
+export function mapDetailBatchItems(items: Array<Record<string, unknown>>): DetailBatchItem[] {
+  const mapped: DetailBatchItem[] = [];
+  for (const item of items) {
+    const key = nonEmptyString(item.addressOrUrlFromInput);
+    if (!key) continue;
+    if (item.isValid === false) {
+      mapped.push({ addressOrUrlFromInput: key, ok: false, zpid: null, detail: null });
+      continue;
+    }
+    const resoFacts = (item.resoFacts ?? {}) as Record<string, unknown>;
+    const parking = (item.parking ?? {}) as Record<string, unknown>;
+    const detail: CompDetail = {
+      daysOnMarket: mapDaysOnMarket(item.daysOnZillow),
+      parkingSpaces: asFiniteNumber(resoFacts.parkingCapacity) ?? asFiniteNumber(parking.totalSpaces),
+      yearBuilt: asFiniteNumber(item.yearBuilt),
+      architecturalStyle: nonEmptyString(resoFacts.architecturalStyle),
+      propertyCondition: nonEmptyString(resoFacts.propertyCondition),
+    };
+    mapped.push({
+      addressOrUrlFromInput: key,
+      ok: true,
+      zpid: item.zpid != null ? String(item.zpid) : null,
+      detail,
+    });
+  }
+  return mapped;
+}
+
 /** Zillow search URL whose searchQueryState bounds a box of ±radiusMi around the subject. */
 export function buildSoldSearchUrl(lat: number, lng: number, radiusMi: number): string {
   const latDelta = radiusMi / MILES_PER_DEG_LAT;
@@ -276,6 +335,24 @@ export class ApifyZillowProvider implements PropertyDataProvider {
   }
 
   /**
+   * ONE batched detail run (§14.14 rule 6 — the third and last actor run of a
+   * lookup). Batch size is the caller's final kept set, structurally bounded
+   * by MAX_COMPS_KEPT because the service passes ranked-and-capped comps —
+   * never an independent constant (rule 2). `timeoutMs` is the remaining
+   * whole-pipeline budget (rule 5).
+   */
+  async fetchDetailBatch(addresses: string[], opts?: { timeoutMs?: number }): Promise<DetailBatchItem[]> {
+    if (addresses.length === 0) return [];
+    const items = await this.runActor(
+      DETAIL_ACTOR,
+      'comps detail batch',
+      { addresses, propertyStatus: 'RECENTLY_SOLD' },
+      opts?.timeoutMs,
+    );
+    return mapDetailBatchItems(items);
+  }
+
+  /**
    * ONE attempt, no retry here. The retry policy (CONTRACT §3: one retry on
    * transient, never on 4xx) lives in service.ts at the PropertyDataProvider
    * seam — where it is uniform for every provider and assertable offline by
@@ -286,9 +363,10 @@ export class ApifyZillowProvider implements PropertyDataProvider {
     actor: string,
     operation: string,
     input: Record<string, unknown>,
+    timeoutMs: number = this.timeoutMs,
   ): Promise<Array<Record<string, unknown>>> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       let response: Response;
       try {
@@ -302,7 +380,7 @@ export class ApifyZillowProvider implements PropertyDataProvider {
           signal: controller.signal,
         });
       } catch (err) {
-        if (controller.signal.aborted) throw new ProviderTimeoutError(operation, this.timeoutMs);
+        if (controller.signal.aborted) throw new ProviderTimeoutError(operation, timeoutMs);
         throw new ProviderNetworkError(operation, err);
       }
       if (!response.ok) throw new ProviderHttpError(operation, response.status);

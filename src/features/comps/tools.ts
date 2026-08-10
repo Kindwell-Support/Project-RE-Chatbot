@@ -14,6 +14,7 @@ import type OpenAI from 'openai';
 import { normalizeAddress } from './normalize.js';
 import { renderCompsForChat } from './format.js';
 import { runComps, type CompsCacheLike, type RunBudgetLike } from './service.js';
+import type { DetailCacheLike } from './cache/detailCache.js';
 import type { PropertyDataProvider } from './providers/types.js';
 
 /** The §8 atomic block. `state.comps` holds this whole object or nothing. */
@@ -54,6 +55,8 @@ export interface CompsToolContext {
   sessionId: string;
   provider?: PropertyDataProvider;
   cache?: CompsCacheLike;
+  /** Zpid-keyed detail cache (§14.14). Optional — absent degrades to live detail fetches. */
+  detailCache?: DetailCacheLike;
   budget?: RunBudgetLike;
   stateStore?: SessionStateStore;
   logger?: { warn(obj: Record<string, unknown>, msg: string): void };
@@ -158,6 +161,7 @@ export async function runCompsToolHandler(
   const outcome = await runComps(address, {
     provider: ctx.provider,
     cache: ctx.cache,
+    detailCache: ctx.detailCache,
     budget: ctx.budget,
     logger: ctx.logger,
     now: ctx.now,
