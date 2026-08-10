@@ -11,13 +11,22 @@
  *    never carry a number.
  */
 import type OpenAI from 'openai';
+import { normalizeAddress } from './normalize.js';
 import { renderCompsForChat } from './format.js';
 import { runComps, type CompsCacheLike, type RunBudgetLike } from './service.js';
 import type { PropertyDataProvider } from './providers/types.js';
 
 /** The §8 atomic block. `state.comps` holds this whole object or nothing. */
 export interface CompsStateBlock {
-  subjectAddress: string;
+  /**
+   * The property this ARV is bound to, or null when the member stated a
+   * number without naming one (BUG-011). Null is a real state, not a
+   * placeholder: an unbound ARV pre-fills without an address clause and the
+   * mismatch guard never fires on it — there is nothing to conflict with.
+   * The old `'manual entry'` literal is retired; legacy rows carrying it are
+   * coerced to null on read (sessionState.ts).
+   */
+  subjectAddress: string | null;
   subjectSqft: number;
   subjectBeds: number | null;
   subjectBaths: number | null;
@@ -49,6 +58,13 @@ export interface CompsToolContext {
   stateStore?: SessionStateStore;
   logger?: { warn(obj: Record<string, unknown>, msg: string): void };
   now?: () => Date;
+  /**
+   * The member's CURRENT message (BUG-011). set_manual_arv verifies a
+   * model-supplied address against it before binding — history is precisely
+   * where stale addresses live. Absent ⇒ no address can bind (null), which
+   * degrades safe: an unbound ARV never mis-fires the guard.
+   */
+  userMessage?: string;
 }
 
 /**
@@ -73,6 +89,13 @@ export function buildCompsToolDefinitions(
           type: 'object',
           properties: {
             arv: { type: 'number', description: 'After-repair value in dollars, > 0' },
+            address: {
+              type: 'string',
+              description:
+                'The property the member tied this ARV to IN THIS MESSAGE (e.g. "use 450k for 123 Main St" → ' +
+                '"123 Main St"). OMIT when the current message names no address — NEVER pull an address from ' +
+                'earlier in the conversation.',
+            },
           },
           required: ['arv'],
           additionalProperties: false,
@@ -203,7 +226,52 @@ export function addressConflict(
   return findConflictingAddress(message, subjectAddress, normalize) !== null;
 }
 
-/** set_manual_arv handler. Same block shape, arvSource 'manual' (CONTRACT §8). */
+/**
+ * BUG-011: bind a model-supplied address to the member's CURRENT message, or
+ * refuse to. The tool definition tells the model to pass only an address the
+ * member just named, but "told" is not a guarantee — this is the structural
+ * check, the same discriminator shape as `messageStatesNumber` uses for
+ * dollar amounts. Two ways to bind, both requiring the CURRENT message to
+ * name the property:
+ *  (a) an address fragment of the message (same regex the mismatch guard
+ *      uses) is contained in the normalized candidate, or
+ *  (b) the candidate's street part appears verbatim, post-normalization, in
+ *      the message — needed because the fragment regex over-captures when a
+ *      dollar figure precedes the address ("my ARV is 620000 for 830 W
+ *      America St" fragments as "620000 for 830 …", which (a) then misses).
+ * Anything the current message does not name — i.e. anything carried from
+ * history — drops to null, never trusted. Failure direction is always
+ * "unbound", never "bound to the wrong thing".
+ */
+export function bindAddressToCurrentMessage(
+  candidate: unknown,
+  userMessage: string | undefined,
+  normalize: (raw: string) => string,
+): string | null {
+  const address = typeof candidate === 'string' ? candidate.trim() : '';
+  if (!address) return null;
+  const normalizedCandidate = normalize(address);
+  if (!normalizedCandidate) return null;
+  const message = String(userMessage ?? '');
+  for (const match of message.matchAll(ADDRESS_FRAGMENT_RE)) {
+    const fragment = normalize(match[0]);
+    if (fragment && normalizedCandidate.includes(fragment)) return address;
+  }
+  const streetPart = normalize(address.split(',')[0]);
+  if (streetPart && normalize(message).includes(streetPart)) return address;
+  return null;
+}
+
+/**
+ * set_manual_arv handler. Same block shape, arvSource 'manual' (CONTRACT §8).
+ *
+ * BUG-011: the block no longer inherits ANYTHING from a previous block. The
+ * old code carried `subjectAddress` forward (falling back to the literal
+ * 'manual entry' once run_comps stopped writing state — which bound every
+ * manual ARV to a placeholder the guard then "defended"). A manual ARV is a
+ * fresh statement: bound to the address the member named in THIS message, or
+ * bound to nothing.
+ */
 export async function setManualArvToolHandler(
   args: Record<string, unknown>,
   ctx: CompsToolContext,
@@ -213,12 +281,12 @@ export async function setManualArvToolHandler(
     return { error: 'set_manual_arv requires a positive dollar amount. Ask the member for their ARV as a number.' };
   }
 
-  const existing = (await ctx.stateStore?.getCompsBlock(ctx.sessionId)) ?? null;
+  const boundAddress = bindAddressToCurrentMessage(args.address, ctx.userMessage, normalizeAddress);
   const block: CompsStateBlock = {
-    subjectAddress: existing?.subjectAddress ?? 'manual entry',
-    subjectSqft: existing?.subjectSqft ?? 0,
-    subjectBeds: existing?.subjectBeds ?? null,
-    subjectBaths: existing?.subjectBaths ?? null,
+    subjectAddress: boundAddress,
+    subjectSqft: 0,
+    subjectBeds: null,
+    subjectBaths: null,
     arv,
     arvLow: null,
     arvHigh: null,
@@ -229,12 +297,17 @@ export async function setManualArvToolHandler(
   };
   await ctx.stateStore?.setCompsBlock(ctx.sessionId, block);
 
+  const formatted = arv.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   return {
     stored: true,
     arv,
     arvSource: 'manual',
-    instruction:
-      `Confirm in one short line that you'll use ${arv.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} ` +
-      'as the ARV for this conversation (it now pre-fills Flip/BRRRR), and remind them it is their number, not a comp-derived one.',
+    ...(boundAddress ? { bound_address: boundAddress } : {}),
+    instruction: boundAddress
+      ? `Confirm in one short line that you'll use ${formatted} as the ARV for ${boundAddress} ` +
+        '(it now pre-fills Flip/BRRRR), and remind them it is their number, not a comp-derived one.'
+      : `Confirm in one short line that you'll use ${formatted} as the ARV for this conversation ` +
+        '(it now pre-fills Flip/BRRRR), and remind them it is their number, not a comp-derived one. ' +
+        'Do NOT attach it to any property address — none was stated.',
   };
 }
