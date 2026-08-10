@@ -273,99 +273,136 @@ describe(`the computed ARV is gone${sliceNote(...MODS)}`, () => {
       expect(String(reply.body.output).replace(/[$,\s]/g, '')).not.toContain('450000');
     });
 
-    it('RESIDUAL (documented, raised in 0026): an OMITTED address leaves the ARV portable', async () => {
-      // The gap the ruled design accepts. The member names the property, but
-      // binding happens only if the MODEL passes the address argument; here it
-      // does not, so the ARV stores UNBOUND (null) — and an unbound ARV skips
-      // the guard by design ("nothing claims it belongs to any property").
-      // Net effect: 123 Main's number prices 456 Oak with no ask, whenever the
-      // model under-fills the tool call.
+    it('CLOSED (ruling 0026): an OMITTED address is EXTRACTED from the current message', () => {
+      // This case was the residual I raised, written with tripwires facing
+      // both ways. The operator ruled it closed in the direction I proposed
+      // and MASON shipped the fallback — so the tripwire fired by name and
+      // this is now the verification, not the characterisation.
       //
-      // This is NOT the never-conflict blur — bound ARVs still conflict, the
-      // case above proves it. It is a compliance dependency at BIND time: the
-      // guard carries the whole weight, and this is the one path where the
-      // weight rests on the model doing as told. Characterised so the shape is
-      // on the record; whether to close it (fall back to extracting from the
-      // CURRENT message on omission — still not history) is the operator's
-      // call, not mine.
-      const supabase = makeCompsSupabase({});
-      const a = build([manualArv(450000), say('Using $450,000.')], {}, supabase);
-      await chat(a.app, 'use 450k as the ARV for 123 Main St', 'rm-omit');
+      // Same repro, opposite expectation: the model omits the address, the
+      // MEMBER named one, and the ARV must now BIND to it rather than sitting
+      // portable.
+      const run = async () => {
+        const supabase = makeCompsSupabase({});
+        const a = build([manualArv(450000), say('Using $450,000.')], {}, supabase);
+        await chat(a.app, 'use 450k as the ARV for 123 Main St', 'rm-omit');
+        const block = supabase.compsBlockFor('rm-omit');
+        expect(block?.arv, 'precondition: nothing stored').toBe(450000);
+        expect(
+          String(block?.subjectAddress ?? ''),
+          'the omitted-address fallback did not bind the address the member stated',
+        ).toContain('123 Main');
 
-      const block = supabase.compsBlockFor('rm-omit');
+        // ...and the whole point of binding: the A -> B refusal now fires on
+        // a path that previously carried the number silently.
+        const b = build([runFlip(), say('Numbers.')], {}, supabase);
+        const reply = await chat(b.app, 'run the flip numbers on 456 Oak Ave', 'rm-omit');
+        const flip = toolResults(b.openai.calls).find(
+          (r) => (r as { calculator?: string }).calculator === 'flip',
+        ) as { inputs_used?: Record<string, unknown> } | undefined;
+        if (flip?.inputs_used) {
+          expect(
+            flip.inputs_used.after_repair_value,
+            'the extracted binding did not actually arm the guard',
+          ).not.toBe(450000);
+        }
+        expect(String(reply.body.output).replace(/[$,\s]/g, '')).not.toContain('450000');
+      };
+      return run();
+    });
+
+    it('AMBIGUITY IS NEVER GUESSED: two distinct addresses in one message bind nothing', async () => {
+      // The failure mode the fallback could easily have introduced. Extraction
+      // that takes "the first address it finds" would bind 123 Main here and
+      // then refuse every question about 456 Oak — a wrong binding is worse
+      // than no binding, because the guard defends it.
+      const supabase = makeCompsSupabase({});
+      const a = build([manualArv(450000), say('Stored.')], {}, supabase);
+      await chat(a.app, 'is 450k the ARV for 123 Main St or for 456 Oak Ave?', 'rm-ambig');
+
+      const block = supabase.compsBlockFor('rm-ambig');
       expect(block?.arv, 'precondition: nothing stored').toBe(450000);
       expect(
         block?.subjectAddress ?? null,
-        'the omission path started BINDING — this residual case is stale, retire it',
+        'extraction GUESSED between two distinct addresses — it must bind nothing',
       ).toBeNull();
+    });
 
+    it('the SAME address stated twice is one address, not ambiguity', async () => {
+      // The control on the case above. Over-strict ambiguity detection would
+      // refuse to bind a perfectly clear message, and the member would never
+      // know why their ARV stopped naming the property.
+      const supabase = makeCompsSupabase({});
+      const a = build([manualArv(450000), say('Stored.')], {}, supabase);
+      await chat(a.app, '123 Main St — use 450k as the ARV for 123 MAIN STREET', 'rm-dupe');
+
+      expect(
+        String(supabase.compsBlockFor('rm-dupe')?.subjectAddress ?? '').toUpperCase(),
+        'one address repeated was treated as ambiguous',
+      ).toContain('123 MAIN');
+    });
+
+    it('a dollar figure before the address does not get bound INTO it', async () => {
+      // MASON's recorded over-capture quirk: the fragment regex swallows a
+      // leading pure-digit run, so "620000 for 830 W America St" could bind as
+      // one string. A binding that contains the price can never match the
+      // member's later mention of the address, so the guard would fire on
+      // every follow-up about the right property.
+      const supabase = makeCompsSupabase({});
+      const a = build([manualArv(620000), say('Stored.')], {}, supabase);
+      await chat(a.app, 'my ARV is 620000 for 830 W America St', 'rm-overcap');
+
+      const bound = String(supabase.compsBlockFor('rm-overcap')?.subjectAddress ?? '');
+      expect(bound, 'nothing bound at all').toContain('830 W America');
+      expect(bound, 'the dollar figure was bound into the address').not.toContain('620000');
+
+      // The consequence, asserted rather than inferred: the SAME property
+      // still pre-fills on a later turn.
       const b = build([runFlip(), say('Numbers.')], {}, supabase);
-      await chat(b.app, 'run the flip numbers on 456 Oak Ave', 'rm-omit');
+      const reply = await chat(b.app, 'run the flip on 830 W America St', 'rm-overcap');
       const flip = toolResults(b.openai.calls).find(
         (r) => (r as { calculator?: string }).calculator === 'flip',
       ) as { inputs_used?: Record<string, unknown> } | undefined;
       expect(flip, 'the flip never ran').toBeDefined();
       expect(
         flip!.inputs_used?.after_repair_value,
-        'the unbound ARV no longer pre-fills — the residual has been closed, update 0026 and this case',
-      ).toBe(450000);
+        'the member was refused their own ARV for the address they bound it to',
+      ).toBe(620000);
+      expect(String(reply.body.output).replace(/[$,\s]/g, '')).toContain('620000');
     });
 
-    it('a leftover arvSource:comps block from a cached v2 session never pre-fills', async () => {
-      // v2 sessions can still hold a block whose arvSource is 'comps'. Nothing
-      // produces those any more, so they are stale by definition and must be
-      // ignored rather than served.
-      const supabase = makeCompsSupabase({
-        sessionState: {
-          'rm-legacy': {
-            comps: {
-              subjectAddress: '123 MAIN STREET', subjectSqft: 2000,
-              subjectBeds: 3, subjectBaths: 2,
-              arv: 403000, arvLow: 394000, arvHigh: 412000,
-              arvConfidence: 'high', arvSource: 'comps', compsRunId: 'v2-run',
-              computedAt: '2026-08-05T00:00:00.000Z',
-            },
-          },
-        },
-      });
-      const { app, openai } = build([runFlip(), say('Numbers.')], {}, supabase);
-      const reply = await chat(app, 'run the flip numbers', 'rm-legacy');
-
-      const flip = toolResults(openai.calls).find(
-        (r) => (r as { calculator?: string }).calculator === 'flip',
-      ) as { inputs_used?: Record<string, unknown> } | undefined;
-      if (flip?.inputs_used) {
-        expect(
-          flip.inputs_used.after_repair_value,
-          'a stale arvSource:comps block from v2 was pre-filled into a calculator',
-        ).not.toBe(403000);
-      }
-      expect(String(reply.body.output).replace(/[$,\s]/g, ''))
-        .not.toContain('403000');
-    });
-
-    it("a MANUAL block on the SAME address still pre-fills — the member's number works", async () => {
-      // The control. If the guard were over-tightened into "never pre-fill",
-      // set_manual_arv would become decorative and the ruling would be
-      // contradicted. This is what must keep working.
+    it("a street name containing digits survives refinement intact", async () => {
+      // The other side of the refinement: trimming the leading digit run is
+      // only correct when the digits are a PRICE. "2000 Highway 7 Ct" is an
+      // address whose house number is exactly the sort of pure-digit run the
+      // refiner looks for, and eating it produces a binding for a different
+      // street.
       const supabase = makeCompsSupabase({});
-      const a = build([manualArv(450000), say('Using $450,000.')], {}, supabase);
-      await chat(a.app, 'use 450k as the ARV', 'rm-manual-works');
-      expect(supabase.compsBlockFor('rm-manual-works')?.arv).toBe(450000);
+      const a = build([manualArv(450000), say('Stored.')], {}, supabase);
+      await chat(a.app, 'use 450k as the ARV for 2000 Highway 7 Ct', 'rm-digits');
 
-      const b = build([runFlip(), say('Net profit is $90,000.')], {}, supabase);
-      const reply = await chat(b.app, 'now run the flip numbers', 'rm-manual-works');
+      const bound = String(supabase.compsBlockFor('rm-digits')?.subjectAddress ?? '');
+      expect(bound, 'nothing bound at all').toContain('Highway');
+      expect(bound, 'the house number was eaten as if it were a price').toContain('2000');
 
+      // THE CONSEQUENCE, which is what actually matters. Whatever substring
+      // the extractor captured, the member must still be able to name that
+      // property in full and get their own ARV. A binding that is a TRUNCATION
+      // of the real address ("2000 Highway" for "2000 Highway 7 Ct") makes the
+      // later full mention read as a DIFFERENT property, and the guard refuses
+      // the member their own number — the BUG-011 failure shape, one layer in.
+      const b = build([runFlip(), say('Numbers.')], {}, supabase);
+      const reply = await chat(b.app, 'run the flip on 2000 Highway 7 Ct', 'rm-digits');
       const flip = toolResults(b.openai.calls).find(
         (r) => (r as { calculator?: string }).calculator === 'flip',
       ) as { inputs_used?: Record<string, unknown> } | undefined;
-      expect(flip, 'the calculator never ran').toBeDefined();
+      expect(flip, 'the flip never ran').toBeDefined();
       expect(
-        flip!.inputs_used!.after_repair_value,
-        "the member's own manual ARV stopped reaching the calculator",
+        flip!.inputs_used?.after_repair_value,
+        `bound as ${JSON.stringify(bound)}, then refused the member their own ARV ` +
+          'when they named the same property in full',
       ).toBe(450000);
-      expect(String(reply.body.output).replace(/[$,\s]/g, ''), 'the echo lost the manual ARV')
-        .toContain('450000');
+      expect(String(reply.body.output).replace(/[$,\s]/g, '')).toContain('450000');
     });
   });
 });

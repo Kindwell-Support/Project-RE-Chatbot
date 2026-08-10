@@ -90,12 +90,24 @@ export interface FakeSupabaseOptions {
   insertRejects?: boolean;
   /** Rows returned by the match_documents RPC. */
   matchDocuments?: Array<{ id: string | number; content: string; similarity: number }>;
+  /**
+   * Seed `session_state` rows, keyed by session id. The value is the whole
+   * `state` jsonb column, so a comps/ARV block goes at `{ comps: {...} }`.
+   *
+   * Absent ⇒ the table reads empty, which is a REAL empty result
+   * (`{ data: null }`), not a thrown call. See the note on the chain below.
+   */
+  sessionState?: Record<string, Record<string, unknown>>;
 }
 
 export interface FakeSupabase {
   client: SupabaseClient;
   /** Every insert payload, keyed by table. */
   inserts: Array<{ table: string; payload: any }>;
+  /** Every `session_state` upsert, in order. */
+  stateWrites: Array<{ sessionId: string; state: Record<string, unknown> | null }>;
+  /** The comps/ARV block currently stored for a session, if any. */
+  compsBlockFor(sessionId: string): Record<string, any> | undefined;
   /** Every .order(column, opts) call, in order — lets tests pin sort determinism. */
   orderCalls: Array<{ table: string; column: string; opts: any }>;
 }
@@ -103,15 +115,25 @@ export interface FakeSupabase {
 export function makeFakeSupabase(options: FakeSupabaseOptions = {}): FakeSupabase {
   const inserts: Array<{ table: string; payload: any }> = [];
   const orderCalls: Array<{ table: string; column: string; opts: any }> = [];
+  const stateWrites: Array<{ sessionId: string; state: Record<string, unknown> | null }> = [];
   const history = options.history ?? [];
+  const sessionState: Record<string, Record<string, unknown>> = { ...(options.sessionState ?? {}) };
 
   const client = {
     from(table: string) {
       // getHistory orders descending then reverses, so feed it reversed.
       const rows = table === 'chat_messages' ? [...history].reverse() : [];
+      // `session_state` reads filter by session id, so the chain has to
+      // remember which one was asked for (CONTRACT §8:
+      //   read  .select('state').eq('session_id', id).maybeSingle()
+      //   write .upsert({ session_id, state, updated_at })).
+      let eqSessionId: string | undefined;
       const chain: any = {
         select: () => chain,
-        eq: () => chain,
+        eq: (column: string, value: any) => {
+          if (column === 'session_id') eqSessionId = String(value);
+          return chain;
+        },
         order: (column: string, opts: any) => {
           orderCalls.push({ table, column, opts });
           return chain;
@@ -125,8 +147,62 @@ export function makeFakeSupabase(options: FakeSupabaseOptions = {}): FakeSupabas
             ? Promise.reject(new Error('supabase unavailable'))
             : Promise.resolve({ data: null, error: null });
         },
+        /**
+         * The single-row read the ARV pre-fill depends on.
+         *
+         * This used to be ABSENT, and its absence was invisible: the call
+         * threw `maybeSingle is not a function`, `createSessionStateStore`
+         * caught it and logged "continuing WITHOUT ARV pre-fill", and every
+         * test still passed — because degrading is the correct behaviour on a
+         * read failure. So three suites exercised the DEGRADED path while
+         * their names claimed the pre-fill one. Returning a real empty result
+         * is the difference between "no ARV stored" and "the database broke".
+         */
+        maybeSingle: async () => {
+          if (table !== 'session_state') return { data: null, error: null };
+          const state = eqSessionId === undefined ? undefined : sessionState[eqSessionId];
+          return { data: state === undefined ? null : { state }, error: null };
+        },
+        upsert: (payload: any) => {
+          if (table === 'session_state') {
+            const id = String(payload?.session_id ?? '');
+            const state = (payload?.state ?? null) as Record<string, unknown> | null;
+            stateWrites.push({ sessionId: id, state });
+            if (state === null) delete sessionState[id];
+            else sessionState[id] = state;
+          } else {
+            inserts.push({ table, payload });
+          }
+          return options.insertRejects
+            ? Promise.reject(new Error('supabase unavailable'))
+            : Promise.resolve({ data: null, error: null });
+        },
       };
-      return chain;
+      // ---------------------------------------------------------------
+      // THE GUARD. A missing method on this chain used to be SILENT: the
+      // property read `undefined`, the call threw TypeError deep inside the
+      // store, the store caught it and degraded, and the suite stayed green
+      // while testing the degraded path. `maybeSingle` and `upsert` were both
+      // absent for the whole life of the ARV pre-fill and nothing noticed.
+      //
+      // A Proxy converts that class of gap from silent to loud. Symbols pass
+      // through untouched (`await` probes `Symbol.toPrimitive` and friends,
+      // and `then` is a real method above), so only a genuine unknown
+      // BUILDER call trips it.
+      // ---------------------------------------------------------------
+      return new Proxy(chain, {
+        get(target, prop, receiver) {
+          if (typeof prop === 'symbol' || prop in target) {
+            return Reflect.get(target, prop, receiver);
+          }
+          throw new Error(
+            `makeFakeSupabase: unstubbed Supabase call .${String(prop)}() on table ` +
+              `'${table}'. The double is deliberately narrow — add the method here ` +
+              'so the shape stays pinned, rather than letting the caller degrade ' +
+              'through a TypeError and pass anyway.',
+          );
+        },
+      });
     },
     rpc: async () => ({
       data: options.matchDocuments ?? [],
@@ -134,7 +210,18 @@ export function makeFakeSupabase(options: FakeSupabaseOptions = {}): FakeSupabas
     }),
   };
 
-  return { client: client as unknown as SupabaseClient, inserts, orderCalls };
+  return {
+    client: client as unknown as SupabaseClient,
+    inserts,
+    orderCalls,
+    stateWrites,
+    compsBlockFor(sessionId: string) {
+      const block = sessionState[sessionId]?.comps;
+      return block === undefined || block === null
+        ? undefined
+        : (block as Record<string, any>);
+    },
+  };
 }
 
 /** Let detached (fire-and-forget) promises settle and any unhandled rejection surface. */
