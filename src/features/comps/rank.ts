@@ -24,9 +24,8 @@ export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): S
   const distanceMi = haversineMiles(subject.lat, subject.lng, comp.lat, comp.lng);
   // Raw, deliberately: a negative value is the EVIDENCE that a comp is
   // future-dated, and hiding it here would mask what rule 12 rejects. The
-  // BUG-003 clamp lives in the recency TERM below (and in calculateArv's
-  // median input) — the score range holds structurally while the field stays
-  // honest.
+  // BUG-003 clamp lives in the recency TERM below — the score range holds
+  // structurally while the field stays honest.
   const monthsAgo = monthsBetween(comp.soldDate, now);
   const subjectSqft = subject.livingArea ?? 0;
 

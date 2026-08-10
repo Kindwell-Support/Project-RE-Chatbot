@@ -13,7 +13,6 @@
 import type OpenAI from 'openai';
 import { renderCompsForChat } from './format.js';
 import { runComps, type CompsCacheLike, type RunBudgetLike } from './service.js';
-import type { ArvConfidence } from './types.js';
 import type { PropertyDataProvider } from './providers/types.js';
 
 /** The §8 atomic block. `state.comps` holds this whole object or nothing. */
@@ -25,7 +24,7 @@ export interface CompsStateBlock {
   arv: number;
   arvLow: number | null;
   arvHigh: number | null;
-  arvConfidence: ArvConfidence | null;
+  arvConfidence: null;
   arvSource: 'comps' | 'manual';
   compsRunId: string | null;
   computedAt: string; // ISO
@@ -44,12 +43,6 @@ export interface SessionStateStore {
 
 export interface CompsToolContext {
   sessionId: string;
-  /**
-   * CONTRACT §14.8 — surface the ARV in the render/pre-fill. Optional and
-   * defaulting to FALSE at every use site, so forgetting to thread it cannot
-   * resurrect the surface the client removed.
-   */
-  arvSurfacing?: boolean;
   provider?: PropertyDataProvider;
   cache?: CompsCacheLike;
   budget?: RunBudgetLike;
@@ -131,9 +124,13 @@ export async function runCompsToolHandler(
     return { error: 'Comps lookup is not configured on this deployment. Offer manual ARV entry instead.' };
   }
 
-  // CONTRACT §8: clear BEFORE the provider is hit. A failed run must leave no
-  // ARV — especially not the previous address's.
-  await ctx.stateStore?.clearCompsBlock(ctx.sessionId);
+  // NO clear-before-provider any more (CONTRACT §14.8, operator ruling).
+  // The clear existed to stop a failed run leaving the PREVIOUS comps ARV
+  // behind. Comps no longer writes an ARV at all, so the only thing that
+  // clear could still destroy is a number the MEMBER typed via
+  // set_manual_arv — running comps must never silently delete that. The
+  // address-mismatch guard still stops a manual ARV bound to address A from
+  // being applied to address B; ambiguity resolves to asking, not assuming.
 
   const outcome = await runComps(address, {
     provider: ctx.provider,
@@ -143,31 +140,20 @@ export async function runCompsToolHandler(
     now: ctx.now,
   });
 
-  const rendered = renderCompsForChat(outcome, { arvSurfacing: ctx.arvSurfacing === true });
+  const rendered = renderCompsForChat(outcome);
 
   if (outcome.ok) {
-    const block: CompsStateBlock = {
-      subjectAddress: outcome.subject.address,
-      subjectSqft: outcome.subject.livingArea ?? 0,
-      subjectBeds: outcome.subject.beds,
-      subjectBaths: outcome.subject.baths,
-      arv: outcome.arv.arv,
-      arvLow: outcome.arv.arvLow,
-      arvHigh: outcome.arv.arvHigh,
-      arvConfidence: outcome.arv.confidence,
-      arvSource: 'comps',
-      compsRunId: outcome.runId,
-      computedAt: (ctx.now?.() ?? new Date()).toISOString(),
-    };
-    await ctx.stateStore?.setCompsBlock(ctx.sessionId, block);
+    // NOTHING about an ARV reaches the model from this tool (CONTRACT §14.8).
+    // No `arv`, no `confidence`, and no claim that anything will pre-fill a
+    // calculator — the previous instruction said exactly that and it is now
+    // false. session_state is untouched by a comps run: the only ARV that can
+    // exist is one the member typed.
     return {
       rendered_block: rendered,
-      arv: outcome.arv.arv,
-      confidence: outcome.arv.confidence,
       instruction:
-        'Relay rendered_block to the member VERBATIM — do not re-derive, summarise, or alter any number in it. ' +
-        'You may add ONE short coaching line after it. The ARV is now stored and will pre-fill the Flip/BRRRR ' +
-        'calculators for this conversation.',
+        'Relay rendered_block to the member VERBATIM — do not re-derive, summarise, or alter any number in ' +
+        'it. You may add ONE short coaching line after it. This tool does NOT produce an ARV: if the member ' +
+        'wants deal numbers run, they supply their own ARV and you call set_manual_arv.',
     };
   }
 
@@ -175,8 +161,8 @@ export async function runCompsToolHandler(
     rendered_block: rendered,
     failure_code: outcome.code,
     instruction:
-      'The comps lookup did not produce an ARV. Relay rendered_block to the member VERBATIM. Do NOT invent an ' +
-      'ARV or any comp. If they reply with their own ARV, call set_manual_arv.',
+      'The comps lookup failed. Relay rendered_block to the member VERBATIM. Do NOT invent an ARV or any ' +
+      'comp. If they reply with their own ARV, call set_manual_arv.',
   };
 }
 

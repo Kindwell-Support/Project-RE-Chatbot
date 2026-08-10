@@ -8,7 +8,7 @@
  * comps were trimmed and why, the arithmetic from $/sqft to ARV, and which
  * radius produced the set.
  */
-import type { ArvConfidence, CompsFailure, CompsFailureCode, CompsOutcome, CompsResult, ScoredComp } from './types.js';
+import type { CompsFailure, CompsFailureCode, CompsOutcome, CompsResult, ScoredComp } from './types.js';
 
 const USD = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -78,21 +78,6 @@ export const FAILURE_COPY: Record<CompsFailureCode, (detail?: CompsFailure['deta
     'used up. Try again tomorrow. ' + MANUAL_OFFER,
 };
 
-function confidenceLine(confidence: ArvConfidence): string {
-  switch (confidence) {
-    case 'high':
-      return 'Confidence: **high** — tight spread, close and recent sales.';
-    case 'medium':
-      return 'Confidence: **medium** — decent set, but verify the ARV against your own comps.';
-    case 'low':
-      return (
-        'Confidence: **low** — this estimate is WEAK (few comps, wide spread, or far/stale sales). ' +
-        'Treat it as a starting point only, and strongly consider overriding it: tell me your own ARV ' +
-        'and I\'ll use that instead.'
-      );
-  }
-}
-
 /**
  * The client's prescribed copy (CONTRACT §14.7) — VERBATIM, emitted
  * structurally by this renderer. Not model-authored and not prompt-dependent,
@@ -140,13 +125,8 @@ function compLine(s: ScoredComp): string {
   );
 }
 
-/**
- * @param arvSurfacing CONTRACT §14.8 — the client removed the ARV from the
- *   comps response. DEFAULTS FALSE so a caller that forgets to pass config
- *   gets the client's chosen behaviour, never the removed surface.
- */
-function renderSuccess(result: CompsResult, arvSurfacing: boolean): string {
-  const { subject, comps, arv, rejected, radiusTierMi, recencyTierMonths } = result;
+function renderSuccess(result: CompsResult): string {
+  const { subject, comps, rejected, radiusTierMi, recencyTierMonths } = result;
 
   const header = [
     `**Comps for ${subject.address}**`,
@@ -158,33 +138,15 @@ function renderSuccess(result: CompsResult, arvSurfacing: boolean): string {
 
   const table = [`**${comps.length} sold comps** (best match first):`, ...comps.map(compLine)].join('\n');
 
-  // Gated block (§14.8). Kept whole and adjacent so enabling it is one flag,
-  // and MOVING it is one entry in `sections` below — not a rewrite.
-  const trimmed =
-    arv.trimmedOut.length > 0
-      ? `Trimmed mean: dropped ${arv.trimmedOut
-          .map((t) => `${USD.format(t.pricePerSqft)}/sqft (${t.end} outlier)`)
-          .join(', ')} before averaging.`
-      : 'Trimmed mean: set too small to trim — all comps averaged.';
-  const arvBlock = [
-    trimmed,
-    `Math: average of the remaining $/sqft = ${USD.format(arv.arvPerSqft)}/sqft × ` +
-      `${num(subject.livingArea, ' sqft')} (subject) = **ARV ${USD.format(arv.arv)}**`,
-    `Range: ${USD.format(arv.arvLow)} – ${USD.format(arv.arvHigh)} (±1 std dev of the trimmed set).`,
-    confidenceLine(arv.confidence),
-  ].join('\n');
-
   /**
-   * THE emit order (CONTRACT §14.8/§14.11). The client has not ruled on where
-   * the ARV lives if it ever returns, so its placement is ONE entry in this
-   * list rather than logic woven through the renderer — moving it is a
-   * one-line change, and removing it is what `arvSurfacing` already does.
+   * THE emit order (CONTRACT §14.8). The ARV block that used to sit between
+   * the table and the closing copy is GONE — removed with arv.ts, not gated.
+   * Reinstating it would be a rebuild from the contract, not a line here.
    */
   const sections: Array<string | null> = [
     COMPS_OPENING,
     header,
     table,
-    arvSurfacing ? arvBlock : null,
     COMPS_CLOSING,
     FOOTER,
   ];
@@ -208,17 +170,6 @@ function renderFailure(failure: CompsFailure): string {
     : "Something went wrong pulling comps — no estimate this time. If you have your own ARV, tell me and I'll run the numbers with it.";
 }
 
-/**
- * @param options.arvSurfacing CONTRACT §14.8. **Defaults to FALSE** — the
- *   client's chosen behaviour — so a caller that forgets to thread config
- *   through cannot accidentally resurrect the removed surface. Callers opt IN,
- *   never out.
- */
-export function renderCompsForChat(
-  outcome: CompsOutcome,
-  options: { arvSurfacing?: boolean } = {},
-): string {
-  return outcome.ok
-    ? renderSuccess(outcome, options.arvSurfacing === true)
-    : renderFailure(outcome);
+export function renderCompsForChat(outcome: CompsOutcome): string {
+  return outcome.ok ? renderSuccess(outcome) : renderFailure(outcome);
 }

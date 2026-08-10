@@ -44,3 +44,4 @@
 00:24 MASON — v2 implemented (params, tiers, lot scoring, new columns, prescribed copy, ARV gated off); INSPECTOR contract contradictions fixed; recompute verified on all 10 real cache rows, 0 provider calls; HANDOFF 0030
 00:30 MASON — footer de-ARVed (before INSPECTOR asserts it); ground truth v1 10.3% -> v2 7.7% mean abs error; BUG-010 filed (duplicate comps = 40% of a 5-set, inflates confidence); HANDOFF 0031
 18:44 MASON — BUG-010 fixed (dedupeSales, sale-identity not zpid, after gates before ranking, + candidate-median dedupe); verified on 10 real pools, 1 dup dropped, Don Frank conf high->medium; FIXED 0032; HOLDING before ARV removal per sequencing
+18:53 MASON — ARV REMOVED (arv.ts deleted, flag gone, ALGO_VERSION 3, run_comps no longer touches session_state); manual ARV path verified intact; CONTRACT §14.8 records the one-way door; CONTRACT_CHANGE 0033

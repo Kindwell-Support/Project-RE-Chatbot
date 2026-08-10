@@ -118,24 +118,6 @@ export interface ScoredComp {
   };
 }
 
-export type ArvConfidence = 'high' | 'medium' | 'low';
-
-export interface ArvResult {
-  /** Rounded to ARV_ROUND_TO. */
-  arv: number;
-  arvLow: number;
-  arvHigh: number;
-  arvPerSqft: number;
-  /** Sample std dev of the trimmed ppsf set; 0 when fewer than 2 values. */
-  sd: number;
-  /** sd / arvPerSqft — the confidence discriminator. */
-  cv: number;
-  confidence: ArvConfidence;
-  /** Which comps the trimmed mean dropped, and from which end — rendered in chat. */
-  trimmedOut: Array<{ zpid: string; pricePerSqft: number; end: 'low' | 'high' }>;
-  compsUsed: number;
-}
-
 export interface CompsResult {
   ok: true;
   algoVersion: number;
@@ -147,7 +129,6 @@ export interface CompsResult {
   recencyTierMonths: number;
   comps: ScoredComp[];
   rejected: RejectedComp[];
-  arv: ArvResult;
   fromCache: boolean;
   provider: string;
 }

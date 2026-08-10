@@ -277,8 +277,6 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
         seedToolCall,
         comps: {
           sessionId: session_id,
-          // CONTRACT §14.8 — strict opt-in; unset env resolves false (config.ts).
-          arvSurfacing: config.arvSurfacingEnabled,
           provider: getPropertyProvider(),
           cache: getCompsCache(),
           budget: compsBudget,

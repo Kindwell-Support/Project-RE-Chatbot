@@ -45,13 +45,11 @@ export function applyFormArvPrefill(
   form: CalculatorForm,
   block: CompsStateBlock | null,
   userMessage: string,
-  arvSurfacing = false,
 ): CalculatorForm {
-  // CONTRACT §14.8 — default FALSE: a caller that forgets to pass the flag
-  // gets the client's chosen behaviour (no session default), never the
-  // removed surface.
-  if (!arvSurfacing) return form;
   if (!ARV_CALCULATORS.includes(form.calculator)) return form;
+  // MANUAL ARVs ONLY (CONTRACT §14.8): the computed comps ARV is removed, so
+  // a leftover 'comps' block from a cached session must never pre-fill.
+  if (block && block.arvSource !== 'manual') return form;
   if (!block || !(block.arv > 0) || !block.subjectAddress) return form;
   if (findConflictingAddress(userMessage, block.subjectAddress, normalizeAddress)) return form;
 

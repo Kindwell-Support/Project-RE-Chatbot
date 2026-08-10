@@ -14,7 +14,6 @@
  * NEVER constructs one, which is what keeps every path here drivable offline.
  */
 import { randomUUID } from 'node:crypto';
-import { calculateArv } from './arv.js';
 import { ALGO_VERSION, MIN_COMPS_TO_COMPUTE, PROVIDER_MAX_RETRIES, RADIUS_TIERS_MI } from './config.js';
 import { FAILURE_COPY } from './format.js';
 import { selectTiers } from './filter.js';
@@ -165,7 +164,6 @@ function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, p
     recencyTierMonths: tier.recencyTierMonths,
     comps: ranked,
     rejected: tier.rejected,
-    arv: calculateArv(subject, ranked),
     fromCache,
     provider,
   };

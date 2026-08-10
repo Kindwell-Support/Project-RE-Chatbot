@@ -166,46 +166,55 @@ model-authored, not prompt-dependent), on every SUCCESSFUL comps render:
 
 The existing not-an-appraisal footer and the low-confidence warning remain.
 
-### 14.8 ARV IS OUT — surfacing disabled, plumbing retained (client decision)
+### 14.8 ARV REMOVED — a ONE-WAY DOOR (client decision, final)
 
-Superseded the earlier "placement" question: the client has removed ARV
-**entirely** — from the comps response AND from the calculator pre-fill.
-Members enter ARV manually when running flip or BRRRR.
+Supersedes the earlier flag-gated version entirely. The client removed the
+computed ARV from the comps response AND the calculator pre-fill. It is
+**deleted, not gated and not dark**: `ARV_SURFACING` and
+`AppConfig.arvSurfacingEnabled` are gone with it.
 
-**Chosen mechanism (the operator left it to MASON; this is the record):**
-a single config flag, **not** deletion and **not** "stop writing the block".
+**Recorded so its absence never reads as an oversight:** this is a ONE-WAY
+DOOR. `arv.ts` — the trimmed mean, sample standard deviation, cv, confidence
+tiers, `arvLow`/`arvHigh`, rounding — is deleted, along with `ArvResult`,
+`ArvConfidence`, `CompsResult.arv`, and the `TRIM_FRACTION` / `ARV_ROUND_TO` /
+`CONF_HIGH` / `CONF_MEDIUM` constants. **Reinstating the ARV is a REBUILD from
+this contract, not a flag flip.** The client asked for it out; it is out.
 
-```
-AppConfig.arvSurfacingEnabled   env ARV_SURFACING   DEFAULT false
-```
+What went, precisely:
 
-**Why a flag rather than ceasing to write the block:** ceasing the write would
-red-line INSPECTOR's P1 suite — the "a successful run writes the §8 block",
-pre-fill and echo cases all require the block to exist. The flag keeps every
-one of them green by opting into `ARV_SURFACING=true`, so the whole subsystem
-stays exercised and ready for the day the client flips it back, while
-production defaults to off. A verified, expensive subsystem is not deleted
-because a client changed their mind once.
+- `arv.ts` deleted; `service.ts` no longer computes an ARV; `CompsResult` has
+  no `arv` field.
+- `format.ts`: the ARV block and `confidenceLine` are gone. The emit order is
+  now opening → header → table → closing → footer, with no gap where the ARV
+  used to be.
+- `tools.ts`: the model-facing success result is `{ rendered_block,
+  instruction }` — **no `arv`, no `confidence`**, and the old instruction
+  claiming the ARV "will pre-fill the Flip/BRRRR calculators" is gone, since
+  it had become false.
+- **`run_comps` no longer touches `session_state` at all** — see below.
 
-**Checked in exactly THREE places — nowhere else:**
+**What SURVIVES, deliberately (manual ARV is unaffected):** `session_state`
+and its table, `CompsStateBlock`, the atomic single-block write, the
+address-mismatch guard, the echo machinery, `set_manual_arv`,
+`applyArvPrefill` and `applyFormArvPrefill`.
 
-1. `format.ts` — the ARV / range / confidence lines are omitted from the
-   success render.
-2. `agent.ts applyArvPrefill` — returns args untouched; no injection, no echo.
-3. `formPrefill.ts applyFormArvPrefill` — returns the form untouched; no
-   session default on the ARV field.
+- The two pre-fill functions are **NOT deleted** — deleting them would make
+  `set_manual_arv` write to something nothing reads, i.e. a silent no-op,
+  contradicting "manual ARV is unaffected". They now serve **`arvSource:
+  'manual'` blocks only**; a leftover `'comps'` block from a cached v2 session
+  is ignored and never pre-fills.
+- **`clearCompsBlock` is no longer called before the provider.** That clear
+  existed to stop a failed run leaving the previous *comps* ARV behind. Comps
+  no longer writes an ARV, so the only thing the clear could still destroy is
+  a number the MEMBER typed — running comps must never silently delete that.
+  The address-mismatch guard still prevents a manual ARV bound to address A
+  being applied to address B: ambiguity resolves to asking, not assuming.
+  (`clearCompsBlock` remains exported and tested; production simply has no
+  caller.)
 
-**Explicitly UNCHANGED and still tested:** `session_state`, the atomic
-single-block write, clear-before-provider, the address echo machinery, the
-mismatch guard, the form-default plumbing, `set_manual_arv`. `runComps` still
-COMPUTES the ARV — trimmed mean, `arvLow`/`arvHigh`, `cv`, confidence — and it
-still rides on `CompsResult` and into the cache. Only the surface is gated, so
-a flip-back needs no recompute.
-
-**The §4.5 apparatus has no consumer while the flag is off.** Kept, kept
-tested, not surfaced. The §14.4 confidence rebase is therefore moot for output
-but is STILL APPLIED, so the code stays internally coherent rather than
-carrying a threshold that contradicts the cap.
+**`ALGO_VERSION` 2 → 3.** Cached v2 blobs carry an `arv` key that no longer
+deserializes into `CompsResult`; the version stamp forces recompute-from-raw
+rather than relying on the deserializer to tolerate a dead field.
 
 ### 14.9 Style / condition / quality matching — FORMALLY WAIVED
 
@@ -475,7 +484,7 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
 7. `TYPE_MISMATCH` — `propertyType` ≠ subject's (OTHER never matches anything, including OTHER)
 8. `TOO_FAR` — haversine miles > active radius tier
 9. `PRICE_MISSING` — `soldPrice` null or ≤ 0
-10. `NON_ARMS_LENGTH` — ppsf < `NON_ARMS_LENGTH_PPSF_FRACTION` × median ppsf of the **candidate set** (all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters; median of even n = mean of middle two). Deterministic, order-independent.
+10. `NON_ARMS_LENGTH` — ppsf < `NON_ARMS_LENGTH_PPSF_FRACTION` × median ppsf of the **DEDUPED candidate set** (BUG-010: `candidateMedianPpsf` runs `dedupeSales` on its own input first. The DUPLICATE_SALE rejection happens after the gates, but this median is computed INSIDE the gate pass, so a later drop cannot reach it — without deduping here, a sale counted twice would skew the very threshold the rule depends on. Implement it as written or the next reader will reintroduce the skew.) Median over all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters (all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters; median of even n = mean of middle two). Deterministic, order-independent.
 11. ~~`LOT_ANOMALY`~~ — **REMOVED in v2** (§14.1): lot is a soft scoring term now. The `RejectReason` union keeps the member so cached v1 results still type, but it is never emitted.
 12. `FUTURE_SOLD_DATE` — `soldDate` parses to strictly after `now` (BUG-003: a sale that hasn't happened is not a comp; Zillow emits pending-close and timezone-shifted dates)
 

@@ -7,8 +7,13 @@
  * one page answers "what counts as a comp?".
  */
 
-/** Stamped on every outcome; bumping it triggers recompute-from-raw on cache hits. */
-export const ALGO_VERSION = 2;
+/**
+ * Stamped on every outcome; bumping it triggers recompute-from-raw on cache
+ * hits. 3 = the ARV removal (CONTRACT §14.8): cached v2 blobs carry an `arv`
+ * key that no longer deserializes into CompsResult, and the version stamp is
+ * exactly what stops a dead field being tolerated silently.
+ */
+export const ALGO_VERSION = 3;
 
 // --- Hard filters (CONTRACT §5.3) -------------------------------------------
 
@@ -100,31 +105,11 @@ export const DISTANCE_NORM_MI = 1.0;
 /** Age at which the recency component saturates. */
 export const RECENCY_NORM_MONTHS = 12;
 
-// --- ARV (CONTRACT §5.5) -----------------------------------------------------
-
-/** Fraction trimmed from EACH end of the sorted ppsf list when n >= 5. */
-export const TRIM_FRACTION = 0.15;
-
-/** ARV / low / high are rounded to the nearest multiple of this. */
-export const ARV_ROUND_TO = 1000;
-
-/**
- * minComps 6 -> 5 is FORCED, not chosen (CONTRACT §14.4): with MAX_COMPS_KEPT
- * at 5, `n >= 6` is unreachable and every run would return medium-or-low
- * forever. Applied even though the ARV surface is currently disabled, so the
- * code carries no threshold that contradicts the cap.
- */
-export const CONF_HIGH = {
-  minComps: 5,
-  maxCv: 0.15,
-  maxMedianDistanceMi: 0.75,
-  maxMedianAgeMonths: 6,
-} as const;
-
-export const CONF_MEDIUM = {
-  minComps: 4,
-  maxCv: 0.25,
-} as const;
+// --- ARV: REMOVED (CONTRACT §14.8) --------------------------------------
+// TRIM_FRACTION, ARV_ROUND_TO, CONF_HIGH and CONF_MEDIUM are gone with
+// arv.ts. The client removed the computed ARV from this module entirely;
+// members supply their own via set_manual_arv. Reinstating is a rebuild from
+// the contract, not a flag flip — this is a one-way door, by decision.
 
 // --- Cache (CONTRACT §7) -----------------------------------------------------
 

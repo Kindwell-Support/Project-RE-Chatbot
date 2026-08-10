@@ -20,21 +20,6 @@ export interface AppConfig {
   apifyToken?: string;
   /** Daily cap on PROVIDER runs (cache hits are free) — the spend guard on the client's Apify quota. */
   compsDailyRunCap: number;
-  /**
-   * Whether the ARV is SURFACED — in the comps render, the calculator pre-fill,
-   * and the form default (CONTRACT §14.8). The client removed the ARV from all
-   * three; the plumbing beneath it (session_state, atomic writes,
-   * clear-before-provider, echo, mismatch guard) is retained and still tested.
-   *
-   * STRICT OPT-IN. Absence, empty string, and every value other than the exact
-   * string "true" resolve FALSE — deliberately NOT `!== 'false'`, which would
-   * surface the ARV on any deployment where nobody remembered to set the var.
-   * A default that only holds when someone remembers to set it is not a
-   * default. There is also no NODE_ENV escape hatch (unlike enableDemoPage):
-   * dev and production must agree, or the surfaced path gets exercised in dev
-   * and shipped off in production without anyone noticing the difference.
-   */
-  arvSurfacingEnabled: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -58,10 +43,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableDemoPage: env.ENABLE_DEMO_PAGE === 'true' || env.NODE_ENV !== 'production',
     ...(env.APIFY_TOKEN ? { apifyToken: env.APIFY_TOKEN } : {}),
     compsDailyRunCap: Number(env.COMPS_DAILY_RUN_CAP ?? 50),
-    // === "true" ONLY. Absent/empty/anything-else => false. See the interface
-    // doc: `!== 'false'` would default the ARV back ON wherever the var is
-    // unset, which is every environment nobody has touched.
-    arvSurfacingEnabled: env.ARV_SURFACING === 'true',
   };
 }
 
