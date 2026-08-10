@@ -41,6 +41,65 @@ and bidi characters. `format.test.ts` was the only carrier. Now clean.
 
 ---
 
+## FINDING-008 — one-shot tooling that persists state between runs
+
+- **Status**: CLOSED (rule adopted)
+- **Severity**: high as a class. It silently reverts verified work, and the
+  working tree looks clean afterwards.
+- **Found**: in my own branch-measurement script, after closing the same class
+  twice in the product.
+
+The script backed each test file up before instrumenting it and restored the
+backups on revert. The backup directory persisted between runs. On the final
+pass one file no longer contained an `if`+expect block, so it was not
+instrumented and took no fresh backup — but revert restored the STALE backup
+from an earlier pass anyway, silently undoing a fix I had just watched pass.
+
+`git status` was clean afterwards, because the file genuinely matched HEAD.
+Nothing flagged it. I caught it only because the commit stat did not list the
+file I had just edited.
+
+### THE RULE
+
+> **One-shot tooling does not persist state between runs.**
+>
+> If a tool writes state that outlives its own invocation — a backup, a cache,
+> a lock, a scratch table, a "last known good" — then every later run inherits
+> a claim it did not make and cannot validate. Derive state fresh, scope it to
+> the run, and delete it on the way out. Where it must persist, it must be
+> KEYED to the run and refuse to apply to a different one.
+
+This is the third instance of the class on this project, and the first I
+produced:
+
+1. **The comps cache** — a stale entry serving an old-parameter result,
+   indistinguishable from fresh. Fixed by `ALGO_VERSION`, which is exactly
+   "keyed to the run that produced it".
+2. **`session_state`'s `'manual entry'`** (BUG-011) — a value written by a
+   code path that no longer exists, still being read and defended by the
+   guard. Fixed by a read-time shim that coerces the retired shape.
+3. **This.** Same shape, in the tooling rather than the product, and it cost a
+   verified fix.
+
+The pattern in all three: the writer disappears, the artifact does not, and
+the reader cannot tell the difference. `ALGO_VERSION` is the general answer —
+version the artifact with the thing that produced it, and refuse artifacts
+whose producer is gone.
+
+### A SECOND INSTANCE, IN THE SAME SESSION
+
+The NUL byte in `TEST_PLAN.md` (documenting a NUL-injection input) was
+"repaired" earlier and was still there. The repair ran through a shell
+heredoc, so `b"...\\0"` collapsed to `b"...\0"` — a NUL — and I
+replaced the NUL with a NUL, then reported it fixed without re-reading the
+bytes. Same root cause as FINDING-006, applied to the fix rather than the
+code.
+
+**Corollary rule:** verify a repair by re-reading the artifact, not by
+observing that the repair command exited 0.
+
+---
+
 ## FINDING-007 — assertions that never execute (THE SIXTH SHAPE)
 
 - **Status**: 8 fixed; 8 classified benign; 1 open coverage gap (below)

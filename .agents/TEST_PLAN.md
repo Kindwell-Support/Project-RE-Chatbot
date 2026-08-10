@@ -241,7 +241,7 @@ result, and no change to guardrail behaviour.
 `''` · `'   '` · `'\t\n'` · `'98101'` · `'Seattle'` · `'WA'` · `'1st & Pike'` ·
 `'10 Downing St, London'` · `'PO Box 42, Seattle WA'` · `'123 Maín St ñ'` ·
 `'123 Main St 🏠'` · a 5,000-char string · `"123 Main St'; DROP TABLE comps_cache;--"` ·
-`'123 Main St" OR "1"="1'` · `'123 Main St '` · `'../../etc/passwd'` ·
+`'123 Main St" OR "1"="1'` · `'123 Main St\0'` · `'../../etc/passwd'` ·
 `'{"$ne": null}'`
 
 - `[ ]` T6.1 The table above, through `normalizeAddress` (never throws, always returns a string) and through the service.
@@ -548,3 +548,62 @@ I closed the widget instance by explaining it (`§14.8 removed the pre-fill`)
 rather than measuring it, and the explanation was wrong — it pointed away from
 the real gap, which was a fixture shape that production can no longer emit. A
 plausible cause for a dead assertion is not a cause. Probe it.
+
+
+---
+
+# APPENDIX — INSPECTOR SIGN-OFF CHECKLIST (run every time, not once)
+
+Most of these were one-time discoveries that became standing checks. The
+distinction that matters: a check is RECURRING when the thing it guards can
+break without anyone editing a test.
+
+## Every sign-off
+
+- [ ] `npm test` — zero failures AND zero files failing at IMPORT. A file that
+      dies on a bad import counts as a failed FILE and contributes zero tests,
+      so its cases vanish from the total while still looking like coverage.
+      (Three suites, 82 cases, hid there once.)
+- [ ] `COMPS_STRICT=1 npm test` — identical counts. Nothing reaches GREEN by
+      being quietly skipped, and a renamed or deleted module fails loudly.
+- [ ] Skip count reconciled by REPORTER, not by eye — every skip named and
+      accounted for (live gates + their sentinels).
+- [ ] Non-printing byte sweep across `tests/` — C0 controls, DEL, zero-width,
+      bidi. A literal U+0008 where `\b` was meant compiles, runs, and never
+      matches; under `.not.toMatch` it passes forever.
+- [ ] Golden header integrity (`goldenHeaders.test.ts`) — the recorded
+      arithmetic still describes the data it sits above.
+- [ ] **DEAD-GUARD SWEEP — see below. RECURRING.**
+- [ ] Live battery at the CURRENT HEAD. Not at an earlier SHA, however recent.
+
+## THE DEAD-GUARD SWEEP — why it is recurring, not one-time
+
+**Trigger: any change that alters which PATH the system takes.** Not any change
+to the tests. The eight leak guards went dead the moment the mismatch guard
+started working correctly — the tests were untouched. The system got better and
+the assertions stopped running, silently, and the suite stayed green.
+
+That means the sweep belongs after:
+
+- a new guard, gate or refusal path (a refusal makes `if (result)` false)
+- a removal (§14.8 made whole shapes unreachable)
+- a default or fallback change (§14.15's null binding)
+- any slice that adds a branch to the product — **the Census slice included**
+
+Method, no coverage tooling needed: instrument every `if (...) {` block
+containing an `expect` with
+`expect(Boolean(cond), 'BRANCH-NEVER-TAKEN <file>:<line>').toBe(true);`
+immediately before the block, run the suite, collect failures, revert.
+A failure means the branch was false at least once; for a non-parameterized
+test that means never taken at all.
+
+Then classify each hit — the sweep does not tell you which are wrong:
+
+| verdict | what it looks like | action |
+| --- | --- | --- |
+| DEAD GUARANTEE | the false-branch is the CORRECT path | fix — usually delete the guard |
+| CONDITIONAL RULE | fires only on a shape not currently present (collision, string param) | keep |
+| PARAMETERIZED | some cases have the field, others do not | keep |
+
+Baseline at `c3bc55a`: 21 guarded blocks, 5 dead, all five classified as
+conditional rules. A sweep returning more than five wants explaining.
