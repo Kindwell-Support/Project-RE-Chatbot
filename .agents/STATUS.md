@@ -168,3 +168,4 @@ battery's whitelist can see (all below its $50k floor, none currency-marked),
 so that battery is structurally undisturbed — verified, not assumed. The rest
 of the live battery is unaffected in principle by this slice but UNVERIFIED in
 fact. Needs a re-run once credits are restored, before merge.
+00:15 MASON — CENSUS shipped @ 4623e7f (§14.10 built: key now REQUIRED by the API — CENSUS_API_KEY gate, three-state demographics, tract cache 180d, emit order extended, no retry, geocoder fixture RECORDED / ACS hand-built pending key; smokes 9/9, suite 1,346/0); §14.16 records both aggregate rulings + outlier candidate; SPIKE run (authorized): 235 items @ 6.4s, doz=12m holds, our resultsLimit was the wall, fixture recorded — aggregates NOT built, awaiting operator go; HANDOFF 0040. OPERATOR ACTION: register free CENSUS_API_KEY

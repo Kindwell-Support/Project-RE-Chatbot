@@ -76,3 +76,29 @@ Census is **free** (no actor runs, no key at light volume). The aggregates
 are **+1 billed run per lookup at minimum**, need one spike to cost
 precisely, and their DOM line needs a client ruling on options 1–3 above.
 Census stays cheaper; no reason found to resequence.
+
+---
+
+## SPIKE RESULT 2026-08-11 — the approach works (one run, as authorized)
+
+One search run: 1-mile bounds around the recorded urban-Phoenix subject,
+`doz=12m` server-side, `resultsLimit: 500`.
+
+| Question | Answer |
+| --- | --- |
+| Does MAP_MARKERS honour resultsLimit > ~40? | **YES — 235 items returned in one run** (the 500 cap was not hit; the query exhausted) |
+| Does `doz=12m` push the window server-side? | **YES — dateSold spans 2025-08-11 → 2026-08-05, a true 12-month window** (vs 4–5 weeks in the capped pool) |
+| Pool quality | 233 usable sold items, **233 distinct zpids**, all within 12 months; **193 inside the 1-mile CIRCLE** (the rest sit in the box corners — the circle subset is the aggregate set) |
+| Field availability | price 233/233 (100%) · sqft 221/233 (95%) · beds 204/233 (88%) |
+| Runtime | **6.4s** — comfortably inside the 90s pipeline ceiling |
+
+**Cost per aggregate fetch:** ONE actor run returning ~235 results in this
+urban market (vs 40 for the comps search). These actors bill per RESULT, so
+the real dollar figure is ~235 × the client's per-result rate — the rate is
+in her Apify console. Recorded payload: `__fixtures__/spike-agg-1mi-12mo.json`
+(the aggregate build's evidence base, INSPECTOR-shared).
+
+**Conclusion: no rethink needed.** The 40-item wall was our own
+`resultsLimit`, not a Zillow cap. The dedicated fetch per Ruling 1 is
+buildable exactly as ruled: 1-mile bounds, `doz=12m`, `dedupeSales` before
+any average, DOM as the labelled 5-comp average per Ruling 2.

@@ -343,6 +343,17 @@ real urban 1-mile/12-month query return? Reported to the operator BEFORE any
 aggregate code exists; if the cap holds regardless, the approach needs
 rethinking.
 
+**SPIKE RUN 2026-08-11 (gate satisfied, reported, build still awaits the
+operator's go):** `resultsLimit: 500` returned **235 items in 6.4s** — the
+old 40-item wall was OUR limit, not Zillow's — and `doz=12m` held
+server-side (dateSold spans a true 12 months). 233 usable sold, all
+distinct zpids; **193 inside the 1-mile circle** (box corners excluded —
+the CIRCLE subset is the aggregate set); price 100% / sqft 95% / beds 88%.
+Cost: one run × ~235 per-result billing units in an urban market; the
+per-result rate is in the client's console. Recorded:
+`__fixtures__/spike-agg-1mi-12mo.json`. Full table in
+`reports/NEIGHBOURHOOD_AGGREGATES_SCOPING.md`.
+
 **Candidate, recorded NOT built (operator):** once the aggregate pool exists
 (potentially hundreds of sales), it is a far better basis for outlier
 detection than 5 comps — flag when the comp set sits meaningfully above or
