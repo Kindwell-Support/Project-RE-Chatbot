@@ -242,6 +242,35 @@ unavailable); never infer a figure the API did not return.
 
 - **Neighbourhood summary** — all of it. Separate block.
 
+### 14.13 BUG-010 — duplicate-sale dedupe (operator ruling)
+
+Zillow carries one sale under TWO zpids with different address formatting
+(recorded: `830 America St` / `830 W AMERICA Street`, both $360,000 / 1,315
+sqft / 2026-07-17, coordinates 0.3 m apart). Under the v2 cap of 5 it took
+**two of five slots**, double-weighted that sale in a trimmed mean of three
+values, displaced a genuine comp, and — duplicates shrink variance — pushed
+the confidence tier up.
+
+- **Identity is the SALE, never the id**: equal `soldPrice`, `livingArea` and
+  `soldDate`, plus coordinates within `DUPLICATE_COORD_TOLERANCE_MI` (~10 m).
+  A DISTANCE threshold, not float equality — the recorded pair differs in the
+  sixth decimal of latitude, which exact matching misses.
+- **Winner**: the record with more non-null fields among lot / beds / baths /
+  link; ties break on the longer street address. Deterministic.
+- **Placement**: `dedupeSales` runs inside the tier walker, AFTER the hard
+  filters and BEFORE ranking, so a duplicate can never consume a slot and only
+  a comp that would otherwise have been KEPT is ever labelled a duplicate. The
+  tier's sufficiency test runs on the DEDUPED count, so a rung cannot "reach
+  5" on four real sales plus a copy.
+- **Reported** as `RejectReason.DUPLICATE_SALE`, visible in the rejection
+  table like every other drop.
+- **One deviation from the literal instruction, flagged:** the ruling's
+  rationale also required duplicates not to skew "the candidate-set median the
+  non-arms-length rule depends on". Placement after the gates CANNOT achieve
+  that — the median is computed inside the gate pass. So
+  `candidateMedianPpsf` additionally dedupes its own input. Both halves of the
+  stated rationale now hold; the rejection semantics stay honest.
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live

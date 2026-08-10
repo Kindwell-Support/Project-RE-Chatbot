@@ -9,6 +9,7 @@
  */
 import {
   DAYS_PER_MONTH,
+  DUPLICATE_COORD_TOLERANCE_MI,
   EARTH_RADIUS_MI,
   MAX_BATH_DIFF,
   MAX_BED_DIFF,
@@ -68,7 +69,13 @@ export function median(values: number[]): number {
  * (CONTRACT §5.3.10).
  */
 function candidateMedianPpsf(comps: RawComp[]): number {
-  const ppsf = comps
+  // Deduped FIRST (BUG-010): the operator's rationale for the dedupe includes
+  // "can't skew the candidate-set median the non-arms-length rule depends on",
+  // and dropping duplicates after the gates cannot achieve that — this median
+  // is computed inside the gate pass. So the median gets its own deduped view
+  // while the REJECTION still happens after filtering, where the semantics are
+  // honest (only a comp that would otherwise be kept is called a duplicate).
+  const ppsf = dedupeSales(comps).kept
     .filter((c) => (c.soldPrice ?? 0) > 0 && (c.livingArea ?? 0) > 0)
     .map((c) => (c.soldPrice as number) / (c.livingArea as number));
   return median(ppsf);
@@ -208,17 +215,83 @@ export function selectTiers(
 ): TierSelection {
   const widestRadius = RADIUS_TIERS_MI[RADIUS_TIERS_MI.length - 1];
   const widestAge = RECENCY_TIERS_MONTHS[RECENCY_TIERS_MONTHS.length - 1];
+  const seed = applyHardFilters(subject, comps, widestRadius, widestAge, now);
+  const seedDeduped = dedupeSales(seed.kept);
   let last: TierSelection = {
-    ...applyHardFilters(subject, comps, widestRadius, widestAge, now),
+    kept: seedDeduped.kept,
+    rejected: [...seed.rejected, ...seedDeduped.duplicates],
     radiusTierMi: widestRadius,
     recencyTierMonths: widestAge,
   };
   for (const radiusMi of RADIUS_TIERS_MI) {
     for (const maxAgeMonths of RECENCY_TIERS_MONTHS) {
       const pass = applyHardFilters(subject, comps, radiusMi, maxAgeMonths, now);
-      last = { ...pass, radiusTierMi: radiusMi, recencyTierMonths: maxAgeMonths };
-      if (pass.kept.length >= MIN_COMPS_FOR_TIER) return last;
+      // BUG-010 dedupe sits HERE — after the gates, before ranking — so a
+      // duplicate can never consume one of the five slots, and only a comp
+      // that would otherwise have been KEPT is ever labelled DUPLICATE_SALE.
+      // The tier's sufficiency test runs on the DEDUPED count, otherwise a
+      // rung could "reach 5" on four real sales plus a copy.
+      const deduped = dedupeSales(pass.kept);
+      last = {
+        kept: deduped.kept,
+        rejected: [...pass.rejected, ...deduped.duplicates],
+        radiusTierMi: radiusMi,
+        recencyTierMonths: maxAgeMonths,
+      };
+      if (deduped.kept.length >= MIN_COMPS_FOR_TIER) return last;
     }
   }
   return last;
+}
+
+/**
+ * BUG-010 — collapse duplicate SALES (not duplicate ids).
+ *
+ * Zillow carried one Wickenburg sale under two zpids with different address
+ * formatting ("830 America St" / "830 W AMERICA Street"), and it occupied TWO
+ * of five comp slots: it double-weighted that sale in a trimmed mean of three
+ * values, displaced a genuine comp, and — because duplicates shrink variance —
+ * pushed the confidence tier up. Identity is therefore the SALE, never the id.
+ *
+ * Match = same price, same living area, same sold date, and coordinates within
+ * DUPLICATE_COORD_TOLERANCE_MI. A distance threshold, not float equality: the
+ * recorded pair differed in the sixth decimal of latitude.
+ *
+ * Winner = the record carrying more real data (lot, beds, baths, link), so the
+ * survivor is the more complete row; ties break on the longer street address,
+ * which is the better-formatted of the two in the recorded case. Deterministic
+ * either way — INSPECTOR asserts on which survives.
+ */
+export function dedupeSales(comps: RawComp[]): { kept: RawComp[]; duplicates: RejectedComp[] } {
+  const completeness = (c: RawComp): number =>
+    [c.lotSize, c.beds, c.baths, c.detailUrl].filter((v) => v !== null && v !== undefined).length;
+
+  const kept: RawComp[] = [];
+  const duplicates: RejectedComp[] = [];
+
+  for (const comp of comps) {
+    const idx = kept.findIndex(
+      (k) =>
+        k.soldPrice === comp.soldPrice &&
+        k.livingArea === comp.livingArea &&
+        k.soldDate === comp.soldDate &&
+        haversineMiles(k.lat, k.lng, comp.lat, comp.lng) <= DUPLICATE_COORD_TOLERANCE_MI,
+    );
+    if (idx === -1) {
+      kept.push(comp);
+      continue;
+    }
+    const incumbent = kept[idx];
+    const challengerWins =
+      completeness(comp) > completeness(incumbent) ||
+      (completeness(comp) === completeness(incumbent) &&
+        comp.address.length > incumbent.address.length);
+    if (challengerWins) {
+      kept[idx] = comp;
+      duplicates.push({ comp: incumbent, reason: 'DUPLICATE_SALE' });
+    } else {
+      duplicates.push({ comp, reason: 'DUPLICATE_SALE' });
+    }
+  }
+  return { kept, duplicates };
 }

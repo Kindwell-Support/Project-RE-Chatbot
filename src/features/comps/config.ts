@@ -70,6 +70,20 @@ export const NON_ARMS_LENGTH_PPSF_FRACTION = 0.4;
  */
 export const LOT_NORM_RATIO = 1.0;
 
+/**
+ * Two records are the SAME SALE when price, living area and sold date all
+ * match and their coordinates are within this distance (BUG-010). ~10 m.
+ *
+ * A DISTANCE threshold, never float equality: the recorded duplicate pair
+ * differed in the sixth decimal of latitude (33.965137 vs 33.96514, ~0.3 m),
+ * which exact matching misses — that miss is precisely how my first scan
+ * reported "0 duplicates".
+ *
+ * And deliberately NOT keyed on zpid: Zillow carried one Wickenburg sale
+ * under two zpids, so distinct ids ARE the problem, not the identity.
+ */
+export const DUPLICATE_COORD_TOLERANCE_MI = 10 / 1609.34;
+
 // --- Scoring (CONTRACT §5.4; weights sum to 100) -----------------------------
 
 // Sum to 100 (CONTRACT §14.3). Lot takes 10, drawn 5 from distance and 5 from

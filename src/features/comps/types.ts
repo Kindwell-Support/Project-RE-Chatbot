@@ -86,7 +86,14 @@ export type RejectReason =
   | 'NON_ARMS_LENGTH'
   | 'LOT_ANOMALY'
   /** Rule 12 (BUG-003): dated after `now` — a sale that hasn't happened is not a comp. */
-  | 'FUTURE_SOLD_DATE';
+  | 'FUTURE_SOLD_DATE'
+  /**
+   * BUG-010: the same sale carried under two zpids with different address
+   * formatting. Not a hard-filter rule — applied AFTER filtering, between
+   * gates and ranking, so it only ever drops a comp that would otherwise have
+   * been KEPT. Reported like any other drop so the member can see it.
+   */
+  | 'DUPLICATE_SALE';
 
 export interface RejectedComp {
   comp: RawComp;
