@@ -243,3 +243,4 @@ The protocol has no re-check-before-starting step and no acknowledgement, so
 neither side can tell a race from a miss. Proposed in 0031.
 
 Live battery remains the sole merge blocker, at HEAD once credits land.
+01:40 MASON — PROTOCOL CHANGE adopted into charter (rule 1a: re-read inbox immediately before any slice; rule 1b: name highest-read inbox id in every handoff — first use in 0046); 0030/0031 read + archived (race acknowledged, seam questions were answered by 0045's map); INSPECTOR GREEN @ 3430feb acknowledged (1,419/0, sweep baseline) — MODULE FEATURE-COMPLETE, nothing new starts, HOLDING for live battery at HEAD (blocked on OpenAI credits, operator side)
