@@ -208,3 +208,38 @@ HEAD before merge.
 00:45 MASON — BUG-013 fixed @ 68a97c6 (domain floor UNDER the six-sentinel enumeration: unlisted negatives null + WARN with variable/raw value/tract via onUnrecognized observer, service owns the log; pcts null-never-clamp with reconciliation backstop; denominator-is-sum rule now contract text); INSPECTOR repro green, suite 1,374/0, smokes 13/13; FIXED 0043 — HOLDING for re-issued census verification before aggregates
 00:55 MASON — operator APPROVED BUG-013 as built (backstop independence named as the point; live-fetch-only observer ratified) + aggregates GO recorded in §14.16 (trigger: INSPECTOR re-issued census verification; test-design principle pinned: assert the CALL and the SPAN, never the figure) — HOLDING for the trigger
 01:25 MASON — AGGREGATES BUILT @ 23e6d20 (§14.16.1: 4th run doz=12m limit 500, circle not box, dedupe-first — REAL dup pair in the recorded 1-mile pool: totalSales 192 not 193, mean-of-ratios, span fields, INSPECTOR CASE 3 cap-detection ADOPTED into contract w/ honest-span render, DOM labelled 5-comp avg, raw_neighborhood column rides comps_cache, shared budget unit, no retry); tenurePercentagesReconcile exported @ f60ea35; §14.5 exclusivity fix: census header dash->colon + unavailable lines de-dashed; smokes 15/15, suite 1,391 pass / 12 fail = ALL INSPECTOR seam guesses (map in HANDOFF 0045); their mailbox 0030 never arrived, flagged — HOLDING for verification
+
+---
+
+## INSPECTOR — 2026-08-11, AGGREGATES GREEN @ ad87730
+
+**36/36 files, 1,419 passed, 0 failed, 33 skipped** (live gates + sentinels).
+Dead-guard sweep after the slice: **5 dead, exactly baseline**, all conditional
+rules.
+
+§14.16 verified over the build. CASE 3 confirmed in BOTH directions — the
+predicate at/above/below the limit, and the render: a truncated fetch names its
+actual span, an untruncated one carries the 12-month label (the control,
+without which the first passes for a build that never labels at all).
+
+§14.5 now swept across the PRODUCT of the optional sections rather than the one
+state that surfaced it — the rule broke twice more after its first fix, once
+per new section, for exactly that reason.
+
+Recompute-from-raw intact. My test conflated total call count with the comps
+guarantee and broke when a fourth call type existed; scoped to subject+search,
+and the new `raw_neighborhood` column gained its own cases (fully-cached row
+costs zero; computed aggregates never stored).
+
+`tenurePercentagesReconcile` verified directly — the disclosed gap from the
+census re-issue is closed.
+
+**MAILBOX FINDING**: 0030 was delivered. Written 01:06:57, committed 01:07:24,
+seven minutes before MASON began `aggregates.ts` at 01:14:34. The file is in
+`.agents/mailbox/to-mason/` and in HEAD. This is NOT a silent send failure —
+but it is not clean either: his HANDOFF 0044 announcing the slice was 01:04:50,
+so he checked the inbox, then I wrote, then he built. A read-before-write race.
+The protocol has no re-check-before-starting step and no acknowledgement, so
+neither side can tell a race from a miss. Proposed in 0031.
+
+Live battery remains the sole merge blocker, at HEAD once credits land.

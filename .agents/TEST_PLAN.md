@@ -509,6 +509,17 @@ is a pass, so don't fail on it."* The consequence is not: the guard refuses
 every time and the assertion **never runs once**. The test is green on its
 other assertions, and the guarantee in its title is unverified.
 
+**Why the author cannot catch it.** Writing the guard and being wrong about it
+are the same act. The guard exists BECAUSE its author reasoned the false branch
+was reachable; if that reasoning is off, nothing else in the test disagrees
+with them. The sweep is the only reader that does not share the author's
+premise. (Operator's framing, kept verbatim: *the author of a guard is the last
+person positioned to notice its condition is false on the correct path.*)
+
+Score to date: the sweep has caught the author's own guards **five times**,
+three of them within an hour of being written, every one deliberate and
+thought about.
+
 **The tell**: the guard's condition is false precisely when the system is
 behaving correctly. Any time you write a conditional whose false-branch is the
 expected outcome, the assertion inside is dead in the normal case and only
