@@ -73,3 +73,42 @@ RAISED: BUG-011 (`0024`, blocker), six contract self-contradictions (`0025`,
 non-blocking — code is right in every case).
 
 DEFERRED: the live battery, until the suite is green offline.
+
+=== SESSION-STATE SUMMARY (MASON, 2026-08-08) =========================
+BRANCH feat/comps-client-spec @ b200ffb — UNPUSHED (operator handles all
+pushes). main @ 689dfc7 is pushed and deployed; production runs the v1
+comps module.
+
+SHIPPED ON THIS BRANCH
+- CONTRACT §14: client-spec alignment. Params live in code: sqft ±20%,
+  radius [1,3]mi, recency tiers [3,6,12]mo (recency widens before radius),
+  cap 5 display+compute, lot as soft scoring (35/25/20/10/10), new per-comp
+  fields (beds/baths/lot/link, em-dash nulls, "link unavailable"),
+  prescribed opening/closing copy verbatim.
+- BUG-010 dedupe: sale-identity (price+sqft+date+~10m), after gates before
+  ranking, DUPLICATE_SALE visible; candidate median dedupes its own input.
+- ARV REMOVED ENTIRELY (one-way door, §14.8): arv.ts deleted, ALGO_VERSION
+  3, run_comps no longer touches session_state; manual ARV path
+  (set_manual_arv + prefills, arvSource 'manual' only) verified intact.
+- Ground truth v1->v2: mean abs error 10.3% -> 7.7% (Vale -0.3%, Danbury
+  -7.7%, Don Frank -15.1%; post-dedupe Don Frank -16.6% at honest medium).
+- Detail-batch spike: 5-in-1 run works (16s), join on addressOrUrlFromInput
+  NEVER position, per-item failure isolation. §14.14 pins the build rules.
+- reports/APIFY_FIELD_AVAILABILITY.md: DOM/parking absent from comps
+  payload (detail-only); lot available and shipped.
+
+GATED / WAITING
+- HOLDING for INSPECTOR GREEN on the client-spec block (their
+  tests/comps recompute is in flight; non-comps suites 880 green).
+- After GREEN, in order: detail-enrichment slice per §14.14 (3 runs per
+  lookup, zpid cache, cap stays 50 counting lookups — fix the "provider
+  runs" comment in that slice), then Census (§14.10), then merge/push
+  (operator).
+- Client ruling pending: DISPLAY of style/condition (obtainable via
+  detail; waived only as matching criteria).
+
+KNOWN / ACCEPTED
+- Commit 12eb0e7 trailer typo (duty@) — ruled leave-as-is.
+- Production comps_cache holds v1 rows; ALGO_VERSION 3 forces
+  recompute-from-raw on first touch after deploy, zero Apify spend.
+=======================================================================
