@@ -205,3 +205,4 @@ now the verification step for its own class of fix, not just the discovery step.
 
 Live battery still outstanding, still blocked on credits, still required at
 HEAD before merge.
+00:45 MASON — BUG-013 fixed @ 68a97c6 (domain floor UNDER the six-sentinel enumeration: unlisted negatives null + WARN with variable/raw value/tract via onUnrecognized observer, service owns the log; pcts null-never-clamp with reconciliation backstop; denominator-is-sum rule now contract text); INSPECTOR repro green, suite 1,374/0, smokes 13/13; FIXED 0043 — HOLDING for re-issued census verification before aggregates
