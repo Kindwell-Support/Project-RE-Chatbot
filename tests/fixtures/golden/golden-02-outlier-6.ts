@@ -48,7 +48,10 @@
  *   G2-B  420,250 / 2,050 = 205
  *   G2-C  419,250 / 1,950 = 215
  *   G2-D  472,500 / 2,100 = 225
- *   G2-O  1,200,000 / 2,000 = 600      <- the rebuild
+ *   G2-O  1,200,000 / 2,000 = 600
+ *         (the down-to-the-studs rebuild — the outlier this case exists for)
+ *   G2-E  330,000 / 1,650 = 200
+ *         (dropped by the cap at 5, not by any filter — see STEP 2)
  *
  * STEP 5 — trim. n = 5, so trimCount = max(1, floor(5 x 0.15)) = max(1, 0) = 1.
  *   sorted [196, 205, 215, 225, 600]

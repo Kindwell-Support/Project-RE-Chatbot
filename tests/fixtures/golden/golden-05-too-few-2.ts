@@ -18,6 +18,14 @@
  *
  * ---------------------------------------------------------------------------
  * STEP 1 — hard filters, first-matching reason per CONTRACT §5.3:
+ *   $/sqft for the comps that have one, in the same form as the other
+ *   fixtures so the header table can be checked against the data:
+ *   G5-C1  400,000 / 2,000 = 200
+ *   G5-C2  441,000 / 2,100 = 210
+ *   G5-C4  380,000 / 1,900 = 200
+ *   (G5-C3 has no price, so no $/sqft — it is excluded from the rule-10
+ *   candidate median entirely, not counted as a zero.)
+ *
  *   G5-C1  SOLD, 60 d, 2,000 sqft, 0.069 mi   -> KEPT   ($/sqft 200)
  *   G5-C2  SOLD, 90 d, 2,100 sqft, 0.138 mi   -> KEPT   ($/sqft 210)
  *   G5-C3  status 'FOR_SALE'                  -> NOT_SOLD (rule 1)

@@ -163,9 +163,24 @@ export const golden04: GoldenCase = {
     compsKept: 5,
     keptZpids: ['G4-C1', 'G4-C2', 'G4-C3', 'G4-C4', 'G4-C5'],
     rejected: [],
-    // Exactly on MIN_COMPS_FOR_TIER. `kept >= 5` stops here; `kept > 5` would
-    // escalate to 1.0 mi and silently widen the search.
-    radiusTierMi: 0.5,
+    // v2 (§14.2). The v1 expectation here was `radiusTierMi: 0.5` — a rung
+    // that no longer exists; the ladder is [1.0, 3.0] x [3, 6, 12] now.
+    //
+    // Re-derived by hand against NOW = 2025-07-15, DAYS_PER_MONTH = 30.44:
+    //   C1 2025-06-15   30 d = 0.9855 mo
+    //   C2 2025-05-16   60 d = 1.9711 mo
+    //   C3 2025-04-16   90 d = 2.9567 mo
+    //   C4 2025-03-17  120 d = 3.9422 mo   <- outside 3 months
+    //   C5 2025-02-15  150 d = 4.9277 mo   <- outside 3 months
+    //
+    //   rung 1  (1.0 mi /  3 mo) -> 3 kept, short of MIN_COMPS_FOR_TIER
+    //   rung 2  (1.0 mi /  6 mo) -> 5 kept, STOP
+    //
+    // So this case now also pins the FIRST recency widening, and it still
+    // lands on exactly 5: `kept >= 5` stops here, `kept > 5` would step out to
+    // 12 months and silently widen the search.
+    radiusTierMi: 1.0,
+    recencyTierMonths: 6,
 
     trimCount: 1,
     usedPpsf: [190, 200, 210],

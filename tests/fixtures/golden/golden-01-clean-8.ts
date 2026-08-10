@@ -11,106 +11,76 @@
  * Subject: 2,000 sqft, 3 bed / 2 bath, SFR, lot 6,000. `now` = 2025-07-15Z.
  *
  * ---------------------------------------------------------------------------
- * v2 (CONTRACT §14, ALGO_VERSION 2). The arithmetic below the divider is the
- * v1 derivation and is SUPERSEDED — kept only as the record of what changed.
- * The authoritative hand-derivation for every v2 value in this file is
- * `V2-RECOMPUTE.md` in this directory, which walks the new ladder, the 20%
- * band, the cap at 5, the five-term score and the rebased confidence.
+ * v2 (CONTRACT §14, ALGO_VERSION 3). REWRITTEN, not annotated. The header used
+ * to carry the v1 derivation under a "SUPERSEDED, see V2-RECOMPUTE.md" note.
+ * That was honest but it broke the method this whole dataset runs on — "read
+ * the header, not the test, to check the arithmetic" is worthless when the
+ * numbers in front of you describe a previous version of the data. The
+ * retired ARV steps are recorded in V2-RECOMPUTE.md; what remains is what the
+ * module still produces.
  * ---------------------------------------------------------------------------
- * ---------------------------------------------------------------------------
- * STEP 1 — hard filters (CONTRACT §5.3). Every comp passes all eleven:
- *   status SOLD · sold 30–120 days ago (≤ 12 mo) · sqft present
- *   sqft band = 2000 ± 25%  =>  [1500, 2500]; all eight are inside
- *   |Δbeds| ≤ 1 (comps are 2/3/4 against subject 3)
- *   |Δbaths| ≤ 1 (comps are 2/2.5/3 against subject 2)
- *   all SFR · all within 0.28 mi of a 0.5 mi tier · all prices > 0
- *   lots 5,200–8,000 vs 5 × 6,000 = 30,000 ceiling
- *   NON_ARMS_LENGTH: candidate median $/sqft (n = 8, even)
- *     = mean of middle two of [190,195,198,200,202,205,208,215]
- *     = (200 + 202) / 2 = 201  ->  threshold = 0.4 × 201 = 80.4
- *     min $/sqft is 190 > 80.4, so nothing is rejected.
- *   => 8 kept.
  *
- * STEP 2 — radius tier (CONTRACT §5.3). 8 kept at 0.5 mi ≥ MIN_COMPS_FOR_TIER
- *   (5), so the pass STOPS at the first tier. radiusTierMi = 0.5.
- *   8 kept also sits exactly on MAX_COMPS_KEPT = 8, so the cap drops nothing
- *   and the ARV does not depend on the ranked order.
+ * STEP 1 — hard filters (§5.3, as amended by §14.1). All eight comps:
+ *   status SOLD · sqft present · prices > 0 · all SFR · all within 0.28 mi
+ *   sqft band = 2000 ± 20%  =>  [1600, 2400]   (v1 was ±25% => [1500, 2500])
+ *     sizes 2000, 2100, 1800, 1900, 1600, 1750, 2250, 2200 — all inside.
+ *     G1-C5 at 1,600 sits EXACTLY on the low edge and is kept: the rule
+ *     rejects OUTSIDE the band, so the edge is inclusive.
+ *   |Δbeds| ≤ 1, |Δbaths| ≤ 1
+ *   rule 11 LOT_ANOMALY is REMOVED in v2 — lot is a soft scoring term now, so
+ *     the 5,200–8,000 lots are scored, not gated.
+ *   rule 10 NON_ARMS_LENGTH: candidate median $/sqft over all eight (deduped;
+ *     all eight are distinct sales), n = 8, even:
+ *       sorted [188, 196, 198, 202, 203, 208, 209, 218]
+ *       median = (202 + 203) / 2 = 202.5  ->  threshold = 0.4 × 202.5 = 81
+ *       min $/sqft is 188 > 81, so nothing is rejected.
  *
- * STEP 3 — $/sqft, per comp, against the COMP's living area (not the
- * subject's, not the lot):
- *   G1-C1  400,000 / 2,000 = 200
- *   G1-C2  409,500 / 2,100 = 195
- *   G1-C3  342,000 / 1,800 = 190
+ * STEP 2 — the LADDER (§14.2), which is where v2 differs most. Two gates now,
+ *   walked as one ordered list, recency widening before radius:
+ *     1.0/3  ->  1.0/6  ->  1.0/12  ->  3.0/3  ->  3.0/6  ->  3.0/12
+ *
+ *   Ages against now = 2025-07-15, months = days / 30.44:
+ *     G1-C1  2025-06-15    30 d = 0.9855 mo
+ *     G1-C2  2025-05-16    60 d = 1.9711 mo
+ *     G1-C3  2025-04-16    90 d = 2.9566 mo
+ *     G1-C4  2025-03-17   120 d = 3.9422 mo   <- outside 3 months
+ *     G1-C5  2025-06-15    30 d = 0.9855 mo
+ *     G1-C6  2025-05-16    60 d = 1.9711 mo
+ *     G1-C7  2025-04-16    90 d = 2.9566 mo
+ *     G1-C8  2025-03-17   120 d = 3.9422 mo   <- outside 3 months
+ *
+ *   rung 1 (1.0 mi / 3 mo) keeps SIX — C4 and C8 fall out as STALE_SALE.
+ *   6 ≥ MIN_COMPS_FOR_TIER (5), so the walk STOPS here.
+ *   => radiusTierMi = 1.0, recencyTierMonths = 3, rejected = C4, C8.
+ *
+ * STEP 3 — $/sqft, per comp, against the COMP's own living area (not the
+ *   subject's, not the lot). This is now the only derived figure the member is
+ *   shown, so it is the one that has to be right:
+ *   G1-C1  406,000 / 2,000 = 203
+ *   G1-C2  411,600 / 2,100 = 196
+ *   G1-C3  338,400 / 1,800 = 188
  *   G1-C4  376,200 / 1,900 = 198
- *   G1-C5  344,000 / 1,600 = 215
- *   G1-C6  358,750 / 1,750 = 205
+ *   G1-C5  348,800 / 1,600 = 218
+ *   G1-C6  365,750 / 1,750 = 209
  *   G1-C7  468,000 / 2,250 = 208
  *   G1-C8  444,400 / 2,200 = 202
  *
- * STEP 4 — trim (CONTRACT §5.5).
- *   n = 8; n ≥ 5, so trimCount = max(1, floor(8 × 0.15))
- *                             = max(1, floor(1.2)) = max(1, 1) = 1
- *   SORT first: [190, 195, 198, 200, 202, 205, 208, 215]
- *   drop 1 from each end -> trimmedOut = 190 (low), 215 (high)
- *   used = [195, 198, 200, 202, 205, 208]        (6 values)
+ *   Against the SUBJECT's 2,000 sqft these would read 203, 205.8, 169.2,
+ *   188.1, 174.4, 182.875, 234 and 222.2 — different for six of the eight, so
+ *   the wrong denominator is visible here rather than hidden by coincidence.
  *
- * STEP 5 — ARV.
- *   sum(used) = 195+198+200+202+205+208 = 1,208
- *   arvPerSqft = 1,208 / 6 = 201.333333…
- *   arv_raw    = 201.333333… × 2,000 = 402,666.6667
- *   arv        = round(402,666.6667 / 1,000) × 1,000
- *              = round(402.6666667) × 1,000 = 403 × 1,000 = 403,000
+ * STEP 4 — the cap (§14.1: MAX_COMPS_KEPT 8 -> 5). Six survive the rung and
+ *   the cap keeps five, dropping G1-C7 as the worst-scoring survivor. This is
+ *   new in v2: under the old cap of 8 nothing was dropped and the ranked order
+ *   could not affect the outcome. It can now.
+ *   => the member sees C1, C2, C3, C5, C6.
  *
- * STEP 6 — spread. SAMPLE standard deviation, n−1 denominator (§5.5).
- *   deviations from 201.333333:
- *     195 -> −6.333333  sq 40.111111
- *     198 -> −3.333333  sq 11.111111
- *     200 -> −1.333333  sq  1.777778
- *     202 -> +0.666667  sq  0.444444
- *     205 -> +3.666667  sq 13.444444
- *     208 -> +6.666667  sq 44.444444
- *   Σd² = 111.333333
- *   sample variance = 111.333333 / (6 − 1) = 22.2666667
- *   sd = √22.2666667 = 4.7187570
- *   cv = 4.7187570 / 201.333333 = 0.0234375
- *
- *   NOTE — the band CANNOT catch a population-vs-sample sd bug here, and that
- *   is exactly the sort of thing rounding hides. Population sd would be
- *   √(111.333333 / 6) = 4.3076157, and 4.3076157 × 2,000 = 8,615.23, which
- *   rounds to the SAME $9,000 band. So `sd` and `cv` are asserted directly.
- *
- * STEP 7 — band (§5.5): arv ∓ round(sd × subjectSqft / 1,000) × 1,000.
- *   sd × 2,000 = 4.7187570 × 2,000 = 9,437.514
- *   round(9.437514) × 1,000 = 9 × 1,000 = 9,000
- *   arvLow  = 403,000 − 9,000 = 394,000
- *   arvHigh = 403,000 + 9,000 = 412,000
- *
- *   THE $1,000 TRAP. The band offset is rounded on its own and applied to the
- *   ALREADY-ROUNDED arv. Rounding the raw endpoint instead —
- *   round((402,666.67 − 9,437.51) / 1,000) × 1,000 = round(393.229) × 1,000 —
- *   gives 393,000. One thousand dollars, no error, nobody notices.
- *   (arvHigh happens to agree at 412,000 under both, so `arvLow` is the
- *   discriminating assertion.)
- *
- * STEP 8 — confidence (§5.5). `high` needs all four:
- *   compsUsed ≥ 6      kept 8, post-trim 6 — ≥ 6 under EITHER reading of
- *                      `compsUsed`, so this case is immune to TEST_PLAN §8 Q1.
- *   cv ≤ 0.15          0.0234 ✓
- *   median distance ≤ 0.75 mi
- *                      distances (pure-latitude offsets, so haversine is
- *                      exactly R·Δlat: 3958.8 × π/180 = 69.09409447 mi/deg):
- *                        ±0.0010° -> 0.0690941  (×2)
- *                        ±0.0020° -> 0.1381882  (×2)
- *                        ±0.0030° -> 0.2072823  (×2)
- *                        ±0.0040° -> 0.2763764  (×2)
- *                      median of 8 = (0.1381882 + 0.2072823) / 2 = 0.1727352 ✓
- *   median age ≤ 6 mo  monthsAgo = days / 30.44:
- *                        30 d -> 0.9855453 (×2)
- *                        60 d -> 1.9710907 (×2)
- *                        90 d -> 2.9566360 (×2)
- *                       120 d -> 3.9421814 (×2)
- *                      median of 8 = (1.9710907 + 2.9566360) / 2 = 2.4638634 ✓
- *   => confidence = 'high'
+ * STEPS 5-8 — RETIRED. Trim, trimmed mean, sample sd, cv, arvLow/arvHigh and
+ *   the confidence tier are gone with `arv.ts` (§14.8, a one-way door). The v1
+ *   arithmetic for them, including the $1,000 band-rounding trap and the
+ *   population-vs-sample sd note, is kept in V2-RECOMPUTE.md as the record of
+ *   what this case used to prove. `expected.arv` and friends remain in the
+ *   object below but nothing asserts them.
  *
  * ---------------------------------------------------------------------------
  * WHY THE FIXTURE ORDER IS SHUFFLED

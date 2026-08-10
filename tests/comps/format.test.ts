@@ -18,9 +18,8 @@
 import { describe, it, expect } from 'vitest';
 import { pendingSlice, sliceNote } from '../helpers/compsGate.js';
 import { renderCompsForChat } from '../../src/features/comps/format.js';
-import { selectRadiusTier } from '../../src/features/comps/filter.js';
+import { selectTiers } from '../../src/features/comps/filter.js';
 import { rankComps } from '../../src/features/comps/rank.js';
-import { calculateArv } from '../../src/features/comps/arv.js';
 import { ALGO_VERSION } from '../../src/features/comps/config.js';
 import { golden01, golden03, type GoldenCase } from '../fixtures/golden/index.js';
 import type { CompsFailureCode } from '../../src/features/comps/types.js';
@@ -29,18 +28,17 @@ const MODS = ['format'] as const;
 
 /** Build a real CompsResult from a golden case, through the real pipeline. */
 function resultFor(gc: GoldenCase) {
-  const tier = selectRadiusTier(gc.subject as never, gc.comps as never, gc.now);
+  const tier = selectTiers(gc.subject as never, gc.comps as never, gc.now);
   const ranked = rankComps(gc.subject as never, tier.kept, gc.now);
-  const arv = calculateArv(gc.subject as never, ranked);
   return {
     ok: true as const,
     algoVersion: ALGO_VERSION,
     runId: 'run-fixed-for-determinism',
     subject: gc.subject,
     radiusTierMi: tier.radiusTierMi,
+    recencyTierMonths: tier.recencyTierMonths,
     comps: ranked,
     rejected: tier.rejected,
-    arv,
     fromCache: false,
     provider: 'stub',
   };
@@ -83,20 +81,17 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       const outcome = resultFor(golden01);
       const text = renderCompsForChat(outcome as never);
 
+      // The ARV removal makes this test STRICTER, not weaker: the permitted
+      // set used to include five derived figures (arv, low, high, per-sqft in
+      // two roundings) plus the trimmed values. Now the ONLY currency that may
+      // appear is a comp's own sold price or its $/sqft. Anything else in the
+      // block is invented, and there is no longer any legitimate derived
+      // number for an invented one to hide behind.
       const permitted = new Set<number>();
-      permitted.add(outcome.arv.arv);
-      permitted.add(outcome.arv.arvLow);
-      permitted.add(outcome.arv.arvHigh);
-      permitted.add(Math.round(outcome.arv.arvPerSqft));
-      permitted.add(Number(outcome.arv.arvPerSqft.toFixed(2)));
       for (const c of outcome.comps) {
         permitted.add(c.comp.soldPrice!);
         permitted.add(Math.round(c.pricePerSqft));
         permitted.add(Number(c.pricePerSqft.toFixed(2)));
-      }
-      for (const t of outcome.arv.trimmedOut) {
-        permitted.add(Math.round(t.pricePerSqft));
-        permitted.add(Number(t.pricePerSqft.toFixed(2)));
       }
 
       const found = dollarAmounts(text);
@@ -145,17 +140,30 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('the block is defensible — a human can rebuild the ARV', () => {
-    it('shows the trimmed $/sqft, the subject sqft, and the ARV', () => {
+    it('shows the subject sqft and EVERY comp\'s own $/sqft', () => {
+      // RE-POINTED. There is no ARV, band or trimmed mean to show. What makes
+      // the block defensible now is that the member can do the arithmetic
+      // themselves: subject size, and each comparable's price per square foot.
       const outcome = resultFor(golden01);
       const text = renderCompsForChat(outcome as never);
       const digits = text.replace(/[$,\s]/g, '');
 
-      // golden 01, all hand-computed: 201.3333 $/sqft x 2,000 sqft = $403,000
-      expect(digits, 'the ARV is missing').toContain('403000');
       expect(text, 'the subject square footage is missing').toMatch(/2,?000/);
-      expect(text, 'the trimmed $/sqft is missing').toMatch(/201/);
-      expect(digits, 'the low end of the band is missing').toContain('394000');
-      expect(digits, 'the high end of the band is missing').toContain('412000');
+      expect(outcome.comps.length, 'precondition: no comps to check').toBe(5);
+      for (const c of outcome.comps) {
+        expect(digits, `comp ${c.comp.zpid} sold price missing`)
+          .toContain(String(c.comp.soldPrice));
+        expect(digits, `comp ${c.comp.zpid} $/sqft missing`)
+          .toContain(String(Math.round(c.pricePerSqft)));
+      }
+
+      // ...and the figures the module used to derive are ABSENT. golden 01's
+      // v1 answer was $403,000 with a $394,000-$412,000 band. If any of those
+      // reappear, something is still computing an ARV.
+      for (const gone of ['403000', '394000', '412000']) {
+        expect(digits, `a v1 derived figure (${gone}) is back in the block`)
+          .not.toContain(gone);
+      }
     });
 
     it('shows each comp\'s price, sqft, $/sqft, sold date and distance', () => {
@@ -169,27 +177,48 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       expect(text).toMatch(/sq ?ft|\/sf|per sq/i);
     });
 
-    it('names the trimmed comps and which end they came off', () => {
-      // Without this the table shows 8 comps and an ARV derived from 6, and
-      // nothing explains the gap. §11 requires trimmedOut and why.
+    it('RETIRED trim reporting — every comp shown is a comp USED, with no gap to explain', () => {
+      // The old case existed because the table showed 8 comps while the ARV
+      // came from 6, and §11 required the block to name the two that were
+      // dropped. There is no trim now and no ARV, so the gap it explained
+      // cannot exist — which is worth asserting rather than merely deleting:
+      // any surviving trim language would be describing something that no
+      // longer happens.
       const outcome = resultFor(golden01);
       const text = renderCompsForChat(outcome as never);
-      expect(outcome.arv.trimmedOut.length).toBe(2);
-      expect(text.toLowerCase()).toMatch(/trim|excluded|discard|set aside/);
-      for (const t of outcome.arv.trimmedOut) {
-        expect(text.replace(/[$,\s]/g, ''), `trimmed $/sqft ${t.pricePerSqft} not shown`)
-          .toContain(String(Math.round(t.pricePerSqft)));
-      }
+      expect(outcome.comps.length, 'precondition: nothing rendered').toBeGreaterThan(0);
+      expect(text.toLowerCase(), 'trim language survived the removal of the trim')
+        .not.toMatch(/trimmed mean|trim(med)? (out|off)|set aside|outlier/);
     });
 
-    it('states the radius tier that was actually used', () => {
-      const g1 = renderCompsForChat(resultFor(golden01) as never); // tier 0.5
-      const g3 = renderCompsForChat(resultFor(golden03) as never); // tier 2.0
-      expect(g1).toMatch(/0\.5/);
-      expect(g3).toMatch(/2(\.0)?\s*mi/i);
-      // The tier is not cosmetic — golden 03 searched four times the area for
-      // three comps, and the block must say so.
-      expect(g3).not.toMatch(/\b0\.5\s*mi/i);
+    it('states BOTH rungs that were actually used, not just the radius', () => {
+      // §14.2: "CompsResult records BOTH radiusTierMi and recencyTierMonths.
+      // The rendered block names both." Naming only the radius hides half of
+      // how hard the search had to work — a set found within a mile over
+      // twelve months is a different quality of evidence from one found within
+      // a mile over three, and the member cannot tell them apart.
+      const r1 = resultFor(golden01);
+      const r3 = resultFor(golden03);
+      const g1 = renderCompsForChat(r1 as never);
+      const g3 = renderCompsForChat(r3 as never);
+
+      // POSITIVE PRECONDITION — the two cases must land on DIFFERENT rungs, or
+      // "the block names the rung it used" is satisfied by a hardcoded string.
+      expect([r1.radiusTierMi, r1.recencyTierMonths], 'golden 01 is not on rung 1')
+        .toEqual([1.0, 3]);
+      expect([r3.radiusTierMi, r3.recencyTierMonths], 'golden 03 is not on the last rung')
+        .toEqual([3.0, 12]);
+
+      expect(g1, 'golden 01 does not name its 1 mi radius').toMatch(/within 1\s*mi/i);
+      expect(g1, 'golden 01 does not name its 3-month window').toMatch(/last 3 months/i);
+      expect(g3, 'golden 03 does not name its 3 mi radius').toMatch(/within 3\s*mi/i);
+      expect(g3, 'golden 03 does not name its 12-month window').toMatch(/last 12 months/i);
+
+      // The rung is not cosmetic — golden 03 searched nine times the area over
+      // four times the window to find three comps, and the block must say so
+      // rather than reporting the tight search it started with.
+      expect(g3, 'golden 03 is reported as a tight, recent search').not.toMatch(/within 1\s*mi/i);
+      expect(g3).not.toMatch(/last 3 months/i);
     });
 
     it('carries the disclaimer footer on every success', () => {
@@ -203,25 +232,51 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('low confidence says so in the copy', () => {
-    it('golden 03 (3 comps, low) warns in prose, not just in a JSON field', () => {
-      // A confidence tier nobody reads is not a warning. §5.5: low still
-      // returns numbers, but the rendered copy must call the estimate weak and
-      // invite a manual override.
-      const outcome = resultFor(golden03);
-      expect(outcome.arv.confidence).toBe('low');
-      const text = renderCompsForChat(outcome as never);
-      expect(text.toLowerCase(), 'no weak-estimate warning on a low-confidence result')
-        .toMatch(/weak|thin|limited|few comps|low confidence|treat .* caution|rough/);
-      expect(text.toLowerCase(), 'no manual-override invitation on a low-confidence result')
-        .toMatch(/manual|your own|override|change arv|if you have/);
+    it('RETIRED — no confidence grade is emitted for a thin set OR a full one', () => {
+      // §14.8: `confidenceLine` is gone. The old pair of cases proved the
+      // warning fired on low and stayed silent on high; with no grade to
+      // qualify, a surviving line would be grading nothing.
+      //
+      // What replaces it as the member's signal is the plain comp COUNT, which
+      // a list makes self-evident in a way a single number never did: three
+      // rows read as three rows.
+      const thin = resultFor(golden03);
+      const full = resultFor(golden01);
+      expect([thin.comps.length, full.comps.length], 'precondition: these sets are the same size')
+        .toEqual([3, 5]);
+
+      for (const [name, outcome] of [['thin', thin], ['full', full]] as const) {
+        const text = renderCompsForChat(outcome as never).toLowerCase();
+        expect(text, `a confidence grade survived on the ${name} set`)
+          .not.toMatch(/confidence|weak estimate|high confidence|low confidence/);
+        expect(text, `the ${name} set does not state its comp count`)
+          .toContain(`${outcome.comps.length} sold comps`);
+      }
     });
 
-    it('a high-confidence result does NOT carry the weak-estimate warning', () => {
-      // Otherwise the warning is decoration and members learn to ignore it.
+    it('the emit order is opening -> header -> table -> closing -> footer, with no gap', () => {
+      // §14.8 pins the order and says there must be "no gap where the ARV used
+      // to be". A renderer that leaves the slot behind ships a double blank
+      // line mid-block, which reads as a truncated response.
       const outcome = resultFor(golden01);
-      expect(outcome.arv.confidence).toBe('high');
       const text = renderCompsForChat(outcome as never);
-      expect(text.toLowerCase()).not.toMatch(/weak estimate|low confidence/);
+
+      const at = (needle: string | RegExp) => {
+        const i = typeof needle === 'string' ? text.indexOf(needle) : text.search(needle);
+        expect(i, `missing from the block: ${needle}`).toBeGreaterThanOrEqual(0);
+        return i;
+      };
+      const opening = at('Sure. Here are recent comparable sales');
+      const header = at(/\*\*Comps for /);
+      const table = at(outcome.comps[0].comp.address!);
+      const closing = at('Evaluate each property carefully');
+      const footer = at(/not a formal appraisal/i);
+
+      expect([opening, header, table, closing, footer], 'the emit order is wrong')
+        .toEqual([...[opening, header, table, closing, footer]].sort((a, b) => a - b));
+
+      expect(text, 'a blank slot was left where the ARV block used to be')
+        .not.toMatch(/\n{3,}/);
     });
   });
 
