@@ -305,10 +305,23 @@ unavailable); never infer a figure the API did not return.
   "US Census ACS 5-year, <year>" + income (USD) · median age · owner/renter
   % (rounded), em-dash nulls. Unavailable line: *"Neighborhood demographics
   are unavailable right now — the comps above are unaffected."*
-- **Fixtures**: `spike-census-geocode.json` is RECORDED (real geocoder,
-  subject-2 coords → tract 04013111700). `census-acs-handbuilt.json` is
-  HAND-BUILT to the documented shape — replace with a recording on the
-  first keyed run; the name marks the difference on purpose.
+- **Fixtures — ALL RECORDED as of the first keyed run (2026-08-11);** the
+  hand-built ACS fixture is deleted:
+  - `spike-census-geocode.json` — real geocoder, subject-2 coords → tract
+    04013111700;
+  - `spike-census-acs.json` — real keyed ACS for that tract: income
+    $93,333, median age 37.9, tenure 2296/1427/869 (owner 62.2%);
+  - `spike-census-acs-sentinel.json` — real keyed ACS for tract 061017:
+    **a LIVE `-666666666` income sentinel** with tenure counts 0/0/0 (zero
+    denominator ⇒ null percentages) and a real median age 39.5 — one row
+    exercising Guarantee 3's sentinel, its zero-denominator edge, and a
+    passing value simultaneously. The county-wide sweep behind it: 35
+    sentinel hits across 1,009 Maricopa tracts, ALL `-666666666`, zero
+    negative non-sentinel values, zero API-null cells.
+  Live e2e render, verbatim: `**Neighborhood snapshot** — Census Tract 1117
+  (US Census ACS 5-year, 2023)` / `Median household income $93,333 · median
+  age 37.9 · owner-occupied 62% · renter-occupied 38%`, positioned
+  table → snapshot → closing → footer as pinned.
 
 **GUARANTEE 3 (operator ruling) — suppression sentinels render as
 unavailable, never as a number and never as zero.** ACS returns its
