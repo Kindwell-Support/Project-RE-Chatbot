@@ -47,6 +47,8 @@
 18:53 MASON — ARV REMOVED (arv.ts deleted, flag gone, ALGO_VERSION 3, run_comps no longer touches session_state); manual ARV path verified intact; CONTRACT §14.8 records the one-way door; CONTRACT_CHANGE 0033
 19:09 MASON — batch spike done (5-in-1 run works, 16s, out-of-order join on addressOrUrlFromInput, per-item failure isolation); NO build until INSPECTOR GREEN; INFO 0034
 19:47 MASON — cap ruling recorded (50, counts lookups); §14.14 pinned (join-key rule, batch bound to MAX_COMPS_KEPT, zpid cache, 90s ceiling, blind-parallel ban) — HOLDING for INSPECTOR GREEN
+20:15 MASON — BUG-011 fixed @ 0b7dcab (optional address arg, structural current-message binding, null=unbound, guard skips null, legacy 'manual entry' coerced on read); 5 smokes green, tsc clean, FIXED 0035 sent — next: the six 0025 contract contradictions
+20:19 MASON — 0025 resolved @ 643d614 (ALGO_VERSION 3 everywhere, §5.3 ladder, §4 sync+tombstones, §5.5 preserved-spec banner, §14.7, rule 10) + §14.15 BUG-011 record; accepted INSPECTOR's em-dash exclusivity reading @ aed1761 (compLine separator now interpunct, rule pinned §14.5); SUITE FULLY GREEN 1,313/0 exit 0; CONTRACT_CHANGE 0036 sent — HOLDING for GREEN, then detail slice §14.14
 
 ---
 
