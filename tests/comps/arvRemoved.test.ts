@@ -241,10 +241,22 @@ describe(`the computed ARV is gone${sliceNote(...MODS)}`, () => {
     it('a manual ARV bound to A does not silently price a flip on B', async () => {
       // The surviving half of the original leak protection. The member's own
       // $450,000 for 123 Main must not quietly become the ARV for 456 Oak.
+      //
+      // BUG-011: binding requires the model to PASS the address argument —
+      // this drives the compliant path. The omission path is characterised in
+      // the RESIDUAL case below, because it behaves differently by design.
       const supabase = makeCompsSupabase({});
-      const a = build([manualArv(450000), say('Using $450,000.')], {}, supabase);
+      const a = build(
+        [{ toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000, address: '123 Main St' } }] },
+          say('Using $450,000 for 123 Main St.')],
+        {}, supabase,
+      );
       await chat(a.app, 'use 450k as the ARV for 123 Main St', 'rm-guard');
       expect(supabase.compsBlockFor('rm-guard')?.arv, 'precondition: nothing bound').toBe(450000);
+      expect(
+        supabase.compsBlockFor('rm-guard')?.subjectAddress ?? '',
+        'precondition: the ARV did not bind — the guard below would be vacuous',
+      ).toContain('123 Main');
 
       const b = build([runFlip(), say('Numbers.')], {}, supabase);
       const reply = await chat(b.app, 'run the flip numbers on 456 Oak Ave', 'rm-guard');
@@ -259,6 +271,44 @@ describe(`the computed ARV is gone${sliceNote(...MODS)}`, () => {
         ).not.toBe(450000);
       }
       expect(String(reply.body.output).replace(/[$,\s]/g, '')).not.toContain('450000');
+    });
+
+    it('RESIDUAL (documented, raised in 0026): an OMITTED address leaves the ARV portable', async () => {
+      // The gap the ruled design accepts. The member names the property, but
+      // binding happens only if the MODEL passes the address argument; here it
+      // does not, so the ARV stores UNBOUND (null) — and an unbound ARV skips
+      // the guard by design ("nothing claims it belongs to any property").
+      // Net effect: 123 Main's number prices 456 Oak with no ask, whenever the
+      // model under-fills the tool call.
+      //
+      // This is NOT the never-conflict blur — bound ARVs still conflict, the
+      // case above proves it. It is a compliance dependency at BIND time: the
+      // guard carries the whole weight, and this is the one path where the
+      // weight rests on the model doing as told. Characterised so the shape is
+      // on the record; whether to close it (fall back to extracting from the
+      // CURRENT message on omission — still not history) is the operator's
+      // call, not mine.
+      const supabase = makeCompsSupabase({});
+      const a = build([manualArv(450000), say('Using $450,000.')], {}, supabase);
+      await chat(a.app, 'use 450k as the ARV for 123 Main St', 'rm-omit');
+
+      const block = supabase.compsBlockFor('rm-omit');
+      expect(block?.arv, 'precondition: nothing stored').toBe(450000);
+      expect(
+        block?.subjectAddress ?? null,
+        'the omission path started BINDING — this residual case is stale, retire it',
+      ).toBeNull();
+
+      const b = build([runFlip(), say('Numbers.')], {}, supabase);
+      await chat(b.app, 'run the flip numbers on 456 Oak Ave', 'rm-omit');
+      const flip = toolResults(b.openai.calls).find(
+        (r) => (r as { calculator?: string }).calculator === 'flip',
+      ) as { inputs_used?: Record<string, unknown> } | undefined;
+      expect(flip, 'the flip never ran').toBeDefined();
+      expect(
+        flip!.inputs_used?.after_repair_value,
+        'the unbound ARV no longer pre-fills — the residual has been closed, update 0026 and this case',
+      ).toBe(450000);
     });
 
     it('a leftover arvSource:comps block from a cached v2 session never pre-fills', async () => {
