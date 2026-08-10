@@ -446,6 +446,68 @@ range actually covered), never on the figure.** A test that checks the
 average is a number would pass on four weeks of data wearing a 12-month
 label — the exact failure the dedicated fetch exists to prevent.
 
+### 14.16.1 Aggregates BUILD SPEC (gate fired 2026-08-11; contract precedes code)
+
+**Fetch** (the 4th actor run of a cold lookup):
+- `PropertyDataProvider.fetchNeighborhoodSales?(subject, radiusMi, windowMonths, opts?): Promise<RawComp[]>`
+  — OPTIONAL, like `fetchDetailBatch`: a provider without it renders no
+  section (absent ⇒ not attempted). Apify impl: the SAME search actor and
+  URL builder with `doz` (window) added server-side and
+  `NEIGHBORHOOD_RESULTS_LIMIT = 500` (spike: 235 returned, query
+  exhausted — the old 40 wall was ours). Items map through the existing
+  `mapCompItems` — the aggregate set speaks `RawComp`.
+- Config: `NEIGHBORHOOD_RADIUS_MI = 1.0`, `NEIGHBORHOOD_WINDOW_MONTHS =
+  12`, `NEIGHBORHOOD_MIN_REMAINING_MS = 10_000` (spike measured 6.4s; less
+  headroom than this ⇒ skip, comps render without the section).
+- **NO retry** — same pinned posture as detail and Census: decoration's
+  degradation line IS the retry.
+- **Budget**: one cap unit per Apify-touching lookup, SHARED with detail:
+  whichever decoration fetch fires first on a cache-hit path consumes the
+  lookup's unit; the rest ride it. Denial ⇒ skip (null), never
+  RATE_LIMITED. Live path already consumed at the provider stage.
+
+**Pure computation** (`aggregates.ts`, offline-testable):
+1. status SOLD, computable `soldDate` inside the window, **haversine ≤
+   `NEIGHBORHOOD_RADIUS_MI` — THE CIRCLE, NOT THE BOX** (spike: 193 of 233
+   were in-circle; box corners are excluded);
+2. **`dedupeSales` BEFORE any average** (BUG-010's pair would double-count);
+3. then: `totalSales` (deduped count), `avgSoldPrice` (rounded to $),
+   `avgPricePerSqft` (mean of per-sale ppsf over sales with price>0 AND
+   sqft>0 — mean of ratios, not ratio of means; rounded to $),
+   `avgBeds`/`avgBaths` (1dp, over non-null), and the SPAN actually
+   covered: `earliestSaleDate`/`latestSaleDate` of the deduped in-window
+   set — the field the truncation tests assert on.
+4. Averages over empty subsets are null (em-dash); `totalSales: 0` is a
+   REAL figure and renders as one.
+
+**DOM (Ruling 2)**: `avgDomOfDisplayedComps` = mean of
+`detail.daysOnMarket` over the DISPLAYED comps that carry one (rounded,
+whole days), plus `domCompCount`. Computed from the detail-enriched comps,
+zero extra spend. **Label load-bearing**: the DOM line renders ONLY inside
+its labelled template — "average across N of the M comps shown above, not
+a neighbourhood figure" — and `domCompCount: 0` renders an em-dash inside
+the same label. No label, no line (Guarantee 4).
+
+**Caching**: the RAW sales payload rides the EXISTING `comps_cache` row —
+new nullable `raw_neighborhood` jsonb column
+(`sql/add_comps_cache_neighborhood.sql`, additive; migrate.ts probe
+unchanged — same table). Aggregates are COMPUTED on every serve from the
+cached raw (recompute-from-raw unchanged, zero spend); rows predating the
+column simply fetch live once on next touch. The computed aggregates are
+NEVER stored — same rule as detail/demographics enrichment.
+
+**Result + render**: `CompsResult.neighborhood?: NeighborhoodAggregates |
+null` — three states exactly like `demographics` (absent = no section;
+null = "Neighborhood sales data is unavailable right now — the comps above
+are unaffected."; present = the block). Emit order becomes: opening →
+header → table → **[neighborhood]** → [demographics] → closing → footer;
+COMPS_CLOSING stays last-before-footer. Per Guarantee 4 the section header
+carries geography AND window verbatim: **"past 12 months within 1 mile"**.
+
+**Failure posture**: identical to detail/Census — a neighborhood fetch
+failure can never fail a working comps run; ceiling breach renders comps
+without the section.
+
 **Candidate, recorded NOT built (operator):** once the aggregate pool exists
 (potentially hundreds of sales), it is a far better basis for outlier
 detection than 5 comps — flag when the comp set sits meaningfully above or
