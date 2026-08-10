@@ -106,6 +106,14 @@ const NA = '—';
 const num = (v: number | null | undefined, suffix = ''): string =>
   v === null || v === undefined ? NA : `${v.toLocaleString('en-US')}${suffix}`;
 
+/**
+ * BUG-012: a year is an IDENTIFIER, not a quantity — "1,928" is a count of
+ * something, "1928" is when the house was built. num() stays correct for
+ * sqft/lot (genuine quantities, separators wanted); anything year-shaped
+ * must route through this instead.
+ */
+const year = (v: number | null | undefined): string => (v === null || v === undefined ? NA : String(v));
+
 function compLine(s: ScoredComp): string {
   const c = s.comp;
   const soldDate = c.soldDate ? c.soldDate.slice(0, 10) : NA;
@@ -126,8 +134,8 @@ function compLine(s: ScoredComp): string {
   // directive) — do not add them here without one.
   const d = s.detail;
   const detailLine =
-    `  year built ${num(d?.yearBuilt ?? null)} · days on market ${num(d?.daysOnMarket ?? null)} · ` +
-    `parking spaces ${num(d?.parkingSpaces ?? null)}`;
+    `  year built ${year(d?.yearBuilt)} · days on market ${num(d?.daysOnMarket)} · ` +
+    `parking spaces ${num(d?.parkingSpaces)}`;
   // No em dash as punctuation anywhere in the success block: "—" is the §14.5
   // NULL MARKER, and a marker that doubles as a separator stops being
   // explicit — a member scanning a row could not tell "missing data" from
