@@ -118,8 +118,13 @@ function compLine(s: ScoredComp): string {
   // for judging them. Its absence is a real degradation, so it is stated, not
   // dropped.
   const link = c.detailUrl ? c.detailUrl : 'link unavailable';
+  // No em dash as punctuation anywhere in the success block: "—" is the §14.5
+  // NULL MARKER, and a marker that doubles as a separator stops being
+  // explicit — a member scanning a row could not tell "missing data" from
+  // typography. The interpunct separates, like the rest of the row; the em
+  // dash means one thing.
   return (
-    `- **${c.address}** — sold ${price} on ${soldDate}\n` +
+    `- **${c.address}** · sold ${price} on ${soldDate}\n` +
     `  ${num(c.livingArea, ' sqft')} · ${ppsf} · ${beds} bd / ${baths} ba · ` +
     `lot ${num(c.lotSize, ' sqft')} · ${s.distanceMi.toFixed(2)} mi away\n` +
     `  ${link}`

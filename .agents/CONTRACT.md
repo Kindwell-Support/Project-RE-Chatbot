@@ -127,6 +127,10 @@ Evidence: 73 sold comps across both recorded search runs
 **Null rendering rule (no-fabrication extends to every new field):** a null
 field renders as an explicit **`—`** (em dash). Never omitted silently, never
 inferred, never back-filled from another comp or from the subject.
+**Marker exclusivity (pinned via INSPECTOR's format suite):** within the
+success block the em dash appears ONLY as the null marker — the renderer
+must not use it as punctuation, or "explicit" stops being true. A
+fully-populated render contains zero em dashes.
 
 ### 14.6 What the payload does NOT contain — for the client conversation
 
