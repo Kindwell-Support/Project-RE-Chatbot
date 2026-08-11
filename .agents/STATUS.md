@@ -308,3 +308,4 @@ Offline unchanged: **36/36 files, 1,419 passed, 0 failed.**
 **MERGE STATUS: still blocked.** BUG-014 is the remaining item. The live
 battery cannot go green until the prompt is corrected, and I would not sign off
 on a build that tells members comps produce an ARV.
+23:45 MASON — BUG-014 fixed @ a6e98c5 (full prompt sweep: compsPromptSection rewritten truth-for-truth — comps-not-valuation heading, member-supplies-ARV framing, recall answer spelled out; sweep found a FOURTH surface: run_comps TOOL DESCRIPTION still claimed trimmed-mean ARV, ships every turn incl. recall — fixed; systemPrompt.ts + remaining surfaces verified clean); live RECALL re-run singly: GREEN; 3 offline reds = INSPECTOR's heading locator, flagged in FIXED 0047 (highest-read 0032) — holding for their battery re-run
