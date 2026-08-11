@@ -774,6 +774,82 @@ Dense markets flag `truncated=true` (honest label); Wickenburg exhausts
 (`truncated=false`) — both exactly as the model predicts. The deeper pool
 surfaces nearer sales the 40-cap had displaced; every set moved closer.
 
+### 14.18 PRESENTATION (operator-directed; the module's LAST change)
+
+The block was correct but dense — members scan, not read. Goals in ruled
+priority order: (1) sold price / $/sqft / distance findable per comp
+without re-reading; (2) comps visually separated; (3) neighbourhood and
+census blocks clearly distinct from the comps list; (4) dates read as
+dates; (5) comps numbered so "best match first" is visible.
+
+**THE PINNED TEMPLATE** (format.ts renders exactly this; INSPECTOR derives
+from HERE, not from output):
+
+```
+{COMPS_OPENING — client copy, VERBATIM, position unchanged}
+
+**Comps for {subject.address}**
+Subject: {beds} bd / {baths} ba, {sqft} sqft {type}. Searched within {radius} mi, {window clause} ({N} candidate(s) rejected).
+
+**{N} sold comps** (best match first):
+
+**1. {comp address}**
+Sold {price} · {Mon D, YYYY} · {D.DD} mi away
+{sqft} sqft · {ppsf}/sqft · {beds} bd / {baths} ba · {lot} sqft lot
+Built {year} · {dom} days on market · {parking} parking spaces
+[View property]({url})
+
+**2. …**   ← one blank line between comps
+
+**Neighborhood sales** ({window label})
+{totalSales} sales · average price {p} · average {ppsf}/sqft · average {b} bd / {b} ba
+Days on market: {dom} (average across {n} of the {m} comps shown above, not a neighborhood figure)
+
+**Neighborhood snapshot**: {tract} (US Census ACS 5-year, {year})
+Median household income {i} · median age {a} · owner-occupied {o}% · renter-occupied {r}%
+
+{COMPS_CLOSING — client copy, VERBATIM, still LAST before the footer}
+
+{footer}
+```
+
+Rules carried over UNCHANGED and re-affirmed against the reflow:
+- Client opening/closing VERBATIM, unmoved (the most likely reflow
+  casualty — pinned first for that reason).
+- §14.5 em-dash exclusivity: nulls render `—` in place (e.g. `Built —`,
+  `— bd / — ba`); the em dash appears NOWHERE else; interpunct separates.
+- Guarantee 4 on every surface (DOM label load-bearing; census
+  geography+vintage in-template; no label ⇒ no line).
+- No ARV, nothing ARV-shaped.
+- The §14.17 truncated header (`sales since {date} (older sales exceeded
+  the data limit)`) SURVIVES: the window clause is a variable of the
+  template, not prose a reflow can drop.
+
+**Date rendering (goal 4):** ISO dates become `Mon D, YYYY` (e.g. `Aug 5,
+2026`) EVERYWHERE member-visible — per-comp sold dates and the
+truncated-window clauses (comps header AND aggregates header). Formatted
+from the calendar date string directly (no Date()/timezone re-parsing —
+BUG-006's lesson stays honoured). Null date ⇒ `—`.
+
+**Link line (goal 1 + widget):** `[View property]({url})` on its OWN line;
+null/unbuildable ⇒ the literal text `link unavailable` (§14.9 unchanged —
+never an empty or dead control).
+
+**Widget button rule (presentational, general — no comps coupling):** a
+line consisting ONLY of a link (markdown link or bare http(s) URL) renders
+as a BUTTON; the existing http(s)-only href gate now also gates the button
+— a model-authored `javascript:` URL stays inert literal text and never
+becomes a button (a button is a more inviting target than an anchor).
+`link unavailable` is text, never a control. public/widget.js is gitignored
+build output — the deployed widget needs a redeploy.
+
+**The architectural constraint (ruled):** the model re-types this block
+verbatim; every added element is drift surface. Fewer, clearer lines win;
+anything hard to reproduce exactly is banned. Token cost is real
+(live-battery pacing was derived from a 3,378-token largest turn; the same
+growth is ~9s member latency) — the before/after token count of a full
+rendered block is REPORTED with the build.
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live
