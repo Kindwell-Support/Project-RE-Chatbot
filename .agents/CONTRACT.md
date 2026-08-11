@@ -1487,6 +1487,15 @@ MASON coordinates before overwriting anything INSPECTOR references.
 
 ## 12.5 Known limitations + deferred tickets (operator-ruled)
 
+**Bug-number register mapping (collision resolved, INSPECTOR's register
+canonical — their 0036):** BUG-015 = the defaults-disclosure gap below
+(NOT the widget-link fix, which MASON's commit c8f29fe provisionally
+labelled 015 — that fix is **BUG-017**). **BUG-016** = the boot probe
+that could never fail (085182b), confirmed as used. Commit messages are
+immutable; the register records both numbers per entry, and the standing
+rule is: register canonical, provisional labels yield, reassignments
+record both.
+
 **BUG-015 (INSPECTOR's register; the defaults-disclosure gap, live case
 A15) — KNOWN LIMITATION, does NOT block the merge.** Operator ruling,
 2026-08-12: pre-existing, predates this branch, surfaced by the live
