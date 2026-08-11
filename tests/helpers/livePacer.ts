@@ -23,7 +23,24 @@
  *   at the ceiling          30,000 / 3,378 = 8.9 turns/min -> one every 6.8s
  *   at 75% of the ceiling   22,500 / 3,378 = 6.7 turns/min -> one every 9.0s
  *
- * 9s, i.e. a quarter of the ceiling left as headroom. The ceiling is shared
+ * REVISED TO 15s after the presentation slice, and the revision is the point:
+ * 9s was derived from a per-call cost that the richer block increased. Measured
+ * on the run that failed — the window held 29,604 of 30,000 while pacing at 9s,
+ * i.e. ~6.7 turns/min costing ~4,441 tokens each. Per-call requests had risen
+ * from 3,122-3,378 to 3,596-3,870, and some turns make more than one model call
+ * (a tool-call turn is a round trip plus the answer), so the per-TURN cost is
+ * what matters and it is higher than the per-call figure suggests.
+ *
+ * Re-derived from that: 22,500 (75% of the ceiling) / 4,441 = 5.1 turns/min =
+ * one every 11.8s. Set to 15s, not 11.8s, because the multi-call turns are the
+ * ones that overshoot and this number has now been wrong once by being derived
+ * from the calls rather than the turns.
+ *
+ * THE STANDING LESSON: this interval is a function of block size, and block
+ * size grows every slice. Re-derive it whenever a section is added — the
+ * checklist says so — and derive it from TOKENS PER TURN, not per call.
+ *
+ * The original 9s derivation, kept for the arithmetic: The ceiling is shared
  * with anything else on the key, the window is rolling rather than aligned to
  * our first call, and turns get bigger every time a section is added — so
  * pacing exactly at the limit would put us back here on the next slice.
@@ -44,7 +61,7 @@ const STAMP = join(DIR, 'last-call-ms');
 const LOCK = join(DIR, 'lock');
 
 /** Minimum gap between live model calls, across every worker. See the header. */
-export const LIVE_CALL_GAP_MS = Number(process.env.LIVE_CALL_GAP_MS ?? 9_000);
+export const LIVE_CALL_GAP_MS = Number(process.env.LIVE_CALL_GAP_MS ?? 15_000);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
