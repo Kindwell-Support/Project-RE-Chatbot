@@ -89,6 +89,17 @@ lot      = min(|cLot - sLot| / sLot / LOT_NORM_RATIO, 1)          * 10   (NEW)
 `LOT_NORM_RATIO = 1.0` — a 100% lot difference saturates the term. **Null lot on
 either side scores 0**, exactly as null beds/baths do: unknown is not a penalty.
 
+**Lot is LOW-SIGNAL for CONDO and TOWNHOUSE subjects (operator note,
+2026-08-13, recorded not fixed):** Zillow's parcel records for attached
+housing are internally inconsistent — verified raw (`spike-evergreen-lots.json`,
+one batched detail run): same-complex townhouse units with 1,105–1,135 sqft
+interiors carry lots of 684, 1,202 and 2,276 sqft, each explicitly
+`lotAreaUnits: "Square Feet"` in Zillow's own record — their data, not our
+acres conversion. The soft lot term may therefore add noise rather than
+signal on attached-housing subjects. No change ruled; if one ever is, the
+obvious shape is zeroing the lot weight when the subject is CONDO/TOWNHOUSE
+(redistributing its 10 points), which is a §14.3 amendment, not a patch.
+
 ### 14.4 Confidence, rebased (operator ruling — a consequence, not a choice)
 
 `high` required n ≥ 6; with the cap at 5 that is structurally unreachable and
