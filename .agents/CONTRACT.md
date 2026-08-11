@@ -911,6 +911,51 @@ stops at 1 mile with 5 comps instead of reaching 2.9 miles.
    a v5 row whose hood fetch failed at compute time serves comps-only
    until its 14-day TTL turns it over.)
 
+### 14.20 Completeness tie-breaker (operator ruling; ALGO_VERSION 6)
+
+Found on a live run (1323 W 10th Pl): the #1 comp carried `beds: null`,
+its bedbath term scored 0 ("null diff counts 0", §5.4 — a PERFECT match),
+and the counterfactual showed a disclosed one-unit mismatch would have
+dropped it to #3 (gap to #2: 1.91 points). "Unknown is not a penalty" had
+become "unknown is an advantage".
+
+**Ruling:** null diffs still SCORE 0 — the §5.4/§14.3 pin stands, no
+invented penalty for missing data. But ORDERING changes: when two comps
+are within a small margin, the one with complete bed/bath data ranks
+above the one missing it — a comp that disclosed a mismatch must not lose
+to one that disclosed nothing.
+
+**The margin, reported as required: `COMPLETENESS_TIEBREAK_PER_FIELD =
+WEIGHT_BEDBATH / 2 = 5 points per missing bed/bath field` — DERIVED, not
+chosen.** A kept comp with KNOWN fields can disclose at most a one-unit
+mismatch (larger is gate-rejected), and one field's maximum score
+contribution is 5 — so 5 points is exactly the largest ordering advantage
+one undisclosed field could have concealed. Within it, disclosure wins;
+beyond it, the genuinely better score still wins.
+
+**Mechanism:** an ORDERING KEY (`orderingKey` in rank.ts, exported) =
+`score + missingBedBathFields × 5`, used only in the sort.
+`ScoredComp.score` and `parts` are UNTOUCHED — rendered and asserted as
+computed. The shadow key is what makes the rule transitive and
+deterministic (a pairwise within-margin comparator is not); tie chain:
+orderingKey → raw score → distance → zpid.
+
+**Verified on the originating case** (cached 1323 W 10th Pl row,
+recomputed): comp 1 (null beds, score 22.9 → key 27.9) drops **#1 → #4**,
+behind the three fully-disclosed comps at 24.8/25.4/27.6, and stays ahead
+of #5 (33.7) — within-margin demotion, beyond-margin unaffected, exactly
+the ruling's shape.
+
+**ALGO_VERSION 5 → 6** (order is member-visible — the comps are NUMBERED);
+`RAW_REFETCH_BELOW_VERSION` stays 4: v4/v5 rows recompute free from sound
+raw.
+
+**Operator principle pinned from the same session (the recall-phrasing
+lesson):** any guarantee keyed to NATURAL LANGUAGE must have its test
+parametrized across phrasings — a fix verified against the one wording
+that already worked is unverified. (INSPECTOR parametrizes the recall
+case; the principle applies to every prompt-enforced rule.)
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live

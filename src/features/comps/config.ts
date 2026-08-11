@@ -12,11 +12,12 @@
  * hits — EXCEPT where the fetch regime changed (see RAW_REFETCH_BELOW_VERSION).
  * 3 = the ARV removal (§14.8). 4 = the comps-fetch truncation fix (§14.17).
  * 5 = the union (§14.19): the 1-mile aggregate payload joins the comps
- * candidate pool before the filters. v4 rows RECOMPUTE free — both raw
- * payloads sit on the row and are sound (see RAW_REFETCH_BELOW_VERSION,
- * which deliberately stays at 4).
+ * candidate pool before the filters. 6 = the completeness tie-breaker
+ * (§14.20): cached v5 results can carry a stale ORDER, and order is
+ * member-visible ("best match first" is numbered). v4/v5 rows RECOMPUTE
+ * free — raw payloads sound (RAW_REFETCH_BELOW_VERSION stays 4).
  */
-export const ALGO_VERSION = 5;
+export const ALGO_VERSION = 6;
 
 /**
  * Rows whose raw payload predates this version were fetched under the old
@@ -111,6 +112,21 @@ export const WEIGHT_SQFT = 25;
 export const WEIGHT_RECENCY = 20;
 export const WEIGHT_BEDBATH = 10;
 export const WEIGHT_LOT = 10;
+
+/**
+ * Completeness tie-breaker (§14.20, operator ruling): null bed/bath diffs
+ * still SCORE 0 (the contract pin stands — no invented penalty for missing
+ * data), but a comp missing a bed/bath field must not OUTRANK a
+ * close-scoring comp that disclosed a mismatch. Each missing field adds
+ * this many points to the comp's ORDERING key only — the score and parts
+ * are untouched. The value is DERIVED, not chosen: a kept comp with known
+ * fields can disclose at most a one-unit mismatch (the gates reject
+ * larger), and one field's maximum score contribution is WEIGHT_BEDBATH/2
+ * = 5 — so 5 is exactly the largest advantage one undisclosed field could
+ * have concealed. Within that margin, disclosure wins; beyond it, the
+ * genuinely better comp still ranks first.
+ */
+export const COMPLETENESS_TIEBREAK_PER_FIELD = WEIGHT_BEDBATH / 2;
 
 /** Distance at which the distance component saturates. */
 export const DISTANCE_NORM_MI = 1.0;
