@@ -221,6 +221,14 @@ export interface CompsResult {
   radiusTierMi: number;
   /** Which recency rung produced this set (CONTRACT §14.2). */
   recencyTierMonths: number;
+  /**
+   * §14.17: true when the comps fetch returned at/near its results limit —
+   * the pool is almost certainly missing older sales, so the header must
+   * not claim the recency window; it labels the actual covered span.
+   */
+  searchTruncated: boolean;
+  /** Oldest soldDate in the fetched pool — the honest window label when truncated. */
+  searchEarliestSoldDate: string | null;
   comps: ScoredComp[];
   rejected: RejectedComp[];
   fromCache: boolean;

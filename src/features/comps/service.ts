@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   ALGO_VERSION,
+  RAW_REFETCH_BELOW_VERSION,
   CENSUS_CACHE_TTL_DAYS,
   CENSUS_TIMEOUT_MS,
   DETAIL_CACHE_TTL_DAYS,
@@ -28,8 +29,9 @@ import {
   PROVIDER_TIMEOUT_MS,
   RADIUS_TIERS_MI,
 } from './config.js';
-import { computeNeighborhoodAggregates } from './aggregates.js';
+import { computeNeighborhoodAggregates, isWindowTruncated } from './aggregates.js';
 import { attachDetails, detailBatchFor } from './detail.js';
+import { SEARCH_RESULTS_LIMIT } from './providers/apifyZillow.js';
 import { FAILURE_COPY } from './format.js';
 import { selectTiers } from './filter.js';
 import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
@@ -202,6 +204,11 @@ function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, p
   }
 
   const ranked = rankComps(subject, tier.kept, now);
+  // §14.17 truncation honesty: computed over the MAPPED pool against the
+  // fetch limit (isWindowTruncated's slack covers the raw→mapped skip; see
+  // its recorded justification). The earliest sold date is the honest
+  // window label when the claimed recency window wasn't fully covered.
+  const soldDates = comps.map((c) => c.soldDate).filter((d): d is string => d !== null).sort();
   return {
     ok: true,
     algoVersion: ALGO_VERSION,
@@ -209,6 +216,8 @@ function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, p
     subject,
     radiusTierMi: tier.radiusTierMi,
     recencyTierMonths: tier.recencyTierMonths,
+    searchTruncated: isWindowTruncated(comps.length, SEARCH_RESULTS_LIMIT),
+    searchEarliestSoldDate: soldDates.length > 0 ? soldDates[0] : null,
     comps: ranked,
     rejected: tier.rejected,
     fromCache,
@@ -246,8 +255,14 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
       if (!cached.result.ok) return cached.result;
       return enrichAll({ ...cached.result, fromCache: true }, deps, key, now, startedAtMs, false, cached);
     }
-    // Raw payload cached under an older algo: recompute WITHOUT re-billing.
-    if (cached.rawSubject) {
+    // Raw payload cached under an older algo: recompute WITHOUT re-billing —
+    // UNLESS the raw predates the §14.17 fetch regime
+    // (RAW_REFETCH_BELOW_VERSION): payloads fetched under the 40-item
+    // uncapped-window search are ~days deep in dense markets, and a
+    // recompute would rebuild a result over that truncated pool and label
+    // it with a 12-month window. Those rows fall through to a REFETCH
+    // (operator ruling; one-time cost per old row).
+    if (cached.rawSubject && cached.algoVersion >= RAW_REFETCH_BELOW_VERSION) {
       const recomputed = computeFromRaw(cached.rawSubject, cached.rawComps, now(), cached.provider, true);
       const updated: CachedComps = {
         ...cached,

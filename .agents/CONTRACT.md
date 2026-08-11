@@ -712,6 +712,68 @@ address ("my ARV is 620000 for 830 W America St" fragments as "620000 for
 behaviour is unchanged — worst case an unnecessary clarifying question,
 never a wrong number.
 
+### 14.17 The comps-fetch truncation fix (operator ruling; ALGO_VERSION 4)
+
+The comps search ran 40 items over an uncapped window, so in dense markets
+the pool was ~11 days deep and the recency ladder was decorative — the
+6/12-month rungs re-examined what the 3-month rung already covered.
+Recorded proof: Sierra Vista's pool spanned 2026-07-30→08-10.
+
+**Report finding (owed, delivered): ONE wide fetch serves all six rungs.**
+The rungs are client-side subsets of one pool; a single `doz=12m` fetch at
+the widest radius gives every rung its true candidate set when the fetch
+exhausts, and truncation detection covers the dense case where it cannot.
+Six per-rung fetches would cost 6× and still truncate the same dense rungs
+(each query has the same ceiling) — banned and pointless. Measured
+(`spike-comps-3mi-doz12.json`, dense Tempe, 3mi/doz=12m/limit 500): 499
+raw in 8.6s spanning 2026-04-22→08-10; rung candidates 1mi/3mo=48 →
+1mi/6mo=64.
+
+Built:
+
+1. **`doz=12m` on the comps search** (window = `MAX_COMP_AGE_MONTHS`,
+   server-side) and **`SEARCH_RESULTS_LIMIT` 40 → 500**. The 40 was ours —
+   not Zillow's, not the client's. Billing: per result; a dense cold
+   lookup now bills up to ~limit × the per-result rate.
+2. **Truncation detection transfers** (from §14.16.1):
+   `CompsResult.searchTruncated` + `searchEarliestSoldDate`; a truncated
+   fetch must not claim its window — the header renders `sales since
+   <earliest> (older sales exceeded the data limit)` instead of "sold in
+   the last N months".
+3. **The predicate boundary is AMENDED BY EVIDENCE** (supersedes the
+   exact `>= limit` reading of §14.16.1 item 5): the recorded truncated
+   fetch returned **499 of 500** — at-limit-exactly misses real
+   truncation. `TRUNCATION_DETECT_FRACTION = 0.9` (exported, one
+   predicate for comps AND aggregates): count ≥ 90% of limit ⇒ truncated.
+   Slack covers the actor's raw-count jitter (499/500 recorded) and the
+   raw→mapped skip (~3–7% recorded). Error direction is deliberate: a
+   false positive relabels to the honest actual span; a false negative
+   ships a 12-month claim over weeks of data.
+4. **ALGO_VERSION 3 → 4, and old raw REFETCHES, never recomputes**
+   (`RAW_REFETCH_BELOW_VERSION = 4`): raw payloads fetched under the
+   40-cap are days deep — recompute-from-raw over them would relabel a
+   truncated pool. Rows with `algo_version < 4` fall through to the
+   provider on next touch (one-time re-bill per row, ruled acceptable);
+   v4+ rows recompute free as before. §7's recompute rule is subject to
+   this gate.
+5. **Rung-admission verified on the recorded payload**: at a
+   representative subject, the 1mi/6mo rung admits 4 sales the 1mi/3mo
+   rung rejected as STALE_SALE (kept 19 → 23) — structurally impossible
+   under the old fetch. (At the actual 959-sqft Sierra Vista subject the
+   sqft band still binds — honest market reality, correctly reported.)
+
+**Ground-truth re-runs (operator-ordered), old v1 kept sets vs new:**
+
+| Address | Old | New | Overlap |
+| --- | --- | --- | --- |
+| Vale (dense) | 7 kept @1mi, 0.49–0.96 mi | 5 kept @**1mi/3mo**, 0.19–0.61 mi (median distance ~halved) | 1/5 |
+| Danbury (dense) | 6 kept @0.5mi | 5 kept @1mi/3mo, **four within 0.2 mi** | 3/5 |
+| Don Frank (thin) | 5 kept incl. the pre-BUG-010 duplicate pair | 5 kept incl. **745 & 796 N Don Frank Ln — the subject's own street, 0.02/0.05 mi** | 2/5 |
+
+Dense markets flag `truncated=true` (honest label); Wickenburg exhausts
+(`truncated=false`) — both exactly as the model predicts. The deeper pool
+surfaces nearer sales the 40-cap had displaced; every set moved closer.
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live

@@ -16,7 +16,7 @@
  * The token lives in the Authorization header only. It must never appear in
  * an error message, a log line, or a thrown value.
  */
-import { NEIGHBORHOOD_RESULTS_LIMIT, PROVIDER_TIMEOUT_MS } from '../config.js';
+import { MAX_COMP_AGE_MONTHS, NEIGHBORHOOD_RESULTS_LIMIT, PROVIDER_TIMEOUT_MS } from '../config.js';
 import { normalizeAddress } from '../normalize.js';
 import type { CompDetail, PropertyType, RawComp, SubjectProperty } from '../types.js';
 import {
@@ -31,8 +31,17 @@ import {
 export const APIFY_BASE = 'https://api.apify.com/v2';
 export const DETAIL_ACTOR = 'maxcopell~zillow-detail-scraper';
 export const SEARCH_ACTOR = 'maxcopell~zillow-scraper';
-/** Comps fetched per search; the filters cut from here, so over-fetch a little. */
-export const SEARCH_RESULTS_LIMIT = 40;
+/**
+ * Comps fetched per search (§14.17). Was 40 — OURS, not Zillow's: in dense
+ * markets the newest 40 spanned ~11 days, so the recency ladder's 6/12-month
+ * rungs re-examined what the 3-month rung already covered and the ladder was
+ * decorative exactly where members run comps most. 500 measured live at the
+ * dense Tempe subject: 499 returned in 8.6s spanning 3.6 months — still
+ * truncated there (and honestly labelled, §14.17), but the 1-mile rungs now
+ * genuinely differ (48 → 64 candidates from 3mo → 6mo). Billing: per result,
+ * so a dense cold lookup costs ~limit × the per-result rate.
+ */
+export const SEARCH_RESULTS_LIMIT = 500;
 
 const SQFT_PER_ACRE = 43_560;
 const MILES_PER_DEG_LAT = 69;
@@ -273,8 +282,8 @@ export function mapDetailBatchItems(items: Array<Record<string, unknown>>): Deta
  * the subject. `dozMonths` (§14.16.1) pushes the sold-within window
  * SERVER-SIDE via Zillow's own `doz` filter — spike-verified: without it
  * the result cap fills with the newest sales and "12 months" is weeks
- * deep. The comps search deliberately omits it (unruled); the aggregate
- * fetch requires it.
+ * deep. BOTH fetches now pass it (§14.16.1 for aggregates; §14.17 ruled it
+ * onto the comps search too).
  */
 export function buildSoldSearchUrl(lat: number, lng: number, radiusMi: number, dozMonths?: number): string {
   const latDelta = radiusMi / MILES_PER_DEG_LAT;
@@ -334,8 +343,11 @@ export class ApifyZillowProvider implements PropertyDataProvider {
   }
 
   async fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]> {
+    // §14.17: the 12-month window rides SERVER-SIDE (doz), same as the
+    // aggregate fetch — without it the results cap fills with the newest
+    // sales and the recency ladder walks an inch-deep pool.
     const items = await this.runActor(SEARCH_ACTOR, 'sold comps search', {
-      searchUrls: [{ url: buildSoldSearchUrl(subject.lat, subject.lng, radiusMi) }],
+      searchUrls: [{ url: buildSoldSearchUrl(subject.lat, subject.lng, radiusMi, MAX_COMP_AGE_MONTHS) }],
       extractionMethod: 'MAP_MARKERS',
       resultsLimit: SEARCH_RESULTS_LIMIT,
     });

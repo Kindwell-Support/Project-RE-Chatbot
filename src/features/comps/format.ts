@@ -225,11 +225,19 @@ function renderDemographics(demographics: CompsResult['demographics']): string |
 function renderSuccess(result: CompsResult): string {
   const { subject, comps, rejected, radiusTierMi, recencyTierMonths } = result;
 
+  // §14.17: a truncated fetch must not claim its recency window — the pool
+  // is missing older sales the cap displaced. The header names the ACTUAL
+  // covered span instead, same honesty rule as the aggregates block.
+  const windowClause = result.searchTruncated
+    ? result.searchEarliestSoldDate
+      ? `sales since ${result.searchEarliestSoldDate} (older sales exceeded the data limit)`
+      : `newest sales only (older sales exceeded the data limit)`
+    : `sold in the last ${recencyTierMonths} months`;
   const header = [
     `**Comps for ${subject.address}**`,
     `Subject: ${subject.beds ?? NA} bd / ${subject.baths ?? NA} ba, ` +
       `${num(subject.livingArea, ' sqft')} ${subject.propertyType}. ` +
-      `Searched within ${radiusTierMi} mi, sold in the last ${recencyTierMonths} months ` +
+      `Searched within ${radiusTierMi} mi, ${windowClause} ` +
       `(${rejected.length} candidate(s) rejected).`,
   ].join('\n');
 

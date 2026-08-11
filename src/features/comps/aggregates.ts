@@ -33,15 +33,26 @@ const round1 = (v: number | null): number | null => (v === null ? null : Math.ro
 const roundWhole = (v: number | null): number | null => (v === null ? null : Math.round(v));
 
 /**
- * The cap-detection invariant (INSPECTOR's CASE 3, ruled principle: a
- * truncated window produces a PLAUSIBLE number). The fetch returning its
- * own limit means there is almost certainly older data we did not get —
- * the window cannot honestly be called 12 months, and the render labels
- * the actual span instead. Exported so the predicate is testable directly,
- * not only through a fetch that happens to hit the cap.
+ * The cap-detection invariant (INSPECTOR's CASE 3; §14.17 amends the
+ * boundary). The fetch returning AT OR NEAR its own limit means there is
+ * almost certainly older data we did not get — the window cannot honestly
+ * be called 12 months, and the render labels the actual span instead.
+ *
+ * NEAR, not exactly at, and the slack is RECORDED evidence, not caution
+ * (spike-comps-3mi-doz12.json): the dense Tempe fetch at limit 500
+ * returned 499 RAW items spanning 3.6 months — plainly truncated (317
+ * sales sat in the newest 3 months alone), yet `>= limit` misses it by
+ * one. The actor's own dedupe jitters the raw count, and the caller often
+ * holds the MAPPED count, which sits a further ~3–7% under raw (recorded
+ * skip rates). TRUNCATION_DETECT_FRACTION covers both. The error
+ * direction is deliberate: a false positive relabels the window to the
+ * honest actual span; a false negative ships a 12-month claim over weeks
+ * of data — the exact bug this predicate exists to stop.
  */
+export const TRUNCATION_DETECT_FRACTION = 0.9;
+
 export function isWindowTruncated(fetchReturnedCount: number, resultsLimit: number = NEIGHBORHOOD_RESULTS_LIMIT): boolean {
-  return fetchReturnedCount >= resultsLimit;
+  return fetchReturnedCount >= resultsLimit * TRUNCATION_DETECT_FRACTION;
 }
 
 export function computeNeighborhoodAggregates(

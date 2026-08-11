@@ -9,11 +9,23 @@
 
 /**
  * Stamped on every outcome; bumping it triggers recompute-from-raw on cache
- * hits. 3 = the ARV removal (CONTRACT §14.8): cached v2 blobs carry an `arv`
- * key that no longer deserializes into CompsResult, and the version stamp is
- * exactly what stops a dead field being tolerated silently.
+ * hits — EXCEPT where the fetch regime changed (see RAW_REFETCH_BELOW_VERSION).
+ * 3 = the ARV removal (§14.8). 4 = the comps-fetch truncation fix (§14.17):
+ * doz=12m server-side + resultsLimit 500 — raw payloads fetched under the
+ * old 40-cap are ~days deep in dense markets and recomputing over them would
+ * relabel a truncated pool, so they refetch instead.
  */
-export const ALGO_VERSION = 3;
+export const ALGO_VERSION = 4;
+
+/**
+ * Rows whose raw payload predates this version were fetched under the old
+ * 40-item/uncapped-window regime and MUST REFETCH rather than
+ * recompute-from-raw (operator ruling, §14.17): a recompute would rebuild a
+ * result over a pool that was truncated to ~11 days in dense markets and
+ * label it with a 12-month window. One-time cost: each old row re-bills one
+ * lookup on its next touch.
+ */
+export const RAW_REFETCH_BELOW_VERSION = 4;
 
 // --- Hard filters (CONTRACT §5.3) -------------------------------------------
 
