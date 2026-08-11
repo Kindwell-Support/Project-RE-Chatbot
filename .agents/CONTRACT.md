@@ -1347,6 +1347,26 @@ Starter set: `subject-standard`, `comps-standard` (≥ 10 solds, mixed quality),
 `subject-no-sqft`. Real recordings replace/extend these when the token lands —
 MASON coordinates before overwriting anything INSPECTOR references.
 
+## 12.5 Known limitations + deferred tickets (operator-ruled)
+
+**BUG-015 (INSPECTOR's register; the defaults-disclosure gap, live case
+A15) — KNOWN LIMITATION, does NOT block the merge.** Operator ruling,
+2026-08-12: pre-existing, predates this branch, surfaced by the live
+battery's pacing rather than caused by it. Recorded plainly: the
+calculator defaults disclosure (systemPrompt.ts rule 6) is
+instruction-only and **the model misses it roughly 2 runs in 4** — a
+tendency, not a guarantee, and it is NOT signed off as a guarantee in any
+GREEN. Replies on the failing runs say "these are estimates based on your
+inputs" while James's standard defaults were applied.
+
+**Deferred ticket (separate from the comps module — a CALCULATOR fix):**
+enforce the disclosure structurally in `finish()` exactly the way
+`ensurePrefillEcho` enforces the ARV echo — driven off the
+`defaults_applied` object already present on every calculator tool result
+(toolRunners.ts). Same class of disclosure, same risk if missed, same
+proven pattern. Nothing here authorizes building it inside this module's
+scope; it rides its own ticket.
+
 ## 13. Non-negotiables restated
 
 - No `Date.now()`/randomness inside pure modules; `now` injected, `runId` from service layer.
