@@ -586,6 +586,30 @@ break without anyone editing a test.
       arithmetic still describes the data it sits above.
 - [ ] **DEAD-GUARD SWEEP — see below. RECURRING.**
 - [ ] Live battery at the CURRENT HEAD. Not at an earlier SHA, however recent.
+- [ ] **Live reds must be CLASSIFIED before they are reported**, into exactly
+      three buckets. The count is not the finding; the split is.
+
+      | bucket | tell | whose |
+      | --- | --- | --- |
+      | infrastructure | 429, timeout, transport | nobody's — re-run paced |
+      | stale predicate | the flagged figure IS on screen | mine |
+      | real | the flagged figure is on no screen | MASON's |
+
+      The first HEAD run was 9 red: 6 infrastructure, 2 mine, 1 real. Reporting
+      "9 red" would have buried the only one that mattered under five that were
+      not even about the product.
+
+      The discriminator for bucket 2 vs 3 is mechanical and worth stating,
+      because it is the question that actually resolves it: **does the flagged
+      figure appear in the tool's rendered output?** On screen ⇒ my predicate
+      is out of date. Nowhere on screen ⇒ the model invented it.
+- [ ] **Live pacing is on** (`LIVE_CALL_GAP_MS >= 6800`, guarded by its own
+      test). The battery crosses a 30k TPM ceiling without it, because every
+      comps turn now renders three sections that did not exist a week ago. A
+      gate that fails on throughput is a coin flip — and worse, it fails in the
+      same shape as a product bug, which is what made the first run hard to
+      read. Re-derive the interval whenever a section is added: ceiling ÷
+      largest observed turn, then take 75% for headroom.
 - [ ] **On every slice handoff: confirm the gate for that slice RESOLVES.**
       `pendingSlice(...)` must return false once the module lands. A gate
       pointing at a path that will never exist skips forever while its
