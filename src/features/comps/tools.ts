@@ -116,10 +116,15 @@ export function buildCompsToolDefinitions(
       type: 'function',
       function: {
         name: 'run_comps',
+        // BUG-014: tool definitions reach EVERY turn, including recall turns
+        // where no tool runs — this description must never claim an ARV.
         description:
-          'Look up real sold comps for a property address and compute an ARV from them (trimmed-mean $/sqft). ' +
-          'Use when the member asks to run comps, find comps, or estimate ARV for an address. The result is a ' +
-          'pre-rendered block — relay it verbatim. Requires a full street address including city and state.',
+          'Look up recent comparable SALES for a property address: sold prices, $/sqft, beds/baths, lot size, ' +
+          'year built, days on market, property links, and neighborhood context. Produces NO ARV and no value ' +
+          'estimate — the member supplies their own ARV (set_manual_arv) if they want deal numbers run. Use ' +
+          'when the member asks to run comps or find comps, or wants market data to value a property. The ' +
+          'result is a pre-rendered block — relay it verbatim. Requires a full street address including city ' +
+          'and state.',
         parameters: {
           type: 'object',
           properties: {

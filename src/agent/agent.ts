@@ -37,11 +37,21 @@ const MAX_TOOL_ROUNDS = 6;
  * prompt is the BACKUP for behaviour the tool layer already enforces in code:
  * rendered-block relay, the pre-fill echo, and the mismatch ask.
  */
+/**
+ * BUG-014: this section is the ONLY instruction source on turns where no
+ * tool runs (a recall turn calls nothing), so every sentence must be true
+ * of the post-§14.8 world — run_comps produces comparable sales and NO
+ * ARV; every ARV comes from the member. Deleting the stale claims is not
+ * enough: a gap where an instruction was is worse than the wrong
+ * instruction, because the model fills gaps. Each removed claim below is
+ * REPLACED by its true counterpart.
+ */
 function compsPromptSection(hasProvider: boolean): string {
   const manualOnly = `
 
-## ARV for Flip/BRRRR
-- If the member states their own ARV ("use 450k as the ARV"), call set_manual_arv to store it.
+## ARV for Flip/BRRRR — always the member's number
+- Nothing in this system computes an ARV. The ARV used in any calculation comes from the MEMBER:
+  when they state one ("use 450k as the ARV"), call set_manual_arv to store it.
 - If THAT SAME message names the property ("use 450k for 123 Main St"), pass the address too. If it
   does not, OMIT the address argument entirely — never supply one from earlier in the conversation.
 - A stored ARV pre-fills the Flip and BRRRR calculators; they then only need the remaining inputs.
@@ -55,10 +65,15 @@ function compsPromptSection(hasProvider: boolean): string {
 
   return `
 
-## Comps and ARV (run_comps)
-- When the member asks to run comps / find comps / estimate ARV and gives a street address, call
-  run_comps with the full address (street, city, state). If the address is partial, ask for the rest
-  first — one question.
+## Comps (run_comps) — comparable sales, not a valuation
+- run_comps returns recent comparable SALES for an address: sold prices, $/sqft, beds/baths, lot
+  size, year built, days on market, property links, and neighborhood context. It does NOT produce
+  an ARV, a value estimate, or any number for the member's own property — never promise it will,
+  and never describe comps as a way to "get the ARV".
+- When the member asks to run comps / find comps for a street address — or wants market data to
+  help value a property — call run_comps with the full address (street, city, state). If the
+  address is partial, ask for the rest first — one question. If they then want deal numbers run,
+  the ARV is theirs to choose from those comps: ask for their figure and call set_manual_arv.
 - The result contains "rendered_block": relay it VERBATIM. Never re-derive, summarise, or adjust its
   numbers, and NEVER invent a comp, an address, or an ARV yourself. You may add one short coaching
   line after the block.
@@ -66,10 +81,12 @@ function compsPromptSection(hasProvider: boolean): string {
   with their own number, call set_manual_arv.
 - If the member asks about an address you already ran, call run_comps AGAIN — a repeat address is
   answered from the cache at no cost, and the member must always receive the full rendered block.
-  NEVER answer a comps request by summarising an earlier result from memory: every ARV the member
-  sees must come from a run_comps result in THIS turn. (Operator ruling: the old "don't re-run"
-  spend guard solved a problem the cache already solves, and it pushed replies outside the
-  rendered-block guarantees.)${manualOnly}`;
+  NEVER answer a comps request by summarising an earlier result from memory: every comps figure the
+  member sees must come from a run_comps result in THIS turn, and every ARV comes from the member
+  via set_manual_arv — comps never produce one. If asked "what was the ARV?", say plainly that
+  comps don't produce an ARV, and offer to re-run the comps or to use their own figure. (Operator
+  ruling: the old "don't re-run" spend guard solved a problem the cache already solves, and it
+  pushed replies outside the rendered-block guarantees.)${manualOnly}`;
 }
 
 const ASK_WHICH_CALCULATOR = [
