@@ -104,8 +104,23 @@ describe(`the transcript-recall path${sliceNote(...MODS)}`, () => {
         ((openai.calls[0].messages as Array<Record<string, unknown>>) ?? [])
           .find((m) => m.role === 'system')?.content ?? '',
       );
-      const start = system.indexOf('## Comps and ARV');
-      expect(start, 'the comps prompt section is not being sent to the model').toBeGreaterThan(-1);
+      // ANCHOR ON THE TOOL NAME, not the prose. This said '## Comps and ARV'
+      // and broke the moment BUG-014's sweep renamed the heading — a section
+      // pin that depends on wording re-breaks every time the wording is
+      // corrected, which is exactly when you least want the pin down. The
+      // heading must contain `run_comps`; that is an identifier, not copy.
+      //
+      // Still scoped to the section AS SENT rather than searched across the
+      // whole prompt: the false pin this file already produced once matched an
+      // unrelated calculator rule while the comps instruction was flipped
+      // underneath it.
+      const start = system.search(/^## Comps \(run_comps\)/m);
+      expect(
+        start,
+        'the comps prompt section is not being sent to the model — if the ' +
+          'heading was renamed, re-point this anchor to the new one and keep ' +
+          'it on the tool name',
+      ).toBeGreaterThan(-1);
       const rest = system.slice(start + 1);
       const nextHeading = rest.indexOf('\n## ');
       return nextHeading === -1 ? rest : rest.slice(0, nextHeading);
