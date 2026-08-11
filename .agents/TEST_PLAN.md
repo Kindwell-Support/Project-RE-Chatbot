@@ -596,6 +596,14 @@ break without anyone editing a test.
       | real | the flagged figure is on no screen | MASON's |
       | intermittent | fails some runs, no code change caused it | a guarantee that is only requested |
 
+      **STEP 0, before any of the buckets: `git status --short`.** If files you
+      do not own are dirty, the tree is mid-slice and the result is not
+      attributable at all. This is not hypothetical — a 37-failure run turned
+      out to be MASON's half-applied slice sitting in the working tree, and the
+      suite was 1,421 green the moment his in-flight work was set aside. A red
+      suite is evidence about your change only when the tree holds only your
+      changes.
+
       **Re-run a live red three times before classifying it.** One live red is
       a sample of one, and the live suite is the only place in this project
       where identical input can legitimately produce different output. A15 was

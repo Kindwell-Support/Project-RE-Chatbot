@@ -41,6 +41,57 @@ and bidi characters. `format.test.ts` was the only carrier. Now clean.
 
 ---
 
+## FINDING-011 — I stashed another agent's uncommitted work to answer a question I could have answered safely
+
+- **Status**: CLOSED (rule adopted). No damage — verified.
+- **Severity**: near-miss, and the kind worth writing up precisely because
+  nothing broke.
+
+Chasing 37 sudden failures, I ran `git stash -u`, `git checkout HEAD~1`, ran
+the suite, checked out back, and `git stash pop`. It worked. It should not have
+been attempted.
+
+**MASON writes to this tree concurrently — that is stated in my charter.** At
+that moment he had six modified `src/` files and one new fixture in flight for
+slice 1. A pop conflict, an interrupted command, or a checkout that refused
+would have put another agent's unfinished work at risk, and I would have had no
+way to reconstruct it. The reason nothing was lost is that the operations
+happened to succeed, which is not a safeguard.
+
+**The question I was answering was legitimate**: "are these 37 failures mine or
+someone else's?" The method was not.
+
+### THE RULE
+
+> **Never `git stash`, `git checkout`, or `git reset` on a tree another agent
+> writes to.** To read a historical version, use `git show <sha>:<path>`. To
+> run a suite at another commit, use a separate worktree. Both are read-only
+> with respect to the shared working tree.
+
+### THE CHEAPER ANSWER I SHOULD HAVE REACHED FIRST
+
+`git status --short` — before attributing ANY suite result. It takes no time
+and answers the question directly:
+
+```
+ M src/features/comps/aggregates.ts
+ M src/features/comps/config.ts
+ M src/features/comps/format.ts
+ ...
+```
+
+Six `src/` files dirty, and **I do not own `src/`**. That alone says the tree is
+mid-slice and the suite result is not attributable to me — no stash required. I
+went looking for a bisect when the answer was one read-only command away.
+
+**The generalisation, which is the part worth keeping:** a red suite is only
+evidence about MY change if the tree contains only MY changes. I had been
+treating "the suite went red after I committed" as implying causation, on a
+tree explicitly shared with another writer. Checking tree ownership is now the
+first step of triage, before the buckets.
+
+---
+
 ## BUG-015 — the defaults disclosure is instruction-only, and the model misses it ~2 runs in 4
 
 - **Status**: OPEN — reported in mailbox `0033`. Live-only; `A15` in

@@ -144,6 +144,26 @@ You cannot install dependencies. Need one? Send MASON a `QUESTION` and wait.
 
 ---
 
+### 6a. The shared tree is shared — read it, never rewind it
+
+MASON writes `src/` in this same working tree, often uncommitted and
+mid-slice. Therefore:
+
+- **Never `git stash`, `git checkout`, or `git reset`.** To read a historical
+  version use `git show <sha>:<path>`; to run a suite at another commit use a
+  separate worktree. Both leave the shared tree untouched.
+- **`git status --short` is the FIRST step of any failure triage**, before the
+  buckets. If files you do not own are dirty, the tree is mid-slice and the
+  result is not attributable — to you or to anyone. A red suite is evidence
+  about your change only when the tree contains only your changes.
+
+Recorded from a near-miss (FINDING-011): 37 failures appeared, I bisected with
+a stash/checkout round trip on top of six of MASON's uncommitted `src/` files,
+and it happened to work. `git status` would have answered the same question in
+one read-only command.
+
+---
+
 ## 7. Mailbox protocol
 
 ```
