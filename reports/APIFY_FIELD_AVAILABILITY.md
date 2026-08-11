@@ -133,3 +133,44 @@ often absent). Both are captured and stored with the other detail facts, so
 showing them is a formatting change, not a new scrape — but they were waived
 as MATCHING criteria and displaying them is a separate call the client should
 make explicitly.
+
+---
+
+## COVERAGE NOTE 2026-08-12 — MULTI_FAMILY (operator question, logged not built)
+
+Prompted by a real lookup: **1218 S Farmer Ave, Tempe AZ 85281** (raw
+`MULTI_FAMILY`, 7bd/8ba, 6,250 sqft) correctly returned the `no_type_match`
+copy. Question: does the comps search surface MULTI_FAMILY at all, or is
+this the condo-pool shape (fetch-level absence)?
+
+**Answer: the search DOES surface them — this is NOT the condo-pool shape.**
+Raw `homeType` across every recorded search payload:
+
+| Payload | MULTI_FAMILY in raw pool |
+| --- | --- |
+| spike-comps.json (central Phoenix, 40) | 4 |
+| spike-comps-2.json (central Phoenix, 40) | 3 |
+| spike-agg-1mi-12mo.json (235) | 17 |
+| spike-farmer-multifam.json (Tempe, this address, 40) | **0** |
+
+The gap is downstream, in the MAPPER: `MULTI_FAMILY → OTHER` on both the
+subject and comp sides, and `OTHER` matches nothing including itself (Q5
+ruling). A MULTI_FAMILY subject is therefore permanently incapable of a
+comp set regardless of pool composition — the same STRUCTURAL shape as the
+APARTMENT→CONDO case that earned its own ruling, one property class over.
+
+**The rejection table for this address** (live reproduction, one standard
+2-run lookup; raw payload recorded as `spike-farmer-multifam.json`):
+40 raw items (cap hit), 39 usable candidates — 31 SFR / 2 condo / 6
+townhouse, zero MULTI_FAMILY in this Tempe pool. Walked to the last rung
+(3 mi / 12 mo), **kept 0, all 39 rejected `SQFT_OUT_OF_RANGE`** — the
+6,250 sqft subject's ±20% band (5,000–7,500) contains nothing residential
+nearby, so the sqft gate fires before type ever gets tested (rule order 4
+before 7). `no_type_match` still branched correctly because the branch
+keys on pool composition, not first-match reasons.
+
+**Implication if a ruling is ever wanted (nothing built):** mapping
+MULTI_FAMILY to its own class would let 7-bed multi-family subjects find
+multi-family comps where pools contain them (they do, in central Phoenix)
+— but for THIS address the binding constraint is sqft, not type: a
+6,250 sqft property has no ±20% neighbours in a 40-item pool either way.
