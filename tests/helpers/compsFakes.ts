@@ -59,6 +59,21 @@ export interface ProviderSpyOptions {
   subject?: unknown | null;
   /** Returned by fetchSoldComps. */
   comps?: unknown[];
+  /**
+   * Model the REAL search actor's cap (§14.6 / the Sierra Vista pool).
+   *
+   * Zillow returns the NEWEST `resultsLimit` sales for the box. Without a
+   * server-side window that is "the newest N regardless of age" — which in a
+   * dense market is an eleven-day pool. WITH a window the server bounds the
+   * set first, so the cap bites on a set that already spans the window.
+   *
+   * A spy that ignores this returns whatever it was handed and cannot
+   * distinguish a windowed fetch from an unwindowed one — which would let the
+   * pool-depth cases pass against the unfixed build. Standing lesson from the
+   * provider-error fake: a double that diverges from the real semantics does
+   * not just miss bugs, it hides them.
+   */
+  truncateTo?: number;
   /** Throw on lookupSubject instead of returning. */
   failSubject?: ProviderFailure;
   /** Throw on fetchSoldComps instead of returning. */
@@ -201,14 +216,33 @@ export function makeProviderSpy(options: ProviderSpyOptions = {}): ProviderSpy {
       return options.subject === undefined ? null : options.subject;
     },
 
-    async fetchSoldComps(subject: { address?: string }, radiusMi: number) {
-      calls.push({ method: 'fetchSoldComps', arg: subject?.address ?? '', radiusMi });
+    async fetchSoldComps(subject: { address?: string }, radiusMi: number, windowMonths?: number) {
+      // windowMonths is recorded even while the production signature lacks it:
+      // the truncation fix adds it, and a spy that drops the argument cannot
+      // tell "the fetch is unwindowed" from "the fetch is windowed and I did
+      // not look".
+      calls.push({
+        method: 'fetchSoldComps', arg: subject?.address ?? '', radiusMi, windowMonths,
+      });
       await maybeDelay();
       if (options.failComps && failuresRemaining > 0) {
         failuresRemaining--;
         throw providerError(options.failComps);
       }
-      return options.comps ?? [];
+      const all = (options.comps ?? []) as Array<{ soldDate?: string | null }>;
+      if (options.truncateTo === undefined) return all;
+
+      // Newest-first, then cut — the actor's own behaviour.
+      const byNewest = [...all].sort(
+        (a, b) => Date.parse(b.soldDate ?? '') - Date.parse(a.soldDate ?? ''),
+      );
+      if (windowMonths === undefined) return byNewest.slice(0, options.truncateTo);
+
+      // A windowed query bounds the set server-side BEFORE the cap applies.
+      const cutoff = Date.now() - windowMonths * 30.44 * 86_400_000;
+      return byNewest
+        .filter((c) => Date.parse(c.soldDate ?? '') >= cutoff)
+        .slice(0, options.truncateTo);
     },
   };
 

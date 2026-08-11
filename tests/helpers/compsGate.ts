@@ -57,6 +57,31 @@ export function pendingSlice(...mods: CompsModule[]): boolean {
   return !hasModule(...mods);
 }
 
+/**
+ * CAPABILITY gate for the pool-depth slice (§14.6 truncation fix).
+ *
+ * The modules all exist, so `hasModule` cannot express "the fix has not landed
+ * yet". The observable difference is the fetch SIGNATURE: a windowed
+ * `fetchSoldComps` takes the window as a third parameter. Arity is a crude
+ * probe and deliberately so — it is objective, it needs no import of the thing
+ * under test, and it flips exactly once, when the fix lands.
+ *
+ * If MASON delivers the window some other way, this reports pending forever
+ * while the tests sit green-by-skipping — the census-gate failure. So the
+ * handoff step applies here too: confirm this resolves.
+ */
+export function poolDepthPending(): boolean {
+  if (COMPS_STRICT) return false;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('../../src/features/comps/providers/apifyZillow.js');
+    const proto = mod?.ApifyZillowProvider?.prototype;
+    return typeof proto?.fetchSoldComps !== 'function' || proto.fetchSoldComps.length < 3;
+  } catch {
+    return true;
+  }
+}
+
 /** Human-readable reason, for the skipped-suite name. */
 export function sliceNote(...mods: CompsModule[]): string {
   const missing = mods.filter((m) => !hasModule(m));
