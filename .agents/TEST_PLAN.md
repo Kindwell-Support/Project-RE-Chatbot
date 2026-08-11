@@ -594,6 +594,19 @@ break without anyone editing a test.
       | infrastructure | 429, timeout, transport | nobody's — re-run paced |
       | stale predicate | the flagged figure IS on screen | mine |
       | real | the flagged figure is on no screen | MASON's |
+      | intermittent | fails some runs, no code change caused it | a guarantee that is only requested |
+
+      **Re-run a live red three times before classifying it.** One live red is
+      a sample of one, and the live suite is the only place in this project
+      where identical input can legitimately produce different output. A15 was
+      2-in-4 and landed immediately after a prompt sweep — it would have been
+      mis-filed as a regression from that sweep on a single observation.
+
+      The fourth bucket exists because the RESPONSE differs, not just the
+      cause. A deterministic failure is a defect to fix. An intermittent one is
+      a question about whether the guarantee is ENFORCED or merely REQUESTED,
+      and the answer is usually to move it from prose into code — the pattern
+      `ensurePrefillEcho` already sets in `finish()`.
 
       The first HEAD run was 9 red: 6 infrastructure, 2 mine, 1 real. Reporting
       "9 red" would have buried the only one that mattered under five that were

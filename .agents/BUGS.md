@@ -41,10 +41,90 @@ and bidi characters. `format.test.ts` was the only carrier. Now clean.
 
 ---
 
+## BUG-015 — the defaults disclosure is instruction-only, and the model misses it ~2 runs in 4
+
+- **Status**: OPEN — reported in mailbox `0033`. Live-only; `A15` in
+  `tests/live.test.ts`.
+- **Severity**: major on the miss, but PRE-EXISTING — not introduced by any
+  slice in this block. It surfaced because pacing removed the six 429s that
+  were masking the rest of that file.
+- **Frequency, measured**: 1 fail / 2 pass on three targeted re-runs, plus one
+  fail in the full paced run and a pass in the original battery. ~2 in 4.
+
+The reply on a failing run:
+
+> "…estimates a net profit of $101,916 … **these are estimates based on your
+> inputs** — verify arv, rehab, and financing before you act."
+
+The defaults WERE applied (12% interest, 20% down, $3k taxes, …). "Based on
+your inputs" does not merely omit that — it points the other way, and a member
+would reasonably read every number as theirs.
+
+**Not caused by the BUG-014 prompt sweep**, checked before reporting:
+`git show a6e98c5 | grep -iE '^[-+].*(default|assum|standard)'` is empty, and
+`systemPrompt.ts:96` still carries the rule with a worked example. The
+instruction is intact; the model did not follow it.
+
+**The shape, which is the useful part.** An instruction obeyed ~70% of the time
+is a tendency, not a guarantee. This codebase already draws that line: the ARV
+pre-fill echo is not left to instruction — `ensurePrefillEcho` in `finish()`
+prepends it when the model omits it. Same class of disclosure, same consequence
+if missed, enforced structurally rather than asked for. `defaults_applied` is
+already on the tool result (`toolRunners.ts:85, 98`), so the data is in hand.
+
+Recommendation: the existing pattern. If a calculator ran with defaults applied
+and the output does not name them, `finish()` adds the line.
+
+---
+
+## FINDING-010 — a fourth bucket for live reds: intermittent model non-compliance
+
+- **Status**: CLOSED (checklist updated)
+
+My live-triage table had three buckets — infrastructure, stale predicate, real.
+A15 fits none cleanly: the guarantee genuinely fails, but only sometimes, and
+no code change caused it.
+
+It needs its own bucket because the RESPONSE differs. A deterministic real
+failure is a defect to fix. An intermittent one is a question about whether the
+guarantee is enforced or merely requested — and the answer is usually to move
+it from prose into code, not to tighten the prose.
+
+The tell: **re-run it three times before classifying.** One live red is a
+sample of one, and a live suite is the only place in this project where the
+same input can legitimately produce different output. I had been treating live
+reds as deterministic, which is how A15 would have been mis-filed as a
+regression from the prompt sweep that happened to land just before it.
+
+---
+
 ## BUG-014 — the system prompt still tells the model `run_comps` produces an ARV
 
-- **Status**: OPEN — reported in mailbox `0032`. Repro is the live RECALL case
-  in `socialPressure.live.test.ts`; reproduced on two independent runs.
+- **Status**: CLOSED — fixed at `a6e98c5`. Verified by re-running the live
+  repro twice (a targeted `-t` run and the full paced battery): **16/16 pass,
+  zero 429s.**
+- **Verified by grepping the prompt myself, not from the fix report.** Every
+  `ARV` mention in the comps section now either denies the capability or routes
+  to `set_manual_arv`:
+  - *"It does NOT produce an ARV … never promise it will, and never describe
+    comps as a way to 'get the ARV'."*
+  - *"every comps figure the member sees must come from a run_comps result in
+    THIS turn, and every ARV comes from the member via set_manual_arv — comps
+    never produce one."*
+  - the recall case is answered explicitly: *"If asked 'what was the ARV?', say
+    plainly that comps don't produce an ARV, and offer to re-run the comps or
+    to use their own figure."*
+
+  **The unsatisfiable instruction is genuinely resolved, not reworded.** The old
+  sentence bound ARVs to a source that yields none. The new one splits the
+  claim: comps FIGURES come from a run_comps result (satisfiable), ARVs come
+  from the member (satisfiable). That is the part that mattered — a model
+  holding a contradiction has to resolve it somehow, and invention was one of
+  the available resolutions.
+
+  The remaining `ARV` mentions in `systemPrompt.ts` are calculator INPUTS
+  (Flip and BRRRR take an ARV the member supplies). Correct, and deliberately
+  left alone.
 - **Severity**: major. No number was invented — the honesty guarantee HELD —
   but the member is promised something the tool cannot deliver, and the model
   is left holding an unsatisfiable instruction.

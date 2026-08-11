@@ -311,3 +311,35 @@ on a build that tells members comps produce an ARV.
 23:45 MASON — BUG-014 fixed @ a6e98c5 (full prompt sweep: compsPromptSection rewritten truth-for-truth — comps-not-valuation heading, member-supplies-ARV framing, recall answer spelled out; sweep found a FOURTH surface: run_comps TOOL DESCRIPTION still claimed trimmed-mean ARV, ships every turn incl. recall — fixed; systemPrompt.ts + remaining surfaces verified clean); live RECALL re-run singly: GREEN; 3 offline reds = INSPECTOR's heading locator, flagged in FIXED 0047 (highest-read 0032) — holding for their battery re-run
 00:20 MASON — COVERAGE Q answered (operator, Farmer Ave MULTI_FAMILY): search DOES surface MULTI_FAMILY (4/40, 3/40, 17/235 recorded raw) — NOT the condo-pool shape; gap is mapHomeType MULTI_FAMILY->OTHER + Q5 OTHER-matches-nothing, same structure as APARTMENT->CONDO; live repro (1 lookup): Tempe pool 40 raw = 31 SFR/2 condo/6 TH/0 MF, kept 0, ALL 39 SQFT_OUT_OF_RANGE (6,250 sqft ±20% band empty — sqft binds before type), no_type_match branch fired correctly; fixture spike-farmer-multifam.json recorded, report addendum logged, INFO 0048; operator deployment writes to a DIFFERENT DB than shared .env (their row absent here) — NOTHING BUILT
 00:55 MASON — BUG-015 fixed @ c8f29fe (widget parses [text](url) — model dresses bare URLs as markdown despite relay-verbatim — AND autolinks bare http(s) URLs; href http(s)-only so javascript: stays inert; public/ is gitignored build output). SIERRA VISTA report (no fix): 1-mile rungs kept 0 — only 2 candidates in the circle, both outside the 767-1,151 band — but the POOL IS 11 DAYS DEEP (40-cap, 3mi Tempe box): near rung starved by the FETCH before the band applied; recency rungs vacuous on such pools; same truncation class aggregates solved; fixture spike-sierra-vista.json; INFO+FIXED 0049 — awaiting operator/client call on comps-fetch doz treatment
+
+---
+
+## INSPECTOR — 2026-08-11, LIVE at HEAD after the BUG-014 fix + pacing
+
+**BUG-014 CLOSED.** Verified by grepping the prompt myself rather than from the
+fix report: every ARV mention in the comps section now denies the capability or
+routes to `set_manual_arv`, and the unsatisfiable instruction is genuinely
+split into two satisfiable halves rather than reworded. Live repro green on two
+independent runs.
+
+**PACING WORKS.** Six 429s to zero. Pressure battery 16/16; `live.test.ts` zero
+rate limits. Interval derived (30k ceiling ÷ 3,378-token turn, 75% headroom =
+9s), enforced by file lock because vitest parallelises files across workers.
+
+**ONE OPEN: BUG-015**, mailbox `0033`. The defaults disclosure is
+instruction-only and the model misses it ~2 runs in 4 ("based on your inputs"
+when defaults were applied). PRE-EXISTING — not from this block; it surfaced
+because pacing removed the 429s masking that file. Verified the BUG-014 sweep
+did not cause it (the defaults lines are untouched).
+
+Recommendation is the pattern already in the codebase: `ensurePrefillEcho`
+enforces the ARV echo in `finish()` rather than asking for it. `defaults_applied`
+is already on the tool result, so the same enforcement is available.
+
+**MERGE POSITION.** Everything this block introduced is green, offline and
+live. BUG-015 is a pre-existing gap that this work made visible rather than
+created, so it is the operator's call whether it blocks. I would not sign the
+defaults disclosure off as a *guarantee* while it is prose-only at a 2-in-4
+miss rate — but I am not claiming it should hold the merge.
+
+Offline: 36/36 files, 1,419 passed, 0 failed.
