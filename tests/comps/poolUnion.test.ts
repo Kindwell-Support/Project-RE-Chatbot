@@ -39,6 +39,9 @@ import {
   MAX_COMPS_KEPT,
 } from '../../src/features/comps/config.js';
 import { golden01 } from '../fixtures/golden/index.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import type {
   CachedComps, CompsCacheLike,
 } from '../../src/features/comps/service.js';
@@ -410,4 +413,115 @@ describe(`the aggregate payload unioned into the comps pool${sliceNote(...MODS)}
       expect(out.comps.length).toBeLessThanOrEqual(MAX_COMPS_KEPT);
     });
   });
+  // =========================================================================
+  // SIERRA VISTA — verifying the headline claim WITHOUT relying on the run
+  // that produced it.
+  // =========================================================================
+  describe('the Sierra Vista result is structurally impossible without the union', () => {
+    const FIX = resolve(
+      dirname(fileURLToPath(import.meta.url)), '..', '..',
+      'src', 'features', 'comps', '__fixtures__',
+    );
+    const COMPS_PAYLOAD = JSON.parse(
+      readFileSync(resolve(FIX, 'spike-comps-3mi-doz12.json'), 'utf8'),
+    ) as Array<Record<string, unknown>>;
+
+    const soldDates = () => COMPS_PAYLOAD
+      .map((i) => (i.hdpData as { homeInfo?: { dateSold?: number } })?.homeInfo?.dateSold)
+      .filter((d): d is number => typeof d === 'number' && d > 0)
+      .map((ms) => new Date(ms).toISOString().slice(0, 10));
+
+    it('WHAT I COULD NOT VERIFY, recorded as a limit rather than glossed', () => {
+      // MASON reports the union moves Sierra Vista from a 3-mile rung to
+      // 1mi/6mo, keeping 611 E Encanto (0.14 mi) and 2044 S Forest — "the
+      // exact two displaced March sales the audit named".
+      //
+      // Neither address appears in ANY recorded fixture. The claim comes from
+      // a live run, and the 1-mile aggregate payload that would contain those
+      // sales was never recorded. So the specific observation is not
+      // checkable offline, and I am not going to bill the client's Apify
+      // quota to re-derive an anecdote.
+      //
+      // It is worth being precise about WHY this one matters more than the
+      // Don Frank case did: the audit that predicted this result and the run
+      // that confirmed it are both MASON's. That is a closed loop — not
+      // dishonest, but not independent either, and it is exactly the kind of
+      // evidence that feels strongest while proving least.
+      //
+      // What follows is the part of the claim that recorded data CAN settle.
+      const named = COMPS_PAYLOAD.filter((i) =>
+        /Encanto|Forest/i.test(String(i.address ?? '')));
+      expect(
+        named,
+        'the named sales are now IN a recorded fixture — if a Sierra aggregate ' +
+          'payload has been recorded, this case should be replaced by a direct ' +
+          'check of the two addresses and their distances',
+      ).toHaveLength(0);
+    });
+
+    it('the comps payload FLOOR is Apr-22 and holds ZERO March sales', () => {
+      // The audit's premise, checked against the recording rather than taken
+      // from the report. This is the Sierra cached comps row: 3 mi, doz=12m,
+      // 499 items — and the 500-cap still bites, so its oldest sale is
+      // 2026-04-22 rather than a year back.
+      const dates = soldDates();
+      expect(dates.length, 'the recording no longer parses').toBeGreaterThan(400);
+
+      const floor = dates.slice().sort()[0];
+      expect(floor, 'the recorded floor moved off Apr-22').toBe('2026-04-22');
+      expect(
+        dates.filter((d) => d.startsWith('2026-03')),
+        'the comps payload now CONTAINS March sales — the inference below ' +
+          'collapses, because a March comp could then arrive without the union',
+      ).toHaveLength(0);
+    });
+
+    it('THEREFORE a March comp in the kept set can ONLY have come from the union', () => {
+      // The inference the recorded data does support, and it is the load
+      // -bearing half of MASON's claim even though it says nothing about the
+      // two specific addresses.
+      //
+      // The comps fetch physically cannot return a March sale — its floor is
+      // Apr-22, capped. So if the post-union kept set contains one, it entered
+      // through the unioned 1-mile aggregate payload. There is no third
+      // source. His result is therefore consistent with the recording AND
+      // unreachable without the union, which is as far as offline evidence
+      // goes and further than "his run says so".
+      const dates = soldDates();
+      const floorMs = Date.parse(dates.slice().sort()[0]);
+      const marchMs = Date.parse('2026-03-31');
+      expect(
+        marchMs,
+        'a March sale is no longer below the comps-payload floor',
+      ).toBeLessThan(floorMs);
+
+      // And the union path is live — proven here by the same marker the rest
+      // of this file uses, so the inference rests on a demonstrated mechanism
+      // rather than on the absence of an alternative.
+      return (async () => {
+        // THREE recent fillers, not four. With four, the top rung already had
+        // five (filler + marker) and the ladder never descended to where a
+        // 150-day sale is eligible — the case failed on my fixture rather than
+        // on the build. Starve the 3-month rung so the 6-month one is the only
+        // way to a full set, which is precisely Sierra Vista's shape.
+        const filler = Array.from({ length: 3 }, (_, i) =>
+          sale({ zpid: `SV${i}`, soldPrice: 400_000 + i * 1_000, lat: latAt(0.2) }));
+        const older = sale({
+          zpid: 'MARCH-SALE', address: '611 E Encanto Dr, Tempe, AZ',
+          soldDate: iso(150), lat: latAt(0.14), soldPrice: 395_000,
+        });
+        const { run } = coldRun(filler, [older, marker()]);
+        const out = await run();
+        expectUnionRan(out);
+        if (!out.ok) return;
+        expect(
+          out.comps.map((c) => c.comp.zpid),
+          'a sale older than the comps floor did not survive the union into the ' +
+            'kept set — the mechanism the Sierra result depends on is not working',
+        ).toContain('MARCH-SALE');
+        expect(out.recencyTierMonths, 'a 150-day sale should need the 6-month rung').toBe(6);
+      })();
+    });
+  });
+
 });

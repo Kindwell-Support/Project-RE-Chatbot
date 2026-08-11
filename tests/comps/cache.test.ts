@@ -221,31 +221,59 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // raw, update result, DO NOT re-hit the provider."
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('ALGO_VERSION recompute', () => {
-    it('the zero-call recompute path is currently UNREACHABLE — and that is correct', () => {
-      // RE-POINTED, and the reason is worth more than the case was.
+    it('a STALE-BUT-SOUND row recomputes from raw with ZERO provider calls', () => {
+      // THE SENTINEL FLIPPED, and it flipped by firing rather than by anyone
+      // remembering. It read: "if the floor and the version diverge, this path
+      // is REACHABLE and needs its assertion back, with a row stamped between
+      // 4 and 4." §14.19 took ALGO_VERSION to 5 and held the floor at 4, so
+      // that window is now exactly one version wide — and the case failed with
+      // its own instructions in the message.
       //
-      // This asserted "a stale row recomputes from raw with zero provider
-      // calls". §14.17 set RAW_REFETCH_BELOW_VERSION = 4 while ALGO_VERSION is
-      // also 4, so there is NO version a row can hold that is both stale
-      // (< ALGO_VERSION, so it recomputes) and trustworthy (>= the floor, so
-      // it does not refetch). The two windows do not overlap.
-      //
-      // So the free-recompute optimisation has no reachable input today. Every
-      // cached row either serves as-is (at 4) or refetches (below 4). That is
-      // exactly what §14.17 intends — raw fetched under the 40-cap is
-      // poisoned and must not be recomputed over — but it means this path is
-      // DORMANT, not verified, and I would rather say so than plant a row into
-      // a state production cannot produce and call it coverage.
-      //
-      // It becomes reachable at the next bump: at ALGO_VERSION 5, rows stamped
-      // 4 are stale-but-trustworthy and must recompute for free. When that
-      // happens this case should be restored, not deleted.
-      expect(
+      // Verified rather than merely restored, per the operator: the path I
+      // documented as unreachable now runs, so the assertion is on what it
+      // DOES, not on the fact that it exists.
+      expect(ALGO_VERSION, 'the recompute window closed again').toBeGreaterThan(
         RAW_REFETCH_BELOW_VERSION,
-        'the floor and the current version have diverged — the zero-call ' +
-          'recompute path is now REACHABLE and needs its assertion back, with a ' +
-          `row stamped between ${RAW_REFETCH_BELOW_VERSION} and ${ALGO_VERSION - 1}`,
-      ).toBe(ALGO_VERSION);
+      );
+      return (async () => {
+        const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+        const { cache, rows } = makeCache({
+          cacheKey: KEY,
+          normalizedAddress: normalizeAddress(ADDRESS),
+          rawSubject: SUBJECT as never,
+          rawComps: COMPS as never,
+          result: null,
+          // Stale by version (< 5, so it recomputes) and sound by regime
+          // (>= 4, so it must NOT refetch). Both true only in this window.
+          algoVersion: RAW_REFETCH_BELOW_VERSION,
+          provider: 'stub',
+          expiresAt: iso(CACHE_TTL_DAYS),
+        });
+
+        const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+
+        expect(out.ok, 'the recompute produced no result').toBe(true);
+        expect(
+          spy.subjectCalls + spy.compsCalls,
+          'a stale-but-sound row was REFETCHED. Its raw came from the §14.17 ' +
+            'regime and is trustworthy; re-billing it is the cost the floor ' +
+            'exists to avoid, and at scale it is the entire cached corpus.',
+        ).toBe(0);
+
+        // It genuinely recomputed rather than serving the stored (null) result.
+        if (out.ok) {
+          expect(out.comps.length, 'nothing was derived from the raw payload')
+            .toBeGreaterThanOrEqual(3);
+          expect(out.algoVersion, 'the recomputed result was not re-stamped')
+            .toBe(ALGO_VERSION);
+        }
+
+        // ...and the row is re-stamped, so the NEXT serve is a plain hit. A
+        // recompute that forgot to re-stamp would recompute forever — free in
+        // provider calls, but never converging.
+        expect(rows.get(KEY)?.algoVersion, 'the row kept its stale version')
+          .toBe(ALGO_VERSION);
+      })();
     });
 
     it('CONSEQUENCE, stated so it is a decision: the whole corpus refetches once', async () => {
@@ -262,7 +290,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
         rawSubject: SUBJECT as never,
         rawComps: COMPS as never,
         result: null,
-        algoVersion: 1, // the oldest thing in the corpus
+        algoVersion: 1, // below the floor: poisoned 40-cap raw, must refetch
         provider: 'stub',
         expiresAt: iso(CACHE_TTL_DAYS),
       });
