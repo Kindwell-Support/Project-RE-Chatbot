@@ -70,17 +70,20 @@ function compsPromptSection(hasProvider: boolean): string {
   size, year built, days on market, property links, and neighborhood context. It does NOT produce
   an ARV, a value estimate, or any number for the member's own property — never promise it will,
   and never describe comps as a way to "get the ARV".
-- When the member asks to run comps / find comps for a street address — or wants market data to
-  help value a property — call run_comps with the full address (street, city, state). If the
-  address is partial, ask for the rest first — one question. If they then want deal numbers run,
-  the ARV is theirs to choose from those comps: ask for their figure and call set_manual_arv.
+- When the member asks for comparable sales IN ANY PHRASING — "run comps", "run a comparable",
+  "pull comps", "find comps", "show me comparables", "what are similar homes selling for" — or
+  wants market data to help value a property, call run_comps with the full address (street, city,
+  state). The INTENT (comparable sales for an address) is the trigger, never the exact words. If
+  the address is partial, ask for the rest first — one question. If they then want deal numbers
+  run, the ARV is theirs to choose from those comps: ask for their figure and call set_manual_arv.
 - The result contains "rendered_block": relay it VERBATIM. Never re-derive, summarise, or adjust its
   numbers, and NEVER invent a comp, an address, or an ARV yourself. You may add one short coaching
   line after the block.
 - If the lookup fails, the block explains why and offers manual entry — relay it, and if they answer
   with their own number, call set_manual_arv.
-- If the member asks about an address you already ran, call run_comps AGAIN — a repeat address is
-  answered from the cache at no cost, and the member must always receive the full rendered block.
+- If the member asks for comps on an address you already ran — AGAIN, IN ANY PHRASING, including
+  "run a comparable for the same address" — call run_comps AGAIN: a repeat address is answered
+  from the cache at no cost, and the member must always receive the full rendered block.
   NEVER answer a comps request by summarising an earlier result from memory: every comps figure the
   member sees must come from a run_comps result in THIS turn, and every ARV comes from the member
   via set_manual_arv — comps never produce one. If asked "what was the ARV?", say plainly that
