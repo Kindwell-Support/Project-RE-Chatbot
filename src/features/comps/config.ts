@@ -10,12 +10,13 @@
 /**
  * Stamped on every outcome; bumping it triggers recompute-from-raw on cache
  * hits — EXCEPT where the fetch regime changed (see RAW_REFETCH_BELOW_VERSION).
- * 3 = the ARV removal (§14.8). 4 = the comps-fetch truncation fix (§14.17):
- * doz=12m server-side + resultsLimit 500 — raw payloads fetched under the
- * old 40-cap are ~days deep in dense markets and recomputing over them would
- * relabel a truncated pool, so they refetch instead.
+ * 3 = the ARV removal (§14.8). 4 = the comps-fetch truncation fix (§14.17).
+ * 5 = the union (§14.19): the 1-mile aggregate payload joins the comps
+ * candidate pool before the filters. v4 rows RECOMPUTE free — both raw
+ * payloads sit on the row and are sound (see RAW_REFETCH_BELOW_VERSION,
+ * which deliberately stays at 4).
  */
-export const ALGO_VERSION = 4;
+export const ALGO_VERSION = 5;
 
 /**
  * Rows whose raw payload predates this version were fetched under the old

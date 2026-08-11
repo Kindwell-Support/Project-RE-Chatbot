@@ -262,6 +262,33 @@ export function selectTiers(
  * which is the better-formatted of the two in the recorded case. Deterministic
  * either way — INSPECTOR asserts on which survives.
  */
+/**
+ * §14.19: union the comps-search pool with the neighbourhood-sales payload
+ * BEFORE the hard filters — the aggregate fetch is an exhausted 1-mile
+ * 12-month universe, and the truncated comps fetch loses exactly the near
+ * sales the ladder wants most. Unioned sales face EVERY gate identically;
+ * nothing here bypasses a filter.
+ *
+ * Same-ZPID records collapse at union time with the PRIMARY (comps-search)
+ * record winning — both payloads come from the same actor through the same
+ * mapper, so the records are near-identical and the choice is a
+ * deterministic tiebreak, not a data decision. Same-SALE-different-zpid
+ * overlap (BUG-010's shape, this slice's main risk) is deliberately LEFT to
+ * `dedupeSales`, which runs over the union inside selectTiers and inside
+ * candidateMedianPpsf and reports DUPLICATE_SALE visibly.
+ */
+export function unionCandidatePools(primary: RawComp[], secondary: RawComp[] | null): RawComp[] {
+  if (!secondary || secondary.length === 0) return primary;
+  const seen = new Set(primary.map((c) => c.zpid));
+  const merged = [...primary];
+  for (const comp of secondary) {
+    if (comp.zpid && seen.has(comp.zpid)) continue;
+    if (comp.zpid) seen.add(comp.zpid);
+    merged.push(comp);
+  }
+  return merged;
+}
+
 export function dedupeSales(comps: RawComp[]): { kept: RawComp[]; duplicates: RejectedComp[] } {
   const completeness = (c: RawComp): number =>
     [c.lotSize, c.beds, c.baths, c.detailUrl].filter((v) => v !== null && v !== undefined).length;

@@ -249,14 +249,27 @@ function renderDemographics(demographics: CompsResult['demographics']): string |
 function renderSuccess(result: CompsResult): string {
   const { subject, comps, rejected, radiusTierMi, recencyTierMonths } = result;
 
-  // §14.17: a truncated fetch must not claim its recency window — the pool
-  // is missing older sales the cap displaced. The header names the ACTUAL
-  // covered span instead, same honesty rule as the aggregates block.
-  const windowClause = result.searchTruncated
-    ? result.searchEarliestSoldDate
-      ? `sales since ${humanDate(result.searchEarliestSoldDate)} (older sales exceeded the data limit)`
-      : `newest sales only (older sales exceeded the data limit)`
-    : `sold in the last ${recencyTierMonths} months`;
+  // §14.17 + §14.19: the window claim attaches to the SERVED RUNG. Four
+  // states, pinned in the contract — this is the one place the union could
+  // quietly start lying, so each branch states only what its data covers:
+  //  1. fetch not truncated                         → plain window claim;
+  //  2. truncated, but the served rung sits at/inside the ring the unioned
+  //     aggregate payload covers COMPLETELY        → plain claim, honestly;
+  //  3. truncated, served rung beyond the complete ring → mixed truth:
+  //     complete within the ring, capped beyond it;
+  //  4. truncated, no complete ring                 → the §14.17 span label.
+  const ring = result.nearRingCompleteMi;
+  const servedRungFullyCovered = ring !== null && radiusTierMi <= ring;
+  const beyondSince = result.searchEarliestSoldDate
+    ? `sales since ${humanDate(result.searchEarliestSoldDate)}`
+    : 'newest sales only';
+  const windowClause =
+    !result.searchTruncated || servedRungFullyCovered
+      ? `sold in the last ${recencyTierMonths} months`
+      : ring !== null
+        ? `sold in the last ${recencyTierMonths} months within ${ring} mile${ring === 1 ? '' : 's'}; ` +
+          `beyond that, ${beyondSince} (older sales exceeded the data limit)`
+        : `${beyondSince} (older sales exceeded the data limit)`;
   const header = [
     `**Comps for ${subject.address}**`,
     `Subject: ${subject.beds ?? NA} bd / ${subject.baths ?? NA} ba, ` +

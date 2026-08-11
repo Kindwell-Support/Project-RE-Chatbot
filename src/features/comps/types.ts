@@ -227,8 +227,16 @@ export interface CompsResult {
    * not claim the recency window; it labels the actual covered span.
    */
   searchTruncated: boolean;
-  /** Oldest soldDate in the fetched pool — the honest window label when truncated. */
+  /** Oldest soldDate in the COMPS-FETCH pool — the honest window label when truncated. */
   searchEarliestSoldDate: string | null;
+  /**
+   * §14.19: the radius fully covered by the unioned aggregate payload
+   * (NEIGHBORHOOD_RADIUS_MI when it is present and itself un-truncated),
+   * else null. The window claim attaches to the SERVED RUNG: a rung at or
+   * inside this radius claims its window honestly even when the wider
+   * comps fetch truncated.
+   */
+  nearRingCompleteMi: number | null;
   comps: ScoredComp[];
   rejected: RejectedComp[];
   fromCache: boolean;

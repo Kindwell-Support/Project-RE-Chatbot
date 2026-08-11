@@ -25,6 +25,7 @@ import {
   MIN_COMPS_TO_COMPUTE,
   NEIGHBORHOOD_MIN_REMAINING_MS,
   NEIGHBORHOOD_RADIUS_MI,
+  NEIGHBORHOOD_RESULTS_LIMIT,
   NEIGHBORHOOD_WINDOW_MONTHS,
   PROVIDER_MAX_RETRIES,
   PROVIDER_TIMEOUT_MS,
@@ -34,7 +35,7 @@ import { computeNeighborhoodAggregates, isWindowTruncated } from './aggregates.j
 import { attachDetails, detailBatchFor } from './detail.js';
 import { SEARCH_RESULTS_LIMIT } from './providers/apifyZillow.js';
 import { FAILURE_COPY } from './format.js';
-import { selectTiers } from './filter.js';
+import { selectTiers, unionCandidatePools } from './filter.js';
 import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
 import { rankComps } from './rank.js';
 import type { CensusCacheLike } from './cache/censusCache.js';
@@ -183,32 +184,46 @@ function failure(code: CompsFailureCode, detail?: CompsFailure['detail']): Comps
  * path — one implementation, so a cached recompute can never drift from a
  * live run on the same data.
  */
-function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, provider: string, fromCache: boolean): CompsOutcome {
+function computeFromRaw(
+  subject: SubjectProperty,
+  comps: RawComp[],
+  neighborhoodSales: RawComp[] | null,
+  now: Date,
+  provider: string,
+  fromCache: boolean,
+): CompsOutcome {
   if ((subject.livingArea ?? 0) <= 0) return failure('SUBJECT_SQFT_UNKNOWN');
 
-  const tier = selectTiers(subject, comps, now);
+  // §14.19: the exhausted 1-mile aggregate payload joins the pool BEFORE
+  // the filters — unioned sales face every gate identically, and
+  // dedupeSales (inside selectTiers and candidateMedianPpsf) owns the
+  // heavy cross-payload overlap, visibly.
+  const pool = unionCandidatePools(comps, neighborhoodSales);
+  const tier = selectTiers(subject, pool, now);
   if (tier.kept.length < MIN_COMPS_TO_COMPUTE) {
     // Operator ruling: when nothing was kept AND the fetched pool holds zero
     // comps of the subject's type, "the market is thin" is a claim we cannot
     // make — we know we didn't find the right pool (recorded: a condo
     // subject against a 39-comp pool of SFRs and mobile homes). Same code,
     // branched copy; the honesty guarantees don't move.
-    const sameTypeInPool = comps.filter((c) => c.propertyType === subject.propertyType).length;
+    // The "fetched pool" for the copy branch is the UNION — a same-type
+    // comp arriving through the aggregate payload is still a right-pool
+    // signal.
+    const sameTypeInPool = pool.filter((c) => c.propertyType === subject.propertyType).length;
     return failure('TOO_FEW_COMPS', {
       kept: tier.kept.length,
       needed: MIN_COMPS_TO_COMPUTE,
       radiusTierMi: tier.radiusTierMi,
-      ...(tier.kept.length === 0 && sameTypeInPool === 0 && comps.length > 0
+      ...(tier.kept.length === 0 && sameTypeInPool === 0 && pool.length > 0
         ? { pool: 'no_type_match' as const }
         : {}),
     });
   }
 
   const ranked = rankComps(subject, tier.kept, now);
-  // §14.17 truncation honesty: computed over the MAPPED pool against the
-  // fetch limit (isWindowTruncated's slack covers the raw→mapped skip; see
-  // its recorded justification). The earliest sold date is the honest
-  // window label when the claimed recency window wasn't fully covered.
+  // §14.17 truncation honesty: flags describe the COMPS FETCH (the union's
+  // 1-mile portion legitimately extends earlier — nearRingCompleteMi is
+  // what says so). isWindowTruncated's slack covers the raw→mapped skip.
   const soldDates = comps.map((c) => c.soldDate).filter((d): d is string => d !== null).sort();
   return {
     ok: true,
@@ -219,6 +234,15 @@ function computeFromRaw(subject: SubjectProperty, comps: RawComp[], now: Date, p
     recencyTierMonths: tier.recencyTierMonths,
     searchTruncated: isWindowTruncated(comps.length, SEARCH_RESULTS_LIMIT),
     searchEarliestSoldDate: soldDates.length > 0 ? soldDates[0] : null,
+    // §14.19: the aggregate payload, when present and itself un-truncated,
+    // is a COMPLETE 1-mile/12-month universe — rungs at or inside that
+    // radius claim their window honestly regardless of the wider fetch.
+    nearRingCompleteMi:
+      neighborhoodSales !== null &&
+      neighborhoodSales.length > 0 &&
+      !isWindowTruncated(neighborhoodSales.length, NEIGHBORHOOD_RESULTS_LIMIT)
+        ? NEIGHBORHOOD_RADIUS_MI
+        : null,
     comps: ranked,
     rejected: tier.rejected,
     fromCache,
@@ -264,7 +288,17 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     // it with a 12-month window. Those rows fall through to a REFETCH
     // (operator ruling; one-time cost per old row).
     if (cached.rawSubject && cached.algoVersion >= RAW_REFETCH_BELOW_VERSION) {
-      const recomputed = computeFromRaw(cached.rawSubject, cached.rawComps, now(), cached.provider, true);
+      // §14.19: the recompute unions BOTH raw payloads from the row — this
+      // is exactly why v4 rows recompute rather than refetch (both raws are
+      // sound and already paid for).
+      const recomputed = computeFromRaw(
+        cached.rawSubject,
+        cached.rawComps,
+        cached.rawNeighborhood ?? null,
+        now(),
+        cached.provider,
+        true,
+      );
       const updated: CachedComps = {
         ...cached,
         result: recomputed,
@@ -324,18 +358,47 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     throw err; // programmer error — let it surface, do not dress it as a provider issue
   }
 
-  const outcome = computeFromRaw(subject, comps, now(), deps.provider.name, false);
+  // §14.19 item 6: the neighbourhood payload is acquired BEFORE compute —
+  // it joins the candidate pool, so it can no longer wait for the
+  // enrichment stage on the live path. Ceiling rule as in enrichment; NO
+  // retry (pinned); failure is NON-FATAL twice over — the pool degrades to
+  // comps-only AND the aggregates section renders unavailable. The lookup's
+  // budget unit was consumed at the provider stage above.
+  let neighborhoodSales: RawComp[] | null = null;
+  if (deps.provider.fetchNeighborhoodSales) {
+    const remainingMs = PROVIDER_TIMEOUT_MS - (now().getTime() - startedAtMs);
+    if (remainingMs < NEIGHBORHOOD_MIN_REMAINING_MS) {
+      logger?.info?.({ cacheKey: key, remainingMs }, 'neighborhood fetch skipped — whole-pipeline ceiling');
+    } else {
+      try {
+        neighborhoodSales = await deps.provider.fetchNeighborhoodSales(
+          subject,
+          NEIGHBORHOOD_RADIUS_MI,
+          NEIGHBORHOOD_WINDOW_MONTHS,
+          { timeoutMs: remainingMs },
+        );
+      } catch (err) {
+        logger?.warn(
+          { err: err instanceof Error ? err.message : String(err), cacheKey: key },
+          'neighborhood fetch failed — pool stays comps-only; section renders unavailable',
+        );
+      }
+    }
+  }
+
+  const outcome = computeFromRaw(subject, comps, neighborhoodSales, now(), deps.provider.name, false);
 
   // The cache stores the DETAIL-FREE result on purpose (§14.14 rule 4):
   // detail lives in its own zpid-keyed cache with a longer TTL and is
-  // re-attached on every serve, so the two lifetimes never entangle. The
-  // neighbourhood RAW payload joins this row later, written back by its
-  // enrichment step (§14.16.1).
+  // re-attached on every serve. Since §14.19 the neighbourhood RAW rides
+  // the SAME initial write — one entry, both payloads; the enrichment step
+  // finds it in hand and neither re-fetches nor re-upserts on this path.
   const entry: CachedComps = {
     cacheKey: key,
     normalizedAddress: normalized,
     rawSubject: subject,
     rawComps: comps,
+    rawNeighborhood: neighborhoodSales,
     result: outcome,
     algoVersion: ALGO_VERSION,
     provider: deps.provider.name,
