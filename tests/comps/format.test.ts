@@ -17,7 +17,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import { pendingSlice, sliceNote } from '../helpers/compsGate.js';
-import { renderCompsForChat } from '../../src/features/comps/format.js';
+import {
+  renderCompsForChat,
+  COMPS_OPENING,
+  COMPS_CLOSING,
+} from '../../src/features/comps/format.js';
 import { selectTiers } from '../../src/features/comps/filter.js';
 import { rankComps } from '../../src/features/comps/rank.js';
 import { ALGO_VERSION } from '../../src/features/comps/config.js';
@@ -172,7 +176,15 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       const first = outcome.comps[0];
       const digits = text.replace(/[$,\s]/g, '');
       expect(digits).toContain(String(first.comp.soldPrice));
-      expect(text).toContain(first.comp.soldDate!);
+      // §14.18 goal 4: dates read as DATES. Derived from the template, which
+      // pins `Mon D, YYYY` — and formatted from the calendar string directly,
+      // never re-parsed through Date(), so BUG-006's timezone lesson holds.
+      const [y, m, d] = first.comp.soldDate!.split('-').map(Number);
+      const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      expect(text, 'the sold date is not rendered as a human date')
+        .toContain(`${MON[m - 1]} ${d}, ${y}`);
+      expect(text, 'the raw ISO date leaked into member copy')
+        .not.toContain(first.comp.soldDate!);
       expect(text).toMatch(/mi\b|mile/i);
       expect(text).toMatch(/sq ?ft|\/sf|per sq/i);
     });
@@ -546,7 +558,11 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       // passing on text that no longer contained the row they meant. Bound by
       // the NEXT row instead, so the helper cannot rot again when a line is
       // added or removed.
-      const next = lines.findIndex((l, n) => n > i && /^- \*\*/.test(l));
+      // §14.18 renumbered the rows: `- **Addr**` became `**1. Addr**`. The old
+      // boundary stopped matching, so a "row" ran on into the NEXT comp and a
+      // back-fill assertion started reading a sibling's beds. Bound on the
+      // numbered heading, and on a blank-line-then-bold as a backstop.
+      const next = lines.findIndex((l, n) => n > i && /^\*\*\d+\. /.test(l));
       return lines.slice(i, next === -1 ? undefined : next).join('\n');
     }
 
@@ -556,7 +572,7 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
      * character would flag every row; these three shapes are the only places
      * the NULL marker can appear.
      */
-    const NULL_MARKERS = [/— bd/, /\/ — ba/, /lot — ·/, /lot —$/m];
+    const NULL_MARKERS = [/— bd/, /\/ — ba/, /— sqft lot/, /lot —$/m];
     const hasNullMarker = (t: string) => NULL_MARKERS.some((m) => m.test(t));
 
     /** golden01 with detail attached to every comp — "fully populated" now includes §14.14. */
@@ -595,15 +611,15 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       // member cannot tell which fact is missing. Labels make each absence
       // self-describing, which is the whole point of an explicit marker.
       const withDetail = renderCompsForChat(fullyPopulated() as never);
-      expect(withDetail, 'year built is not labelled').toMatch(/year built \d/);
-      expect(withDetail, 'days on market is not labelled').toMatch(/days on market \d/);
-      expect(withDetail, 'parking spaces is not labelled').toMatch(/parking spaces \d/);
+      expect(withDetail, 'year built is not labelled').toMatch(/Built (19|20)\d{2}/);
+      expect(withDetail, 'days on market is not labelled').toMatch(/\d+ days on market/);
+      expect(withDetail, 'parking spaces is not labelled').toMatch(/\d+ parking spaces/);
 
       // And with NO detail at all, all three read as labelled absences.
       const bare = renderCompsForChat(resultFor(golden01) as never);
-      expect(bare, 'a comp with no detail lost its year-built column').toContain('year built —');
-      expect(bare).toContain('days on market —');
-      expect(bare).toContain('parking spaces —');
+      expect(bare, 'a comp with no detail lost its year-built column').toContain('Built —');
+      expect(bare).toContain('— days on market');
+      expect(bare).toContain('— parking spaces');
     });
 
     it('§14.14 YEAR BUILT is not a quantity — no thousands separator', () => {
@@ -613,8 +629,8 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       // place the block is asking to be trusted. Every comp built before the
       // year 10000 is affected, which is all of them.
       const text = renderCompsForChat(fullyPopulated() as never);
-      expect(text, 'the year is comma-formatted').not.toMatch(/year built \d,\d{3}/);
-      expect(text, 'the year did not render at all').toMatch(/year built (19|20)\d{2}\b/);
+      expect(text, 'the year is comma-formatted').not.toMatch(/Built \d,\d{3}/);
+      expect(text, 'the year did not render at all').toMatch(/Built (19|20)\d{2}\b/);
     });
 
     it('§14.14 style and condition are CAPTURED but must NOT be rendered', () => {
@@ -634,7 +650,7 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
     it.each([
       ['beds', { beds: null }, /— bd/],
       ['baths', { baths: null }, /\/ — ba/],
-      ['lot size', { lotSize: null }, /lot — ·/],
+      ['lot size', { lotSize: null }, /— sqft lot/],
     ] as const)('null %s renders a dash IN PLACE — not omitted, not back-filled', (_name, nulls, marker) => {
       const outcome = outcomeWithNulls(nulls);
       const text = renderCompsForChat(outcome as never);
@@ -646,7 +662,8 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       // structure must keep every other column intact, so the dash replaced
       // the VALUE, not the column.
       expect(row, 'the row lost its bd/ba column entirely').toMatch(/bd \/ .* ba/);
-      expect(row, 'the row lost its lot column entirely').toContain('lot ');
+      // §14.18 moved "lot" from prefix to SUFFIX: `6,200 sqft lot`.
+      expect(row, 'the row lost its lot column entirely').toContain(' sqft lot');
 
       // ...and only THIS comp's row carries the dash; the siblings are whole.
       const other = lineFor(text, '1208 NORTH MAIN STREET');
@@ -680,7 +697,7 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       const text = renderCompsForChat(outcome as never);
       const row = lineFor(text, '1204 NORTH MAIN STREET');
       expect(row).toMatch(/— bd \/ — ba/);
-      expect(row).toMatch(/lot —/);
+      expect(row).toMatch(/— sqft lot/);
       expect(row.toLowerCase()).toContain('link unavailable');
       // Sold price and sqft were NOT nulled and must still be real values.
       expect(row, 'a populated field was dashed alongside the null ones').toContain('$');
@@ -772,6 +789,103 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
         text.includes('\u2014'),
         'a nulled field produced no marker — the em dash has stopped meaning anything',
       ).toBe(true);
+    });
+  });
+  // =========================================================================
+  // THE CLIENT'S COPY — weighted highest, because a reflow is exactly what
+  // rewrites prose "while tidying" and this text is hers, not ours.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('the prescribed copy survives the reflow BYTE-EXACT', () => {
+    // Transcribed from CONTRACT §14.7, character by character, NOT imported
+    // from the constants — importing them would assert that the constants
+    // equal themselves, which is true of any wording anyone ever types there.
+    const OPENING_VERBATIM =
+      'Sure. Here are recent comparable sales for that location and home type. ' +
+      'Please note responses are for education and based on available public data. ' +
+      'Investors are encouraged to review each address for additional information.';
+
+    it('COMPS_OPENING matches the contract text exactly', () => {
+      expect(
+        COMPS_OPENING,
+        'the opening copy drifted from CONTRACT §14.7. This is the client\'s ' +
+          'prescribed text — a reflow may move nothing and reword nothing.',
+      ).toBe(OPENING_VERBATIM);
+    });
+
+    it('both constants reach the RENDER unaltered — not just the module', () => {
+      // The constant being right is not the guarantee; the member seeing it is.
+      // A template that interpolates it into a heading, trims it, or wraps it
+      // would pass the case above and fail this one.
+      const text = renderCompsForChat(resultFor(golden01) as never);
+      expect(text, 'the opening copy is not in the rendered block verbatim')
+        .toContain(COMPS_OPENING);
+      expect(text, 'the closing copy is not in the rendered block verbatim')
+        .toContain(COMPS_CLOSING);
+    });
+
+    it('the opening is FIRST and the closing is LAST before the footer', () => {
+      // Position is part of the prescription (§14.7/§14.18), and position is
+      // what a reflow actually breaks — the words survive, the order does not.
+      const text = String(renderCompsForChat(resultFor(golden01) as never));
+      const open = text.indexOf(COMPS_OPENING);
+      const close = text.indexOf(COMPS_CLOSING);
+      // From the START of the footer LINE, not from the phrase inside it —
+      // the line opens "_Automated estimate from public sold data, not a
+      // formal appraisal...". Measuring from the phrase left the line's own
+      // opening words sitting in the "content after the closing" slice, and
+      // the case failed on the product being correct.
+      const footerPhrase = text.search(/not a formal appraisal/i);
+      const footer = text.lastIndexOf('\n', footerPhrase) + 1;
+
+      expect(open, 'the opening is missing').toBeGreaterThanOrEqual(0);
+      expect(close, 'the closing is missing').toBeGreaterThan(open);
+      expect(footer, 'the footer is missing').toBeGreaterThan(close);
+
+      // Nothing but whitespace and the footer line may follow the closing.
+      const after = text.slice(close + COMPS_CLOSING.length, footer);
+      expect(
+        after.trim(),
+        `content was inserted between the closing copy and the footer: ${after.trim()}`,
+      ).toBe('');
+    });
+
+    it('the closing stays last even with every optional section attached', () => {
+      // The reflow added sections BETWEEN the table and the closing. That is
+      // exactly the change that turns "last" into "third from last", and no
+      // single-shape test would notice.
+      const base = resultFor(golden01) as Record<string, unknown>;
+      const text = String(renderCompsForChat({
+        ...base,
+        neighborhood: {
+          radiusMi: 1, windowMonths: 12, windowTruncated: false, totalSales: 193,
+          avgSoldPrice: 432_100, avgPricePerSqft: 214, avgBeds: 3.2, avgBaths: 2.1,
+          earliestSaleDate: '2025-08-11', latestSaleDate: '2026-08-05',
+          avgDomOfDisplayedComps: 26, domCompCount: 5,
+        },
+        demographics: {
+          tractGeoid: '04013111700', tractName: 'Census Tract 1117', acsYear: 2023,
+          medianHouseholdIncome: 93333, medianAge: 37.9,
+          ownerOccupiedPct: 62.2, renterOccupiedPct: 37.8,
+        },
+      } as never));
+
+      const close = text.indexOf(COMPS_CLOSING);
+      expect(close, 'the closing vanished once sections were added').toBeGreaterThan(0);
+      expect(
+        text.indexOf('Neighborhood sales'),
+        'the neighbourhood block rendered AFTER the closing copy',
+      ).toBeLessThan(close);
+      expect(
+        text.indexOf('Neighborhood snapshot'),
+        'the census block rendered AFTER the closing copy',
+      ).toBeLessThan(close);
+    });
+
+    it('NO ARV anywhere, including anything shaped like one', () => {
+      const text = String(renderCompsForChat(resultFor(golden01) as never)).toLowerCase();
+      expect(text, 'an ARV is named').not.toMatch(/\barv\b|after.repair value/);
+      expect(text, 'a value estimate is named').not.toMatch(/estimated value|value range|worth about/);
+      expect(text, 'a confidence grade survived').not.toMatch(/confidence/);
     });
   });
 });

@@ -420,7 +420,10 @@ describe(`service: retry policy and the honesty contract${sliceNote(...MODS)}`, 
         .find((b) => b.length > 0) ?? '';
       expect(block.length, 'no rendered block came back at all').toBeGreaterThan(200);
       expect(block, 'sold prices are not rendered as currency').toMatch(/\$\d{3},\d{3}/);
-      expect(block, 'no per-comp lines').toMatch(/^- \*\*.+\*\* . sold \$/m);
+      // §14.18: comps are NUMBERED (goal 5, "best match first" made visible)
+      // and the price moved to its own line with the date and distance.
+      expect(block, 'no numbered per-comp heading').toMatch(/^\*\*1\. .+\*\*$/m);
+      expect(block, 'no sold price line').toMatch(/^Sold \$[\d,]+ · /m);
       expect(block, 'no $/sqft rendered').toMatch(/\$\d+\/sqft/);
       // ...and it is prose, not the raw field names behind it.
       expect(block, 'raw field names leaked into member-facing copy')

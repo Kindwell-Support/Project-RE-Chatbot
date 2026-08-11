@@ -144,6 +144,13 @@ const AGG: Sale[] = Array.from({ length: 100 }, (_, i) =>
   sale({ zpid: `A${i}`, soldDate: iso(3 + Math.round(i * 3.6)), soldPrice: 380_000 + i * 500 }),
 );
 
+/** `2026-07-30` -> `Jul 30` — the member-visible form §14.18 pins. */
+const monthDay = (iso: string): string => {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const [, m, d] = iso.split('-').map(Number);
+  return `${MONTHS[m - 1]} ${d}`;
+};
+
 const spanDays = (sales: Array<{ soldDate: string | null }>) => {
   const t = sales.map((s) => Date.parse(s.soldDate!)).filter((n) => !Number.isNaN(n));
   return (Math.max(...t) - Math.min(...t)) / DAY;
@@ -304,7 +311,10 @@ describe(`neighbourhood sales aggregates${sliceNote(...MODS)}`, () => {
         text,
         'the truncated render names no window at all — silence about the window ' +
           'is better than a wrong label, but the actual span is better than both',
-      ).toMatch(new RegExp(String(out.earliestSaleDate ?? 'NEVER').slice(0, 7)));
+        // §14.18 renders this clause's date as `Mon D, YYYY` too. The window
+        // clause is a VARIABLE of the template, so the reflow reformatted it
+        // rather than dropping it — which is the guarantee, and it survived.
+      ).toContain(monthDay(String(out.earliestSaleDate ?? '')));
     });
 
     it('CASE 3c: an UNtruncated fetch DOES carry the 12-month label', () => {
