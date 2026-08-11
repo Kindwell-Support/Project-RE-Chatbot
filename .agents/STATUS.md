@@ -351,3 +351,26 @@ Offline: 36/36 files, 1,419 passed, 0 failed.
 03:45 MASON — button text -> --jb-on-accent (operator; near-black on amber, the widget's own token) @ 43ea4f2, REDEPLOY still pending; INSPECTOR 0036 finally landed the register numbers: BUG-016 probe confirmed, BUG-017 = widget links (my provisional 015 yields); collision closed in ONE pass (§12.5 mapping note — CONTRACT had no other numbered refs; commits immutable by design, register records both); 0036 archived
 04:05 MASON — pluralization fixed @ f339990 ('1 day on market'/'1 parking space', null keeps plural label; proven 1/2/null). SIERRA VISTA RUNG REPORT (from cached v4 row + its own raw_neighborhood as 1-mile ground truth): served 3mi/3mo kept 5 truncated=true floor Apr-22; 1-mile rungs kept 3 (sqft band = dominant rejector, 299-384); MERIT vs DISPLACEMENT split: 1mi/3mo = pure merit (4 candidates, 0 displaced); 1mi/6mo = 2 DISPLACED by the residual cap (both March, below the Apr-22 floor) — WITHOUT truncation the 1mi/6mo rung would plausibly have kept 5 NEAR comps and the ladder would have stopped there instead of serving 1.6-2.9mi; 1mi/12mo = 3 displaced. Candidate remedy noted NOT built: union the exhausted 1-mile aggregate payload (already fetched+cached on the same row) into the comps candidate pool
 05:10 MASON — THE UNION SHIPPED @ 5afff50 (§14.19, ALGO_VERSION 5, floor stays 4: union before gates via unionCandidatePools, same-zpid collapse primary-wins, BUG-010-at-scale left to visible dedupeSales, four-state window label w/ nearRingCompleteMi + claim-attaches-to-served-rung, hood acquired pre-compute + single cache write, v4-recomputes-free proven / v3-refetches, no_type_match reads the union). SIERRA VISTA LIVE: 1mi/6mo kept 5 @ 0.14-0.97mi incl. the two audit-named March sales (was 3mi @ 0.85-2.01) — the ladder STOPS AT 1 MILE; Vale/Danbury/DonFrank stable. INSPECTOR's spec-ahead poolUnion 16/16 (their earlier red = their own mid-edit fixture); suite 1,463/1 = their dormancy sentinel firing as designed; smokes 9/9 + offline Sierra repro; HANDOFF 0056 — LAST SLICE COMPLETE, awaiting final verification
+
+## GREEN — the comps module (INSPECTOR, at 6cbe2f6)
+
+Offline 1467/0 failed, identical under COMPS_STRICT=1. Live 34/34 at 15s
+pacing, 862s, zero 429s — and the relay canary received a real reply, checked
+rather than inferred from the colour (no try/catch in either live file; a
+positive footer precondition fails a blockless reply before the negative
+assertion is reached). No relay drift; the whitelist held because it is now a
+structural split rather than a static allowance.
+
+Union verified 19/19 with the marker precondition on every case. Sierra Vista
+checked independently as far as recorded data permits: the comps payload floors
+at 2026-04-22 with ZERO March sales, so a March comp in the kept set can only
+have arrived via the union, and the mechanism is demonstrated directly. The two
+named addresses are in no fixture and are recorded as an uncheckable limit
+rather than taken on MASON's run — his audit and his run are the same loop.
+
+Dormancy sentinel flipped and verified: a row at v4 recomputes with zero
+provider calls and re-stamps to v5. Dead-guard sweep 21/5, all conditional.
+
+Carried as a stated known limitation: BUG-015 (defaults disclosure, ~2 in 4).
+New: FINDING-012 (the sweep tool reproduced FINDING-006 and corrupted the
+location field). Handoff 0057.

@@ -672,6 +672,31 @@ Then classify each hit — the sweep does not tell you which are wrong:
 Baseline at `c3bc55a`: 21 guarded blocks, 5 dead, all five classified as
 conditional rules. A sweep returning more than five wants explaining.
 
+**Sweep at `6cbe2f6` (post-union, the whole module): 21 blocks, 5 dead, all
+five benign.** `agent.test.ts:92` (string-typed tool params) and
+`invariants.test.ts:181` (a recursive walker meeting non-numbers) are
+PARAMETERIZED; `golden.test.ts:76` (only some cases declare `keptZpids`) is
+PARAMETERIZED; `golden.test.ts:128` (skips the vacuous compare when subject and
+comp sqft agree) and `normalize.test.ts:205` (fires only on a key collision)
+are CONDITIONAL RULES. Nothing to fix, and the count did not grow across
+detail, Census, aggregates, presentation and the union.
+
+Read the equality to the baseline with care rather than as confirmation: the
+sweep is now a script rather than a hand pass, so the 21 is that script's
+count and its agreement with the recorded figure is not itself evidence. The
+load-bearing result is *five dead, each classified*, not the matching total.
+
+AND THE TOOL REPRODUCED THE BUG IT EXISTS TO CATCH. The first instrumented run
+emitted `BRANCH-NEVER-TAKEN testsagent.test.ts:92` — the Windows path
+separators were consumed as string escapes on the way into the generated
+assertion, so `tests\comps\golden` became `testscompsgolden` and one label
+collapsed into a bare ellipsis. That is FINDING-006 for the FOURTH time, in
+the sweep tooling itself, and it degraded exactly the field a sweep is for:
+the location. The findings were still identifiable from the printed source
+lines, so the result stands — but a two-file sweep would have been ambiguous
+and I would have had to guess. Emit paths with forward slashes, and read back
+one generated line before trusting a whole generated run.
+
 
 ---
 

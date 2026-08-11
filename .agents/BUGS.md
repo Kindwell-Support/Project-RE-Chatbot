@@ -101,6 +101,40 @@ Searchable phrasings: *migrate probe says table exists when it does not*,
 
 ---
 
+## FINDING-012 — the sweep tool reproduced FINDING-006, and corrupted the one field a sweep is for
+
+- **Status**: CLOSED (tool fixed, result stands).
+- **Severity**: process. Fourth occurrence of the same mechanism.
+
+The dead-guard sweep generates an assertion carrying the source location:
+
+```
+expect(Boolean(cond), 'BRANCH-NEVER-TAKEN tests\comps\golden.test.ts:76').toBe(true);
+```
+
+Windows path separators went into a TypeScript string literal unescaped, so
+`\c` and `\g` were consumed as escapes: the label printed as
+`testscompsgolden.test.ts:76`, and one collapsed far enough that the runner
+rendered it as a bare ellipsis. Every finding lost its file.
+
+**Why this one is worse than the previous three.** The earlier occurrences
+damaged a regex or a message. This one damaged the *identity of the result* —
+a sweep exists to tell you WHERE a guard is dead, and the tool silently
+removed exactly that. The findings were recoverable only because the runner
+also echoes the source line, and because five hits across four files were
+individually recognisable. A larger sweep would have been ambiguous and I
+would have been guessing at locations while believing I had measured them.
+
+**Rule**: generated code that embeds a path emits forward slashes, and one
+generated line gets read back before a whole generated run is trusted. The
+second half is [FINDING-008]'s corollary — verify a repair by re-reading the
+artifact — applied to tooling output rather than to a file I edited.
+
+Searchable phrasings: *backslash eaten in generated assertion*, *sweep label
+lost its filename*, *path separator consumed as string escape*.
+
+---
+
 ## FINDING-011 — I stashed another agent's uncommitted work to answer a question I could have answered safely
 
 - **Status**: CLOSED (rule adopted). No damage — verified.
