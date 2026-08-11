@@ -343,7 +343,27 @@
       .replace(/__([^_]+)__/g, '<strong>$1</strong>')
       // Italics need a word boundary either side so snake_case survives intact.
       .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
-      .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
+      .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
+      // Links, two forms (BUG-015). The comps property link is LOAD-BEARING
+      // (the client's stated substitute for three waived matching criteria),
+      // and neither form was parsed — the member saw literal brackets or a
+      // dead URL string.
+      //  1. [text](url) — the model sometimes dresses the block's bare URL
+      //     this way despite relay-verbatim; parse it rather than show
+      //     brackets. href is restricted to http(s) so no javascript: URL
+      //     can ride in through model output.
+      .replace(
+        /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+      )
+      //  2. Bare http(s) URLs — what format.ts actually emits. The preceding
+      //     boundary (start/whitespace/paren) keeps URLs already inside an
+      //     href="…" attribute from double-linking: those are preceded by a
+      //     quote character.
+      .replace(
+        /(^|[\s(])(https?:\/\/[^\s<>()]+)/g,
+        '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>',
+      );
   }
 
   function renderMarkdownInto(node, text) {

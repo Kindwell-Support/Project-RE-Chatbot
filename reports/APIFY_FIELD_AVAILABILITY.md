@@ -174,3 +174,31 @@ MULTI_FAMILY to its own class would let 7-bed multi-family subjects find
 multi-family comps where pools contain them (they do, in central Phoenix)
 — but for THIS address the binding constraint is sqft, not type: a
 6,250 sqft property has no ±20% neighbours in a 40-item pool either way.
+
+---
+
+## COVERAGE NOTE 2026-08-12 (2) — the comps pool's recency depth, shown biting a real lookup
+
+**1725 S Sierra Vista Dr, Tempe 85281** (SFR, 2bd/1ba, 959 sqft, band
+767–1,151) kept 4 comps at 1.63–2.94 mi — contractually correct ladder
+escalation. Operator asked what emptied the near rung. Live reproduction
+(one lookup, raw payload recorded as `spike-sierra-vista.json`):
+
+- Per-rung: all three 1-mile rungs kept 0 (rejections: 31 sqft / 4 too-far
+  / 4 type); all three 3-mile rungs kept 4. Only **2 candidates existed
+  within the 1-mile circle at all** — 637 and 1,258 sqft, both outside the
+  ±20% band (34% under and 31% over; even a ±30% band keeps neither).
+- **The deeper finding: the pool's dateSold span is 2026-07-30 → 08-10 —
+  ELEVEN DAYS.** The 40-item search cap over a 3-mile box in Tempe fills
+  with the newest sales, so the comps pipeline never saw anything older.
+  "2 candidates within 1 mile" means 2 within the last ~11 days; sales
+  from the other ~11.6 months of the recency window were displaced by the
+  cap before any filter ran. The recency ladder's 6/12-month rungs are
+  vacuous on such a pool — they can only re-examine the same 11 days.
+
+So for the client: the sqft band is what rejected the two near candidates
+the pipeline SAW, but the near rung was starved by the fetch cap before
+the band ever applied. This is the same truncation the aggregates slice
+measured and solved for itself (doz window server-side + higher results
+limit); the COMPS fetch still runs uncapped-window/40-items. Whether that
+deserves the same treatment is an operator/client call — nothing built.
