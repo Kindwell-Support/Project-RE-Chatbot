@@ -24,7 +24,11 @@ import {
 } from '../../src/features/comps/service.js';
 import { makeProviderSpy } from '../helpers/compsFakes.js';
 import { normalizeAddress, cacheKey } from '../../src/features/comps/normalize.js';
-import { ALGO_VERSION, CACHE_TTL_DAYS } from '../../src/features/comps/config.js';
+import {
+  ALGO_VERSION,
+  CACHE_TTL_DAYS,
+  RAW_REFETCH_BELOW_VERSION,
+} from '../../src/features/comps/config.js';
 import { golden01 } from '../fixtures/golden/index.js';
 
 /**
@@ -217,59 +221,65 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // raw, update result, DO NOT re-hit the provider."
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('ALGO_VERSION recompute', () => {
-    it('recomputes from the stored raw payload with ZERO provider calls', async () => {
+    it('the zero-call recompute path is currently UNREACHABLE — and that is correct', () => {
+      // RE-POINTED, and the reason is worth more than the case was.
+      //
+      // This asserted "a stale row recomputes from raw with zero provider
+      // calls". §14.17 set RAW_REFETCH_BELOW_VERSION = 4 while ALGO_VERSION is
+      // also 4, so there is NO version a row can hold that is both stale
+      // (< ALGO_VERSION, so it recomputes) and trustworthy (>= the floor, so
+      // it does not refetch). The two windows do not overlap.
+      //
+      // So the free-recompute optimisation has no reachable input today. Every
+      // cached row either serves as-is (at 4) or refetches (below 4). That is
+      // exactly what §14.17 intends — raw fetched under the 40-cap is
+      // poisoned and must not be recomputed over — but it means this path is
+      // DORMANT, not verified, and I would rather say so than plant a row into
+      // a state production cannot produce and call it coverage.
+      //
+      // It becomes reachable at the next bump: at ALGO_VERSION 5, rows stamped
+      // 4 are stale-but-trustworthy and must recompute for free. When that
+      // happens this case should be restored, not deleted.
+      expect(
+        RAW_REFETCH_BELOW_VERSION,
+        'the floor and the current version have diverged — the zero-call ' +
+          'recompute path is now REACHABLE and needs its assertion back, with a ' +
+          `row stamped between ${RAW_REFETCH_BELOW_VERSION} and ${ALGO_VERSION - 1}`,
+      ).toBe(ALGO_VERSION);
+    });
+
+    it('CONSEQUENCE, stated so it is a decision: the whole corpus refetches once', async () => {
+      // With the floor at the current version, every pre-existing cached row
+      // is below it and refetches on its next serve. One Apify run per cached
+      // address, once. That is the intended price of the fix — the alternative
+      // is serving eleven-day pools labelled as a year — but it is a real
+      // spend and it should be visible in a test rather than discovered on the
+      // bill.
       const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
-      const { cache, counts } = makeCache({
+      const { cache } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
         rawSubject: SUBJECT as never,
         rawComps: COMPS as never,
-        // A result computed by an OLDER algorithm — deliberately wrong now.
-        // Re-pointed off the ARV: the stale marker is now a comp set that
-        // could not possibly be the right answer. If the recompute is skipped
-        // and the stored result is served, STALE-1 comes back and the assertion
-        // below fails loudly instead of matching a plausible number.
-        result: {
-          ok: true, algoVersion: ALGO_VERSION - 1, runId: 'stale-run',
-          subject: SUBJECT, radiusTierMi: 99, recencyTierMonths: 99,
-          comps: [{ comp: { zpid: 'STALE-1' }, score: 0, pricePerSqft: 1 }],
-          rejected: [], fromCache: true, provider: 'stub',
-        } as never,
-        algoVersion: ALGO_VERSION - 1,
+        result: null,
+        algoVersion: 1, // the oldest thing in the corpus
         provider: 'stub',
         expiresAt: iso(CACHE_TTL_DAYS),
       });
 
       const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(out.ok).toBe(true);
+      expect(spy.compsCalls, 'a v1 row did not refetch').toBe(1);
 
-      // SCOPED to the comps fetches. §14.16 added `raw_neighborhood`, and a
-      // legacy row written before that column has no cached aggregate raw —
-      // so ONE neighbourhood fetch on first re-serve is correct, and paying it
-      // once per legacy row is a migration cost, not a permanent one.
-      //
-      // The recompute guarantee is specifically that SUBJECT and SEARCH are
-      // not re-billed, because those are what the version bump would otherwise
-      // re-run across the entire corpus. Asserting `callCount` conflated the
-      // two the moment a fourth call type existed.
+      // ...and ONCE. The refetched row is re-stamped, so the next serve is free.
+      const spy2 = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const again = await runComps(ADDRESS, { provider: spy2.provider as never, cache, now });
+      expect(again.ok).toBe(true);
       expect(
-        spy.subjectCalls,
-        'an ALGO_VERSION bump re-billed the SUBJECT lookup — this re-bills the ENTIRE cached corpus',
+        spy2.compsCalls,
+        'the refetched row was not re-stamped — every serve re-bills, forever, ' +
+          'which turns a one-time migration cost into a permanent one',
       ).toBe(0);
-      expect(
-        spy.compsCalls,
-        'an ALGO_VERSION bump re-billed the comps SEARCH — this re-bills the ENTIRE cached corpus',
-      ).toBe(0);
-      expect(out.ok, 'the recompute did not produce a result').toBe(true);
-      if (out.ok) {
-        // Recomputed from raw with the CURRENT algorithm, not the stale result.
-        expect(out.comps.map((c) => c.comp.zpid), 'the STALE result was served verbatim')
-          .not.toContain('STALE-1');
-        expect(out.comps.length, 'the recompute produced nothing').toBeGreaterThanOrEqual(3);
-        expect(out.radiusTierMi, 'the stale tier came through').not.toBe(99);
-        expect(out.recencyTierMonths).not.toBe(99);
-        expect(out.algoVersion).toBe(ALGO_VERSION);
-      }
-      expect(counts.set, 'the recomputed result was not written back').toBeGreaterThan(0);
     });
 
     it('the recomputed entry is stamped with the CURRENT algo version', async () => {
@@ -488,6 +498,76 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
         'a computed aggregate was stored on the cache row — it must be derived ' +
           'from raw on every serve, or a stale rule outlives its version stamp',
       ).not.toMatch(/"avgSoldPrice"|"avgPricePerSqft"|"totalSales"/);
+    });
+  });
+  // =========================================================================
+  // §14.17 — the one case the version stamp does NOT save us.
+  //
+  // A bump normally means "recompute from raw", free. But raw fetched under
+  // the 40-item uncapped-window search is days deep in a dense market, so
+  // recomputing over it just re-derives a starved answer and stamps it fresh.
+  // Those rows must REFETCH.
+  //
+  // Both directions, because a floor that refetches everything forever would
+  // be as wrong as one that refetches nothing — it would re-bill the entire
+  // corpus on every future bump.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('RAW_REFETCH_BELOW_VERSION — poisoned raw refetches', () => {
+    function plant(algoVersion: number) {
+      return makeCache({
+        cacheKey: KEY,
+        normalizedAddress: normalizeAddress(ADDRESS),
+        rawSubject: SUBJECT as never,
+        rawComps: COMPS as never,
+        result: null,
+        algoVersion,
+        provider: 'stub',
+        expiresAt: iso(CACHE_TTL_DAYS),
+      });
+    }
+
+    it('a PRE-floor row REFETCHES — its raw came from the 40-cap regime', async () => {
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache } = plant(RAW_REFETCH_BELOW_VERSION - 1);
+
+      const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(out.ok, 'the refetch produced no result').toBe(true);
+      expect(
+        spy.compsCalls,
+        'a row whose raw predates the fetch fix was RECOMPUTED — that re-derives ' +
+          'from a pool that is days deep and stamps it with the current version, ' +
+          'which is the one case the stamp cannot catch',
+      ).toBeGreaterThan(0);
+    });
+
+    it('an AT-floor row RECOMPUTES — zero provider calls', async () => {
+      // The other direction, and the reason the floor is a floor rather than a
+      // blanket refetch: raw fetched under §14.17 is trustworthy, so a future
+      // ALGO_VERSION bump must still be free for it.
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache } = plant(RAW_REFETCH_BELOW_VERSION);
+
+      const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(out.ok).toBe(true);
+      expect(
+        spy.compsCalls,
+        'a row at the floor was refetched — a version floor that re-bills every ' +
+          'row forever is as wrong as one that never refetches',
+      ).toBe(0);
+      expect(spy.subjectCalls, 'the subject was re-billed too').toBe(0);
+    });
+
+    it('the floor is the version the fetch regime changed at', () => {
+      // Pins the relationship rather than the number: the floor must be the
+      // CURRENT algo version, because §14.17 is what changed the regime. If a
+      // later bump moves ALGO_VERSION without moving the floor, rows fetched
+      // under the good regime start refetching for no reason.
+      expect(RAW_REFETCH_BELOW_VERSION).toBe(4);
+      expect(
+        RAW_REFETCH_BELOW_VERSION,
+        'the floor drifted above the current algo version — every cached row ' +
+          'now refetches, forever',
+      ).toBeLessThanOrEqual(ALGO_VERSION);
     });
   });
 });

@@ -32,8 +32,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { pendingSlice, poolDepthPending, sliceNote } from '../helpers/compsGate.js';
-import { selectTiers } from '../../src/features/comps/filter.js';
+import { selectTiers, haversineMiles } from '../../src/features/comps/filter.js';
+import { isWindowTruncated, TRUNCATION_DETECT_FRACTION } from '../../src/features/comps/aggregates.js';
+import { SEARCH_RESULTS_LIMIT } from '../../src/features/comps/providers/apifyZillow.js';
 import {
+  MAX_COMPS_KEPT,
   MIN_COMPS_FOR_TIER,
   RECENCY_TIERS_MONTHS,
   MAX_COMP_AGE_MONTHS,
@@ -41,6 +44,7 @@ import {
 import { golden01 } from '../fixtures/golden/index.js';
 import { makeProviderSpy } from '../helpers/compsFakes.js';
 import { runComps } from '../../src/features/comps/service.js';
+import { renderCompsForChat } from '../../src/features/comps/format.js';
 import type { RawComp, SubjectProperty } from '../../src/features/comps/types.js';
 
 const MODS = ['filter', 'service', 'providers/apifyZillow'] as const;
@@ -52,6 +56,10 @@ const FIX = resolve(
 const SIERRA = JSON.parse(readFileSync(resolve(FIX, 'spike-sierra-vista.json'), 'utf8')) as Array<
   Record<string, unknown>
 >;
+/** The POST-fix recorded fetch: 3 mi, doz=12m, 499 of 500 returned. */
+const SIERRA_DOZ = JSON.parse(
+  readFileSync(resolve(FIX, 'spike-comps-3mi-doz12.json'), 'utf8'),
+) as Array<Record<string, unknown>>;
 
 const DAY = 86_400_000;
 const NOW = new Date('2026-08-11T00:00:00.000Z');
@@ -131,47 +139,73 @@ describe(`comps pool depth — the truncation fix${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS) || poolDepthPending())('the ladder is FUNCTIONAL, not decorative', () => {
     it('a 6-month rung ADMITS sales the 3-month rung rejected — THROUGH THE FETCH', async () => {
-      // RE-AIMED. The first version handed `selectTiers` a pool that already
-      // contained the older comps and passed against the UNFIXED build — it
-      // proved the filter walks a ladder correctly, which was never in doubt.
-      // The bug is that the FETCH never returns the older sales, so the filter
-      // has nothing to widen into. A test that supplies them itself cannot see
-      // the bug at all.
+      // Driven end to end, with the spy modelling the actor: it holds seven
+      // sales and returns only the newest `truncateTo` unless the window and
+      // the cap let more through.
       //
-      // Driven end to end instead: the provider returns what a properly
-      // windowed fetch would, and the assertion is on what the SERVICE kept.
+      // WHAT BUILDING THIS TAUGHT ME, and it is worth stating because it
+      // changes what the fix is credited with: at a cap of four, a WINDOWED
+      // fetch still returns the newest four. The window bounds the query and
+      // makes the label honest — it does not, on its own, cure starvation.
+      // The depth comes from the CAP moving 40 -> 500. Both changes are load
+      // -bearing and for different reasons, which the next reader would
+      // otherwise have to rediscover.
       const recent = Array.from({ length: 4 }, (_, i) =>
         comp({ zpid: `R${i}`, soldDate: iso(10 + i * 5), soldPrice: 400_000 + i * 1_000 }));
       const older = Array.from({ length: 3 }, (_, i) =>
         comp({ zpid: `O${i}`, soldDate: iso(120 + i * 10), soldPrice: 380_000 + i * 1_000 }));
+      const all = [...recent, ...older];
 
-      // ONE provider, modelling the real actor: it holds all seven sales but
-      // returns only the newest FOUR unless the fetch asks for a window. That
-      // is the Sierra Vista pool in miniature, and it is what makes this case
-      // fail on the unfixed build instead of passing on a fixture I stacked.
-      const spy = makeProviderSpy({
-        subject: SUBJECT,
-        comps: [...recent, ...older],
-        truncateTo: 4,
+      // THE OLD REGIME: a cap that bites (standing in for 40 in a dense
+      // market). Every rung sees the newest four and the ladder is decorative.
+      const starved = makeProviderSpy({
+        subject: SUBJECT, comps: all, truncateTo: 4,
         noDetailSupport: true, noNeighborhoodSupport: true,
       });
+      const before = await runComps('1 Test St, Tempe AZ', { provider: starved.provider as never });
+      expect(before.ok, 'the starved lookup failed').toBe(true);
+      if (!before.ok) return;
+      expect(
+        before.comps.length,
+        'the starved regime returned more than the cap — the fixture no longer ' +
+          'models a biting cap and this case has stopped discriminating',
+      ).toBe(4);
 
-      const b = await runComps('1 Test St, Tempe AZ', { provider: spy.provider as never });
-      expect(b.ok, 'the lookup failed — nothing to compare').toBe(true);
-      if (!b.ok) return;
+      // THE SHIPPED REGIME: the cap is SEARCH_RESULTS_LIMIT, far above the
+      // pool, so the window is what bounds the set and everything in it
+      // survives to the ladder.
+      const deep = makeProviderSpy({
+        subject: SUBJECT, comps: all, truncateTo: SEARCH_RESULTS_LIMIT,
+        noDetailSupport: true, noNeighborhoodSupport: true,
+      });
+      const after = await runComps('1 Test St, Tempe AZ', { provider: deep.provider as never });
+      expect(after.ok, 'the deep lookup failed').toBe(true);
+      if (!after.ok) return;
 
-      // PRECONDITION: the provider really did hold more than it would return
-      // unwindowed, so "the ladder widened" has something to widen into.
-      expect(recent.length, 'the recent set is not short of the tier threshold')
-        .toBeLessThan(MIN_COMPS_FOR_TIER);
+      // PRECONDITION: the recent-only set is short of the tier threshold, so
+      // the ladder has a reason to widen at all.
+      expect(recent.length).toBeLessThan(MIN_COMPS_FOR_TIER);
 
       expect(
-        b.comps.length,
-        'only the newest four came back — the fetch asked for no window, so the ' +
-          'cap starved the pool before any rung ran. Widening the recency ladder ' +
-          'cannot admit a sale the fetch never returned.',
-      ).toBeGreaterThan(recent.length);
-            expect(b.recencyTierMonths, 'the deeper pool should stop at the 6-month rung').toBe(6);
+        after.comps.length,
+        'widening admitted nothing — the ladder is still decorative, which is ' +
+          'the bug this slice exists to remove',
+      ).toBeGreaterThan(before.comps.length);
+      expect(after.recencyTierMonths, 'the ladder should reach the 6-month rung').toBe(6);
+      // Seven survive the rung; MAX_COMPS_KEPT caps what the member SEES at
+      // five. Asserting 7 here was my own error — the fetch and the filter
+      // deliver seven, and the cap is a separate, later decision.
+      expect(after.comps, 'the display cap moved').toHaveLength(MAX_COMPS_KEPT);
+    });
+
+    it('the shipped cap is far above what a dense market returns', () => {
+      // The other half of the fix, asserted as a relationship rather than a
+      // number. The recorded pre-fix pool was 40 items / 11 days; the recorded
+      // post-fix fetch was 499 / 110 days. A cap that sits at or near what a
+      // dense market produces is a cap that starves it.
+      expect(SEARCH_RESULTS_LIMIT, 'the search cap is back at the starving value')
+        .toBeGreaterThan(40);
+      expect(SEARCH_RESULTS_LIMIT).toBe(500);
     });
 
     it('NEGATIVE CONTROL: on an ELEVEN-DAY pool no rung can add anything', () => {
@@ -222,20 +256,138 @@ describe(`comps pool depth — the truncation fix${sliceNote(...MODS)}`, () => {
       ).toBe(MAX_COMP_AGE_MONTHS);
     });
 
-    it('CASE 3: at the cap with a young oldest sale is TRUNCATED', async () => {
-      const { isPoolTruncated } = await import('../../src/features/comps/filter.js')
-        .then((m) => m as unknown as {
-          isPoolTruncated?: (count: number, oldestMonths: number) => boolean;
-        });
-      // Predicate is optional in shape — if the fix models truncation
-      // differently, this case re-points; the GUARANTEE is that at-limit plus
-      // a shallow oldest sale is recognised as truncation rather than reported
-      // as a completed 12-month search.
+    it('CASE 3: the 90% predicate errs toward HONESTY, in both directions', () => {
+      // RE-POINTED onto the shipped seam and the shipped semantics. My spec
+      // expected an exact at-limit test; MASON chose 90% because a real fetch
+      // returned 499 of 500 and exact detection missed it by one. The recorded
+      // payload confirms that: `spike-comps-3mi-doz12.json` is 499 items.
+      //
+      // The asymmetry is the whole design, so it gets asserted as an asymmetry
+      // rather than as a number. A FALSE POSITIVE costs an honest span label on
+      // a fetch that happened to exhaust near the cap. A FALSE NEGATIVE costs
+      // the 12-month lie. Those are not comparable, and the threshold sits
+      // below the limit precisely so the cheap error is the one we make.
+      expect(TRUNCATION_DETECT_FRACTION, 'the threshold is not below the limit — ' +
+        'at 1.0 the predicate errs toward the expensive mistake')
+        .toBeLessThan(1);
+
+      const L = SEARCH_RESULTS_LIMIT;
+      const threshold = Math.ceil(L * TRUNCATION_DETECT_FRACTION);
+
+      // REQUIRED direction: anything at or above the threshold is truncated.
+      for (const n of [L, L - 1, threshold]) {
+        expect(isWindowTruncated(n, L), `${n} of ${L} was not flagged truncated`).toBe(true);
+      }
+      // The recorded 499 is the case exact detection missed.
+      expect(isWindowTruncated(499, L), 'the recorded 499/500 fetch is not flagged').toBe(true);
+
+      // ACCEPTABLE direction: below the threshold is treated as exhausted.
+      for (const n of [threshold - 1, Math.floor(L / 2), 0]) {
+        expect(isWindowTruncated(n, L), `${n} of ${L} was flagged truncated`).toBe(false);
+      }
+    });
+
+    it('a TRUNCATED fetch never claims twelve months — the required direction', () => {
+      // The false negative is the one that matters, so it is asserted on the
+      // member-visible surface rather than on the predicate alone.
+      const many = Array.from({ length: Math.ceil(SEARCH_RESULTS_LIMIT * 0.95) }, (_, i) =>
+        comp({ zpid: `T${i}`, soldDate: iso(1 + (i % 30)), soldPrice: 400_000 + i }));
+      const spy = makeProviderSpy({
+        subject: SUBJECT, comps: many, noDetailSupport: true, noNeighborhoodSupport: true,
+      });
+      return runComps('1 Test St, Tempe AZ', { provider: spy.provider as never }).then((out) => {
+        expect(out.ok, 'the lookup failed').toBe(true);
+        if (!out.ok) return;
+        expect(out.searchTruncated, 'a 95%-of-limit fetch was not flagged truncated').toBe(true);
+
+        const text = String(renderCompsForChat(out as never) ?? '');
+        expect(text.length, 'nothing rendered').toBeGreaterThan(200);
+        expect(
+          text.toLowerCase(),
+          'a truncated search still claims the last 12 months — the member reads ' +
+            'a one-month pool as a year of market history',
+        ).not.toMatch(/last 12 months|past 12 months|past year/);
+      });
+    });
+
+    it('an EXHAUSTED fetch does claim its window — the control', () => {
+      // Without this, the case above passes for a build that never names a
+      // window at all, which would be a different failure wearing this pass.
+      const few = Array.from({ length: 6 }, (_, i) =>
+        comp({ zpid: `E${i}`, soldDate: iso(10 + i * 20), soldPrice: 400_000 + i }));
+      const spy = makeProviderSpy({
+        subject: SUBJECT, comps: few, noDetailSupport: true, noNeighborhoodSupport: true,
+      });
+      return runComps('1 Test St, Tempe AZ', { provider: spy.provider as never }).then((out) => {
+        expect(out.ok).toBe(true);
+        if (!out.ok) return;
+        expect(out.searchTruncated, 'a 6-item fetch was flagged truncated').toBe(false);
+      });
+    });
+  });
+
+  // =========================================================================
+  // THE GROUND TRUTH, verified independently of MASON's live run.
+  // =========================================================================
+  describe('the 40-cap was displacing NEAR comps — measured, not reported', () => {
+    it('the recorded pool contains close sales the newest-40 subset never had', () => {
+      // MASON reports Don Frank now finding two sales on the subject's own
+      // street at 0.02/0.05 mi. That came from a LIVE run with no recorded
+      // artifact, so I cannot check that observation offline — but the
+      // MECHANISM it claims is checkable on the recorded Tempe payload, and
+      // this quantifies it rather than confirming one anecdote.
+      //
+      // METHOD NOTE: the payload carries no subject coordinates, so the centre
+      // is estimated from the pool's extent. That does not weaken the result —
+      // both sets are measured from the SAME estimated centre, so any error
+      // shifts them identically and the comparison holds regardless.
+      const pts = SIERRA_DOZ
+        .map((i) => {
+          const ll = i.latLong as { latitude?: number; longitude?: number } | undefined;
+          const sold = (i.hdpData as { homeInfo?: { dateSold?: number } })?.homeInfo?.dateSold;
+          return typeof ll?.latitude === 'number' && typeof sold === 'number'
+            ? { lat: ll.latitude, lng: ll.longitude as number, sold }
+            : null;
+        })
+        .filter((x): x is { lat: number; lng: number; sold: number } => x !== null);
+
+      expect(pts.length, 'the recorded pool no longer parses').toBeGreaterThan(400);
+
+      const cLat = (Math.min(...pts.map((p) => p.lat)) + Math.max(...pts.map((p) => p.lat))) / 2;
+      const cLng = (Math.min(...pts.map((p) => p.lng)) + Math.max(...pts.map((p) => p.lng))) / 2;
+      const withDist = pts.map((p) => ({ ...p, mi: haversineMiles(cLat, cLng, p.lat, p.lng) }));
+
+      // What the OLD 40-cap would have returned: the newest forty.
+      const newest40 = [...withDist].sort((a, b) => b.sold - a.sold).slice(0, 40);
+
+      const within = (set: typeof withDist, r: number) => set.filter((x) => x.mi <= r).length;
+
+      // PRECONDITION: the full pool genuinely contains close sales, or there is
+      // nothing for the cap to have displaced and this proves nothing.
+      expect(within(withDist, 0.25), 'the recorded pool holds no near sales')
+        .toBeGreaterThan(0);
+
       expect(
-        typeof isPoolTruncated,
-        'no truncation predicate exported — re-point this onto whatever the fix ' +
-          'calls it, but the invariant must be observable somewhere',
-      ).toBe('function');
+        within(newest40, 0.25),
+        'the newest-40 subset already contained the near sales — the cap was not ' +
+          'displacing anything on this payload, and the fix cannot be credited ' +
+          'with finding them',
+      ).toBe(0);
+
+      // The headline, and the reason this outranks a single anecdote: within a
+      // mile the full pool holds 63 sales and the newest-40 held 2.
+      expect(within(withDist, 1.0)).toBeGreaterThan(within(newest40, 1.0) + 20);
+
+      // And the nearest sale in the pool is an order of magnitude closer than
+      // anything the cap would have returned.
+      const nearestFull = Math.min(...withDist.map((x) => x.mi));
+      const nearestOld = Math.min(...newest40.map((x) => x.mi));
+      expect(nearestFull, 'no genuinely close sale in the recording').toBeLessThan(0.1);
+      expect(
+        nearestOld,
+        `the newest-40 nearest was ${nearestOld.toFixed(3)} mi — if the cap had been ` +
+          'returning close sales all along, the starvation story is wrong',
+      ).toBeGreaterThan(nearestFull * 5);
     });
   });
 });

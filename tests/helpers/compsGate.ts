@@ -17,7 +17,7 @@
  * module fails there too, which a plain `describe.skipIf` would silently
  * swallow forever.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -58,25 +58,28 @@ export function pendingSlice(...mods: CompsModule[]): boolean {
 }
 
 /**
- * CAPABILITY gate for the pool-depth slice (§14.6 truncation fix).
+ * CAPABILITY gate for the pool-depth slice (§14.17 truncation fix).
  *
  * The modules all exist, so `hasModule` cannot express "the fix has not landed
  * yet". The observable difference is the fetch SIGNATURE: a windowed
- * `fetchSoldComps` takes the window as a third parameter. Arity is a crude
- * probe and deliberately so — it is objective, it needs no import of the thing
- * under test, and it flips exactly once, when the fix lands.
+ * `fetchSoldComps` takes the window as a third parameter.
  *
- * If MASON delivers the window some other way, this reports pending forever
- * while the tests sit green-by-skipping — the census-gate failure. So the
- * handoff step applies here too: confirm this resolves.
+ * PROBED BY READING THE SOURCE TEXT, and the first version of this is why.
+ * It called `require()` on a `.ts` path — which does not exist under ESM, so
+ * it threw, the catch returned "pending", and the gate could NEVER resolve.
+ * Nine cases would have sat green-by-skipping forever while the note read
+ * "pending MASON". That is precisely the census-gate failure I had added a
+ * checklist item to prevent, committed one commit after adding it.
+ *
+ * A text probe is crude, but it is objective, needs no runtime import of the
+ * thing under test, and flips exactly once. The handoff step still applies:
+ * confirm this resolves rather than assuming it did.
  */
 export function poolDepthPending(): boolean {
   if (COMPS_STRICT) return false;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('../../src/features/comps/providers/apifyZillow.js');
-    const proto = mod?.ApifyZillowProvider?.prototype;
-    return typeof proto?.fetchSoldComps !== 'function' || proto.fetchSoldComps.length < 3;
+    const src = readFileSync(resolve(SRC, 'providers', 'apifyZillow.ts'), 'utf8');
+    return !/fetchSoldComps\([^)]*radiusMi:\s*number,\s*windowMonths/.test(src);
   } catch {
     return true;
   }

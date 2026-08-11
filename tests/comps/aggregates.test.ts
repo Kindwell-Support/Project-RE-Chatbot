@@ -54,6 +54,7 @@ import {
 import {
   computeNeighborhoodAggregates,
   isWindowTruncated,
+  TRUNCATION_DETECT_FRACTION,
 } from '../../src/features/comps/aggregates.js';
 import { renderCompsForChat } from '../../src/features/comps/format.js';
 import { makeProviderSpy } from '../helpers/compsFakes.js';
@@ -257,16 +258,29 @@ describe(`neighbourhood sales aggregates${sliceNote(...MODS)}`, () => {
       ).toBeLessThan(35);
     });
 
-    it('CASE 3: count == the results limit sets windowTruncated', () => {
-      // The predicate, driven directly — MASON exported it so the branch does
-      // not depend on a fetch that happens to hit the cap.
-      expect(isWindowTruncated(NEIGHBORHOOD_RESULTS_LIMIT), 'exactly at the limit is truncated')
-        .toBe(true);
-      expect(isWindowTruncated(NEIGHBORHOOD_RESULTS_LIMIT + 1), 'over the limit is truncated')
-        .toBe(true);
-      expect(isWindowTruncated(NEIGHBORHOOD_RESULTS_LIMIT - 1), 'under the limit is NOT truncated')
-        .toBe(false);
-      expect(isWindowTruncated(0), 'an empty fetch is not a truncated one').toBe(false);
+    it('CASE 3: the truncation predicate is a 90% BAND, not an exact at-limit test', () => {
+      // RE-POINTED. I specced exact at-limit detection; the shipped predicate
+      // is `count >= limit * TRUNCATION_DETECT_FRACTION`. MASON chose the band
+      // because a real fetch returned 499 of 500 — exact detection missed the
+      // truncation by ONE ITEM, and the cost of missing is the 12-month lie.
+      //
+      // The asymmetry is the design, so it is asserted as an asymmetry. A
+      // false positive costs an honest span label on a fetch that happened to
+      // exhaust near the cap; a false negative costs a member being told a
+      // one-month pool is a year of history. Those are not comparable, and the
+      // threshold sits BELOW the limit so the cheap error is the one made.
+      expect(TRUNCATION_DETECT_FRACTION, 'the band is not below the limit — at 1.0 ' +
+        'the predicate errs toward the expensive mistake').toBeLessThan(1);
+
+      const L = NEIGHBORHOOD_RESULTS_LIMIT;
+      const threshold = Math.ceil(L * TRUNCATION_DETECT_FRACTION);
+
+      for (const n of [L, L - 1, 499, threshold]) {
+        expect(isWindowTruncated(n, L), `${n} of ${L} was not flagged truncated`).toBe(true);
+      }
+      for (const n of [threshold - 1, Math.floor(L / 2), 0]) {
+        expect(isWindowTruncated(n, L), `${n} of ${L} was flagged truncated`).toBe(false);
+      }
     });
 
     it('CASE 3b: a truncated fetch RENDERS THE ACTUAL SPAN, never a 12-month claim', () => {
