@@ -216,7 +216,9 @@
     // Only-a-link lines render as buttons (§14.18) — same anchor semantics,
     // button presentation. Colors ride the existing accent variable.
     '.jb-btnrow{margin:6px 0 4px;}',
-    '.jb-btn-link{display:inline-block;padding:6px 14px;border-radius:8px;background:var(--jb-accent);color:#fff !important;text-decoration:none;font-size:12.5px;font-weight:600;line-height:1.4;}',
+    // Text rides --jb-on-accent (near-black), the widget's own token for
+    // text on the amber accent — white was wrong against #F7B211.
+    '.jb-btn-link{display:inline-block;padding:6px 14px;border-radius:8px;background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:12.5px;font-weight:600;line-height:1.4;}',
     '.jb-btn-link:hover{opacity:0.88;}',
     /* Disabled controls during a run: readable, obviously inert, not greyed to
        the point the member thinks the card broke. */

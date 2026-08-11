@@ -1,5 +1,11 @@
 # BUGS — INSPECTOR's running log
 
+**NUMBERING (operator ruling, MASON 0051):** this register is canonical. MASON
+numbers concurrently and his yield on collision. When a number is reassigned,
+the entry records BOTH the assigned number and whatever the commit message
+says, because commit messages cannot be rewritten and a reader will search for
+the one they saw.
+
 Newest first. A bug leaves this list only after the original repro has been
 re-run and confirmed fixed, not when MASON says it's fixed.
 
@@ -38,6 +44,60 @@ should fail them, and the pre-repair forms proven blind to every one.
 
 **Sweep**: 49 files under `tests/`, scanning for C0 controls, DEL, zero-width
 and bidi characters. `format.test.ts` was the only carrier. Now clean.
+
+---
+
+## BUG-017 — the widget never parsed links: the load-bearing Zillow URL rendered as literal text
+
+- **Status**: CLOSED — fixed by MASON at `c8f29fe`, both markdown forms,
+  security-bounded to http(s).
+- **Severity**: major. §14.9 makes the per-comp listing link LOAD-BEARING —
+  the client waived style/condition/quality matching in writing and named this
+  link as the member's substitute for evaluating them. A link that renders as
+  raw text is that substitute withheld.
+- **Found**: by the operator, in the product.
+
+**NUMBERING — read this before searching.** Commit `c8f29fe` and mailbox `0049`
+label this **BUG-015**. That number belongs to the defaults-disclosure gap
+(A15, instruction-only, ~2 runs in 4). MASON's numbering ran concurrently with
+mine and collided; the register is canonical and his yields, so this is
+BUG-017. The commit message cannot be rewritten, so both numbers are recorded
+here and either search lands on this entry.
+
+Searchable phrasings for future readers: *widget rendered markdown link as
+plain text*, *comps listing URL not clickable*, *`[text](url)` shown literally
+in chat*.
+
+---
+
+## BUG-016 — a boot migration check that reported SUCCESS for tables that never existed
+
+- **Status**: CLOSED — fixed by MASON at `085182b`: positive-evidence GET
+  probes plus per-COLUMN probes.
+- **Severity**: blocker. Production ran without three migrations while the
+  probe printed "exists" on every boot.
+- **Found**: by the operator.
+
+Number confirmed as MASON already used it — `085182b` and mailbox `0050` both
+say BUG-016, so the identifier is already in git history and needs no
+correction. Recorded here to make it findable rather than to renumber it.
+
+**The mechanism, in the words someone will actually search for.** The probe
+used a `head: true` count query. PostgREST answers that with headers only, and
+the client swallowed the error body — so a query against a table that does not
+exist returned no rows AND no error, which the probe read as "present". **A
+migration check that reported success on a missing table.** It could not fail:
+there was no input for which it printed absent.
+
+This is the *assertion-reach* family the TEST_PLAN appendix describes, in
+production code rather than in a test — a check whose predicate could not
+discriminate, passing for every input including the broken one. Same shape as
+FINDING-006's `.not.toMatch` against a corrupted regex, and the same tell: ask
+what input would make it report failure, and find there isn't one.
+
+Searchable phrasings: *migrate probe says table exists when it does not*,
+*head:true swallows PostgREST error*, *boot check passes for missing table*,
+*migrations silently skipped in production*.
 
 ---
 
