@@ -42,8 +42,14 @@ export interface PropertyDataProvider {
    * stubs) remain conformant — the mismatch member is optional behaviour.
    */
   lookupSubject(rawAddress: string): Promise<SubjectProperty | SubjectResolutionMismatch | null>;
-  /** Sold comps around the subject. May include garbage; the hard filters own rejection. */
-  fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]>;
+  /**
+   * Sold comps around the subject. May include garbage; the hard filters
+   * own rejection. `windowMonths` (§14.17) pushes the recency window
+   * SERVER-SIDE — the window is the SERVICE's policy, passed at the seam
+   * that spends money, so a test can assert what was asked for. Omitted ⇒
+   * unwindowed (the pre-§14.17 behaviour, kept for back-compat of fakes).
+   */
+  fetchSoldComps(subject: SubjectProperty, radiusMi: number, windowMonths?: number): Promise<RawComp[]>;
   /**
    * ONE batched detail run for the FINAL kept comps (§14.14). OPTIONAL:
    * providers/fakes without it degrade to comps-without-detail — enrichment

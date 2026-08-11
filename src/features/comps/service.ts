@@ -21,6 +21,7 @@ import {
   CENSUS_TIMEOUT_MS,
   DETAIL_CACHE_TTL_DAYS,
   DETAIL_MIN_REMAINING_MS,
+  MAX_COMP_AGE_MONTHS,
   MIN_COMPS_TO_COMPUTE,
   NEIGHBORHOOD_MIN_REMAINING_MS,
   NEIGHBORHOOD_RADIUS_MI,
@@ -302,7 +303,13 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     // Fetching per-tier would triple the bill for thin markets — the exact
     // case where money is being wasted on a likely failure.
     comps = await withRetry(() =>
-      deps.provider.fetchSoldComps(subject as SubjectProperty, RADIUS_TIERS_MI[RADIUS_TIERS_MI.length - 1]),
+      // §14.17: widest radius AND the full recency window, both explicit at
+      // the seam that spends money — one fetch serves every rung client-side.
+      deps.provider.fetchSoldComps(
+        subject as SubjectProperty,
+        RADIUS_TIERS_MI[RADIUS_TIERS_MI.length - 1],
+        MAX_COMP_AGE_MONTHS,
+      ),
     );
   } catch (err) {
     if (err instanceof ProviderTimeoutError) return failure('PROVIDER_TIMEOUT');

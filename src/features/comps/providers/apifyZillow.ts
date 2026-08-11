@@ -342,12 +342,13 @@ export class ApifyZillowProvider implements PropertyDataProvider {
     return null; // INVALID / NO_STREET / NO_COORDS -> a genuine not-found
   }
 
-  async fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]> {
-    // §14.17: the 12-month window rides SERVER-SIDE (doz), same as the
+  async fetchSoldComps(subject: SubjectProperty, radiusMi: number, windowMonths?: number): Promise<RawComp[]> {
+    // §14.17: the recency window rides SERVER-SIDE (doz), same as the
     // aggregate fetch — without it the results cap fills with the newest
-    // sales and the recency ladder walks an inch-deep pool.
+    // sales and the recency ladder walks an inch-deep pool. The window
+    // arrives from the SERVICE (its policy, asserted at this seam).
     const items = await this.runActor(SEARCH_ACTOR, 'sold comps search', {
-      searchUrls: [{ url: buildSoldSearchUrl(subject.lat, subject.lng, radiusMi, MAX_COMP_AGE_MONTHS) }],
+      searchUrls: [{ url: buildSoldSearchUrl(subject.lat, subject.lng, radiusMi, windowMonths) }],
       extractionMethod: 'MAP_MARKERS',
       resultsLimit: SEARCH_RESULTS_LIMIT,
     });
