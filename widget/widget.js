@@ -213,6 +213,11 @@
     /* Session ARV pre-fill note — amber-tinted so it reads as the system
        having done work for you, with the bound address always visible. */
     '.jb-prefill-note{margin-top:5px;font-size:12px;line-height:1.45;color:var(--jb-accent);opacity:0.92;}',
+    // Only-a-link lines render as buttons (§14.18) — same anchor semantics,
+    // button presentation. Colors ride the existing accent variable.
+    '.jb-btnrow{margin:6px 0 4px;}',
+    '.jb-btn-link{display:inline-block;padding:6px 14px;border-radius:8px;background:var(--jb-accent);color:#fff !important;text-decoration:none;font-size:12.5px;font-weight:600;line-height:1.4;}',
+    '.jb-btn-link:hover{opacity:0.88;}',
     /* Disabled controls during a run: readable, obviously inert, not greyed to
        the point the member thinks the card broke. */
     '.jb-calc[data-busy="true"] .jb-control{opacity:0.55;cursor:default;}',
@@ -399,6 +404,24 @@
           listOpen = true;
         }
         html += '<li>' + inlineMarkdown(bullet[1]) + '</li>';
+        continue;
+      }
+
+      // A line that is ONLY a link renders as a BUTTON (general rule, no
+      // comps coupling). The http(s) restriction gates the button exactly as
+      // it gates the inline anchor — and it matters MORE here: a button is a
+      // more inviting target, so a model-authored javascript: URL must fail
+      // this match and fall through to inlineMarkdown, whose link regexes
+      // also refuse it — it renders as inert literal text, never a control.
+      var onlyMd = line.match(/^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)$/);
+      var onlyBare = !onlyMd && /^https?:\/\/[^\s<>()]+$/.test(line) ? line : null;
+      if (onlyMd || onlyBare) {
+        closeList();
+        var btnHref = onlyMd ? onlyMd[2] : onlyBare;
+        var btnText = onlyMd ? onlyMd[1] : onlyBare;
+        html +=
+          '<p class="jb-btnrow"><a class="jb-btn-link" href="' + btnHref +
+          '" target="_blank" rel="noopener noreferrer">' + btnText + '</a></p>';
         continue;
       }
 

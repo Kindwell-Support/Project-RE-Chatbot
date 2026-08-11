@@ -114,39 +114,53 @@ const num = (v: number | null | undefined, suffix = ''): string =>
  */
 const year = (v: number | null | undefined): string => (v === null || v === undefined ? NA : String(v));
 
-function compLine(s: ScoredComp): string {
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * §14.18 goal 4: dates read as dates — "2026-08-05" renders "Aug 5, 2026",
+ * everywhere member-visible. Formatted from the CALENDAR STRING directly,
+ * never through Date() — re-parsing an ISO date shifts it across timezones,
+ * which is precisely BUG-006's mechanism. Anything unparsable is a missing
+ * value and renders the §14.5 marker.
+ */
+const humanDate = (iso: string | null | undefined): string => {
+  const m = iso ? /^(\d{4})-(\d{2})-(\d{2})/.exec(iso) : null;
+  if (!m) return NA;
+  const month = MONTHS[Number(m[2]) - 1];
+  return month ? `${month} ${Number(m[3])}, ${m[1]}` : NA;
+};
+
+/**
+ * One comp entry, §14.18's pinned shape: numbered bold address header (goal
+ * 5 — "best match first" VISIBLE), three value-first fact lines with the
+ * member's top questions on line one (goal 1: sold price · date · distance),
+ * then the link on its OWN line (the widget's only-a-link rule renders it
+ * as a button). Blank-line separation between entries is the caller's (goal
+ * 2).
+ *
+ * §14.5 holds in the value-first layout: a null renders the marker IN
+ * PLACE with its static label adjacent ("Built —", "— bd / — ba",
+ * "—/sqft") — never omitted, and the em dash appears nowhere else. The
+ * link is LOAD-BEARING (§14.9): unbuildable renders the literal text
+ * "link unavailable", never an empty or dead control.
+ * architecturalStyle / propertyCondition remain CAPTURED but NOT rendered
+ * (operator directive — display needs its own client ruling).
+ */
+function compEntry(s: ScoredComp, index: number): string {
   const c = s.comp;
-  const soldDate = c.soldDate ? c.soldDate.slice(0, 10) : NA;
   const price = c.soldPrice === null ? NA : USD.format(c.soldPrice);
-  const ppsf = c.soldPrice !== null && (c.livingArea ?? 0) > 0 ? `${USD.format(s.pricePerSqft)}/sqft` : NA;
+  const ppsf =
+    c.soldPrice !== null && (c.livingArea ?? 0) > 0 ? `${USD.format(s.pricePerSqft)}/sqft` : `${NA}/sqft`;
   const beds = c.beds === null ? NA : String(c.beds);
   const baths = c.baths === null ? NA : String(c.baths);
-  // The link is LOAD-BEARING (CONTRACT §14.9): the client waived
-  // style/condition/quality matching and named this as the member's substitute
-  // for judging them. Its absence is a real degradation, so it is stated, not
-  // dropped.
-  const link = c.detailUrl ? c.detailUrl : 'link unavailable';
-  // Detail enrichment (§14.14): label-first so a null renders as an explicit
-  // "year built —", never a bare dash with no referent. A comp the detail
-  // batch missed renders all three as em-dashes — same §14.5 rule as every
-  // other column. architecturalStyle / propertyCondition are CAPTURED but
-  // deliberately NOT rendered: display needs its own client ruling (operator
-  // directive) — do not add them here without one.
   const d = s.detail;
-  const detailLine =
-    `  year built ${year(d?.yearBuilt)} · days on market ${num(d?.daysOnMarket)} · ` +
-    `parking spaces ${num(d?.parkingSpaces)}`;
-  // No em dash as punctuation anywhere in the success block: "—" is the §14.5
-  // NULL MARKER, and a marker that doubles as a separator stops being
-  // explicit — a member scanning a row could not tell "missing data" from
-  // typography. The interpunct separates, like the rest of the row; the em
-  // dash means one thing.
+  const link = c.detailUrl ? `[View property](${c.detailUrl})` : 'link unavailable';
   return (
-    `- **${c.address}** · sold ${price} on ${soldDate}\n` +
-    `  ${num(c.livingArea, ' sqft')} · ${ppsf} · ${beds} bd / ${baths} ba · ` +
-    `lot ${num(c.lotSize, ' sqft')} · ${s.distanceMi.toFixed(2)} mi away\n` +
-    detailLine + '\n' +
-    `  ${link}`
+    `**${index + 1}. ${c.address}**\n` +
+    `Sold ${price} · ${humanDate(c.soldDate)} · ${s.distanceMi.toFixed(2)} mi away\n` +
+    `${num(c.livingArea)} sqft · ${ppsf} · ${beds} bd / ${baths} ba · ${num(c.lotSize)} sqft lot\n` +
+    `Built ${year(d?.yearBuilt)} · ${num(d?.daysOnMarket)} days on market · ${num(d?.parkingSpaces)} parking spaces\n` +
+    link
   );
 }
 
@@ -181,7 +195,7 @@ function renderNeighborhood(
   const miles = `within ${n.radiusMi} mile${n.radiusMi === 1 ? '' : 's'}`;
   const window = n.windowTruncated
     ? n.earliestSaleDate
-      ? `sales since ${n.earliestSaleDate} ${miles}; older sales exceeded the data limit`
+      ? `sales since ${humanDate(n.earliestSaleDate)} ${miles}; older sales exceeded the data limit`
       : `recent sales ${miles}; the full history exceeded the data limit`
     : `past ${n.windowMonths} months ${miles}`;
   return (
@@ -230,7 +244,7 @@ function renderSuccess(result: CompsResult): string {
   // covered span instead, same honesty rule as the aggregates block.
   const windowClause = result.searchTruncated
     ? result.searchEarliestSoldDate
-      ? `sales since ${result.searchEarliestSoldDate} (older sales exceeded the data limit)`
+      ? `sales since ${humanDate(result.searchEarliestSoldDate)} (older sales exceeded the data limit)`
       : `newest sales only (older sales exceeded the data limit)`
     : `sold in the last ${recencyTierMonths} months`;
   const header = [
@@ -241,7 +255,9 @@ function renderSuccess(result: CompsResult): string {
       `(${rejected.length} candidate(s) rejected).`,
   ].join('\n');
 
-  const table = [`**${comps.length} sold comps** (best match first):`, ...comps.map(compLine)].join('\n');
+  // §14.18 goal 2: one blank line between comp entries (and after the list
+  // intro) — the numbered headers plus the gap are the visual separation.
+  const table = [`**${comps.length} sold comps** (best match first):`, ...comps.map(compEntry)].join('\n\n');
 
   /**
    * THE emit order (CONTRACT §14.8, extended by §14.10 and §14.16.1):
