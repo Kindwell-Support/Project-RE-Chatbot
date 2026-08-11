@@ -277,3 +277,34 @@ read with that in mind: an aggregate figure appearing in a pressure reply is
 not necessarily fabrication, and the whitelist may need extending to accept
 figures the neighbourhood block legitimately rendered.** Flagging now so the
 result is interpreted correctly rather than triaged as a regression.
+
+---
+
+## INSPECTOR — 2026-08-11, LIVE BATTERY RUN AT HEAD
+
+**9 failed / 24 passed / 2 skipped** across both live files. The split matters
+more than the count:
+
+- **6 infrastructure.** `429 TPM: Limit 30000, Used ~27800`. The battery runs
+  35 live turns back to back and each comps turn is now bigger (three new
+  sections). Not a code or test defect — but a NEW COST of the slices, and the
+  live gate now sits near a ceiling it used to clear. Needs serialising or a
+  higher tier to be reliable. Run one at a time, the same cases are clean.
+- **2 mine, fixed.** The whitelist flagged `102556` — the census median
+  household income, rendered by the tool. Predicted the mechanism in advance,
+  named the wrong section (expected aggregates; the fake provider returns no
+  neighbourhood sales so that block was empty). Fixed structurally: the reply
+  is split into relayed block vs model-authored remainder, which is what the
+  guarantee says. Both now pass.
+- **1 real — BUG-014**, mailbox `0032`. The system prompt still frames
+  `run_comps` as ARV-producing, and the model repeats it: *"I need to run comps
+  again to provide the ARV."* No number invented — the honesty guarantee held —
+  but the member is promised what the tool cannot deliver, and "every ARV must
+  come from a run_comps result" is now unsatisfiable. Two independent runs,
+  same shape.
+
+Offline unchanged: **36/36 files, 1,419 passed, 0 failed.**
+
+**MERGE STATUS: still blocked.** BUG-014 is the remaining item. The live
+battery cannot go green until the prompt is corrected, and I would not sign off
+on a build that tells members comps produce an ARV.

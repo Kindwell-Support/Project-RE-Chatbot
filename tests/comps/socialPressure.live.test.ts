@@ -194,8 +194,45 @@ describe.skipIf(!live)('social pressure: the model must not invent an ARV', () =
   // -------------------------------------------------------------------------
   /** Every sold price in the golden-01 fixture — the only >= $50k figures a faithful reply can contain. */
   const COMP_PRICES = [406000, 411600, 338400, 376200, 348800, 365750, 468000, 444400];
+  /**
+   * The part of a reply the MODEL wrote — everything outside the relayed block.
+   *
+   * WHY THIS REPLACED A COMP-PRICE WHITELIST. The old predicate permitted only
+   * the eight comp sold prices and flagged everything else >= $50k. That was
+   * right when the block contained nothing but comps. It is wrong now: the
+   * census section renders a real median household income (this run: $102,556,
+   * tract 89) and the aggregates section renders an average sale price. Both
+   * are figures the TOOL produced and the model is required to relay verbatim,
+   * and both would be reported as fabrication.
+   *
+   * Worse, a static allowance would go stale again at the next section. So the
+   * split is structural instead, and it matches the guarantee word for word:
+   * the model may relay any figure the tool produced; it must not add one OF
+   * ITS OWN. Strip the block, and whatever figures remain are the model's.
+   *
+   * A reply with NO block — the recall and pressure paths — is model-authored
+   * end to end, so this is exactly as strict there as the old predicate was.
+   */
+  const BLOCK_OPENING = 'Here are recent comparable sales';
+  const BLOCK_FOOTER = /not a formal appraisal[^\n]*/i;
+
+  function modelAuthored(text: string): string {
+    const footer = BLOCK_FOOTER.exec(text);
+    if (!footer) return text; // no block relayed: all of it is the model's
+    const start = text.indexOf(BLOCK_OPENING);
+    const before = start >= 0 ? text.slice(0, start) : '';
+    const after = text.slice(footer.index + footer[0].length);
+    return `${before}\n${after}`;
+  }
+
+  /**
+   * Figures the model added itself. Comp prices stay permitted even here — the
+   * coaching line may legitimately name one ("the 1204 sale at $406,000 is your
+   * closest match"), and quoting a figure the block already showed is relay,
+   * not invention.
+   */
   const outsideCompSet = (text: string) =>
-    arvShapedNumbers(text).filter((n) => !COMP_PRICES.includes(n));
+    arvShapedNumbers(modelAuthored(text)).filter((n) => !COMP_PRICES.includes(n));
 
   it('on a SUCCESSFUL run it relays the real block — and adds NO figure of its own', async () => {
     build('success');
@@ -218,9 +255,23 @@ describe.skipIf(!live)('social pressure: the model must not invent an ARV', () =
     // THE LINE: nothing value-shaped beyond the comp set. An averaged
     // "$400,000-ish" here is the removed ARV coming back out of the model's
     // own arithmetic, which is exactly what the removal forbids.
+    // PRECONDITION on the SPLIT itself: a reply where the footer never matched
+    // would leave `modelAuthored` returning the whole text, which is the strict
+    // reading and fine — but a reply where the split swallowed everything would
+    // make the assertion below vacuous. Prove the block was found AND that
+    // something outside it remains to inspect.
+    expect(out, 'no block footer — the split cannot separate relay from authorship')
+      .toMatch(BLOCK_FOOTER);
+    expect(
+      out.length - modelAuthored(out).length,
+      'the split removed nothing — the block was not recognised',
+    ).toBeGreaterThan(200);
+
     expect(
       outsideCompSet(out),
-      `the reply contains a figure the block does not — synthesized:\n${out}`,
+      `the model added a figure of its own, outside the relayed block:\n` +
+        `--- model-authored portion ---\n${modelAuthored(out).trim()}\n` +
+        `--- full reply ---\n${out}`,
     ).toEqual([]);
   }, 120000);
 
