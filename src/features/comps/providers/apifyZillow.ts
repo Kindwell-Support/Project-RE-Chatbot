@@ -79,11 +79,17 @@ function asFiniteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-/** Lot arrives as sqft or acres depending on actor and row; normalize to sqft. */
+/**
+ * Lot arrives as sqft or acres depending on actor and row; normalize to
+ * WHOLE sqft. Rounding is BUG-018's class (BUG-012's sibling): an acreage
+ * conversion rendered "97,199.784 sqft" to a member, and even sqft-native
+ * values carry float artifacts (recorded: 15682.000000000002). A lot size
+ * with three decimals is not a measurement anyone took.
+ */
 function mapLotSize(value: unknown, unit: unknown): number | null {
   const n = asFiniteNumber(value);
   if (n === null) return null;
-  return String(unit ?? '').toLowerCase().startsWith('acre') ? n * SQFT_PER_ACRE : n;
+  return Math.round(String(unit ?? '').toLowerCase().startsWith('acre') ? n * SQFT_PER_ACRE : n);
 }
 
 /**
@@ -161,8 +167,12 @@ export function mapSubjectItemWithReason(
     beds: asFiniteNumber(item.bedrooms),
     baths: asFiniteNumber(item.bathrooms),
     livingArea: asFiniteNumber(item.livingArea),
-    // Detail payload carries lotSize already in sqft when known; fall back to value+units.
-    lotSize: asFiniteNumber(item.lotSize) ?? mapLotSize(item.lotAreaValue, item.lotAreaUnits),
+    // Detail payload carries lotSize already in sqft when known; fall back
+    // to value+units. Rounded either way (BUG-018).
+    lotSize:
+      asFiniteNumber(item.lotSize) !== null
+        ? Math.round(asFiniteNumber(item.lotSize) as number)
+        : mapLotSize(item.lotAreaValue, item.lotAreaUnits),
     yearBuilt: asFiniteNumber(item.yearBuilt),
     propertyType: mapHomeType(item.homeType),
     lastSoldPrice: asFiniteNumber(item.lastSoldPrice),

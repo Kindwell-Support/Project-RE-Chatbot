@@ -167,7 +167,11 @@ function compEntry(s: ScoredComp, index: number): string {
   return (
     `**${index + 1}. ${c.address}**\n` +
     `Sold ${price} · ${humanDate(c.soldDate)} · ${s.distanceMi.toFixed(2)} mi away\n` +
-    `${num(c.livingArea)} sqft · ${ppsf} · ${beds} bd / ${baths} ba · ${num(c.lotSize)} sqft lot\n` +
+    // Lot rounds at RENDER too (BUG-018): cached rows written before the
+    // mapper fix carry fractional lots for up to a 14-day TTL, and the
+    // member must never see them.
+    `${num(c.livingArea)} sqft · ${ppsf} · ${beds} bd / ${baths} ba · ` +
+    `${num(c.lotSize === null ? null : Math.round(c.lotSize))} sqft lot\n` +
     `Built ${year(d?.yearBuilt)} · ${counted(d?.daysOnMarket, 'day on market', 'days on market')} · ` +
     `${counted(d?.parkingSpaces, 'parking space', 'parking spaces')}\n` +
     link
