@@ -717,6 +717,91 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
   // A rule verified on one state is not verified. This sweeps the product of
   // the optional sections instead.
   // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('the two $/sqft figures never float free of their populations', () => {
+    // THE OBSERVATION, from the operator: the neighborhood average reads
+    // $303/sqft while every kept comp is $268-417. Both figures are honest and
+    // neither is a bug. But they sit inches apart on one screen, and a member
+    // will compare them.
+    //
+    // WHAT THE RELATIONSHIP ACTUALLY IS, since "different populations" is not
+    // quite right and the imprecision is what makes the comparison tempting.
+    // aggregates.ts averages the deduped in-circle set and excludes NOTHING —
+    // the displayed comps are not held out. So when the ladder answers inside
+    // a mile (Sierra Vista: five comps at 0.14-0.97 mi) every kept comp is one
+    // of the sales in the neighborhood average. They are not rival estimates
+    // of the same quantity; the neighborhood figure is the UNFILTERED pool
+    // average and the comps are that pool after similarity filtering. A comp
+    // range straddling the neighborhood mean is the expected shape, not a
+    // discrepancy. When the ladder has to reach past a mile the sets only
+    // partially overlap, which is a third relationship again.
+    //
+    // WHY THERE IS A TEST FOR A NON-BUG. What makes it safe is entirely the
+    // labelling: $303 is legible as a 233-sale figure only because the sale
+    // count sits on its own line and the header carries the radius and window.
+    // Nothing pinned that. The DOM figure in the same section got an explicit
+    // "not a neighborhood figure" disclaimer because it was load-bearing; the
+    // $/sqft on the line above had only its adjacency. This block is BUG-008's
+    // rule one surface over — a figure and its provenance travel together —
+    // and the reflow it guards against has already happened once to this
+    // template, which is why the copy test next door is byte-exact.
+    const NB = {
+      radiusMi: 1, windowMonths: 12, windowTruncated: false, totalSales: 233,
+      avgSoldPrice: 432_100, avgPricePerSqft: 303, avgBeds: 3.2, avgBaths: 2.1,
+      earliestSaleDate: '2025-08-11', latestSaleDate: '2026-08-05',
+      avgDomOfDisplayedComps: 26, domCompCount: 5,
+    };
+    const render = () =>
+      String(renderCompsForChat({ ...(resultFor(golden01) as object), neighborhood: NB } as never));
+
+    /** The one line carrying the neighborhood $/sqft, so a sibling cannot satisfy these. */
+    const ppsfLine = (text: string) =>
+      text.split('\n').find((l) => l.includes('303')) ?? '';
+
+    it('the neighborhood $/sqft shares its LINE with the sale count it averages', () => {
+      const line = ppsfLine(render());
+      expect(line, 'the $303/sqft figure did not render at all').not.toBe('');
+      expect(
+        line,
+        'the neighborhood $/sqft was separated from its sale count. On its own ' +
+          'it is a bare rate sitting under a list of comps, and the only thing ' +
+          'telling a member it describes 233 sales rather than those 5 is gone.',
+      ).toMatch(/233 sales/);
+    });
+
+    it('and the section header still scopes it to a radius and a window', () => {
+      const text = render();
+      const header = text.split('\n').find((l) => l.includes('Neighborhood sales')) ?? '';
+      expect(header, 'the neighborhood header vanished').not.toBe('');
+      expect(header, 'the radius left the header — $/sqft over an unstated area')
+        .toMatch(/within 1 mile/);
+      expect(header, 'the window left the header — a rate over an unstated period')
+        .toMatch(/past 12 months/);
+    });
+
+    it('the per-comp rates stay ATTACHED to their comps, not pooled into a range', () => {
+      // The other half of the comparison. Each comp's $/sqft belongs to that
+      // comp's address; the moment the block renders them as a summary range
+      // it has manufactured a second aggregate to set against the first, and
+      // the member is comparing two averages neither of which is labelled.
+      const text = render();
+      const rows = text.split('\n').filter((l) => /\/sqft/.test(l) && !l.includes('233 sales'));
+      expect(rows.length, 'no per-comp $/sqft rows rendered').toBeGreaterThanOrEqual(3);
+      for (const row of rows) {
+        expect(
+          /\$[\d,]+\/sqft/.test(row),
+          `a per-comp rate row carries no concrete rate: ${row}`,
+        ).toBe(true);
+      }
+      expect(
+        /\$[\d,]+\s*[-\u2013]\s*\$[\d,]+\/sqft/.test(text),
+        'the block rendered a $/sqft RANGE across the comps. That is a second ' +
+          'aggregate, unlabelled, printed beside the neighborhood average — ' +
+          'which is precisely the comparison the current copy leaves to the ' +
+          'member rather than inviting.',
+      ).toBe(false);
+    });
+  });
+
   describe.skipIf(pendingSlice(...MODS))('the em dash is the null marker in EVERY render state', () => {
     const DETAIL = {
       daysOnMarket: 25, parkingSpaces: 2, yearBuilt: 1990,
