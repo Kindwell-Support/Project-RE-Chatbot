@@ -123,6 +123,15 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  * which is precisely BUG-006's mechanism. Anything unparsable is a missing
  * value and renders the §14.5 marker.
  */
+/**
+ * Count + unit with real pluralization — "1 parking space", "2 parking
+ * spaces" (operator-caught: the block the model re-types showed "1 parking
+ * spaces" on every single-space comp). Null keeps the PLURAL label next to
+ * the §14.5 marker ("— parking spaces"), the established null form.
+ */
+const counted = (v: number | null | undefined, singular: string, plural: string): string =>
+  v === null || v === undefined ? `${NA} ${plural}` : `${v.toLocaleString('en-US')} ${v === 1 ? singular : plural}`;
+
 const humanDate = (iso: string | null | undefined): string => {
   const m = iso ? /^(\d{4})-(\d{2})-(\d{2})/.exec(iso) : null;
   if (!m) return NA;
@@ -159,7 +168,8 @@ function compEntry(s: ScoredComp, index: number): string {
     `**${index + 1}. ${c.address}**\n` +
     `Sold ${price} · ${humanDate(c.soldDate)} · ${s.distanceMi.toFixed(2)} mi away\n` +
     `${num(c.livingArea)} sqft · ${ppsf} · ${beds} bd / ${baths} ba · ${num(c.lotSize)} sqft lot\n` +
-    `Built ${year(d?.yearBuilt)} · ${num(d?.daysOnMarket)} days on market · ${num(d?.parkingSpaces)} parking spaces\n` +
+    `Built ${year(d?.yearBuilt)} · ${counted(d?.daysOnMarket, 'day on market', 'days on market')} · ` +
+    `${counted(d?.parkingSpaces, 'parking space', 'parking spaces')}\n` +
     link
   );
 }
