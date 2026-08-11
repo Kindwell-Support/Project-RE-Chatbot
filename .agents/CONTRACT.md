@@ -850,6 +850,67 @@ anything hard to reproduce exactly is banned. Token cost is real
 growth is ~9s member latency) — the before/after token count of a full
 rendered block is REPORTED with the build.
 
+### 14.19 THE UNION (operator ruling; ALGO_VERSION 5; the LAST slice)
+
+**Ruling + rationale, on record:** the 1-mile `doz=12m` aggregate fetch is
+already paid for, already cached on the same row, and it is an EXHAUSTED
+twelve-month universe within a mile. The comps fetch truncates at 500 and
+loses exactly the near sales the ladder wants most. Unioning the aggregate
+payload into the comps candidate pool recovers them at ZERO additional
+Apify cost. Evidence: the Sierra Vista audit — three real band-passing
+sales displaced below the comps pool's Apr-22 floor; with them, the ladder
+stops at 1 mile with 5 comps instead of reaching 2.9 miles.
+
+**Build rules (each constraint operator-pinned):**
+
+1. **Union BEFORE the hard filters** (`unionCandidatePools(primary,
+   secondary)` in filter.ts, called inside `computeFromRaw`):
+   aggregate-sourced sales face EVERY gate identically — no shortcut for
+   coming from a trusted fetch. Same-zpid records collapse at union time
+   (primary/comps-search record wins — same actor, same mapper, so the
+   records are near-identical; deterministic and documented).
+2. **`dedupeSales` runs over the union** — unchanged machinery, riding
+   inside `selectTiers` per rung AND inside `candidateMedianPpsf`. The two
+   payloads overlap heavily BY CONSTRUCTION and the same sale can wear two
+   zpids across them — BUG-010's exact shape at larger scale, and the
+   slice's main risk. The zpid-level collapse in (1) handles identical
+   ids; sale-identity dedupe handles the rest, visibly (DUPLICATE_SALE).
+3. **Field parity**: both payloads come from the SAME search actor through
+   the SAME mapper, so fields match by construction — and it does not
+   matter, because (1) sends every unioned sale through the normal gates:
+   missing sqft/type rejects exactly as it always did. **Detail enrichment
+   joins unioned comps identically** (the join key is the comp's address,
+   which mapCompItems always sets).
+4. **Truncation labelling — the place this could quietly start lying,
+   pinned precisely.** New field `nearRingCompleteMi: number | null` =
+   `NEIGHBORHOOD_RADIUS_MI` when the aggregate payload is present AND
+   itself un-truncated; else null. The header's window clause:
+   - comps fetch not truncated ⇒ `sold in the last {W} months` (as before);
+   - truncated BUT the SERVED rung's radius ≤ nearRingCompleteMi ⇒ the
+     served set is drawn from a COMPLETE universe: `sold in the last {W}
+     months` — honest, because the claim attaches to the rung served;
+   - truncated, served rung beyond the complete ring ⇒ mixed truth:
+     `sold in the last {W} months within 1 mile; beyond that, sales since
+     {comps-fetch floor} (older sales exceeded the data limit)`;
+   - truncated, no complete ring ⇒ the §14.17 clause unchanged.
+   `searchEarliestSoldDate` stays the COMPS-fetch floor (the union's
+   1-mile portion legitimately extends earlier; the floor describes the
+   capped fetch the clause is about).
+5. **ALGO_VERSION 4 → 5; `RAW_REFETCH_BELOW_VERSION` STAYS 4.** Pre-union
+   v4 rows are stale in a way recompute-from-raw CAN fix — both raw
+   payloads are on the row and the raw is SOUND (unlike the 40-cap case).
+   v4 rows recompute free (zero provider calls), stamping v5; ≤v3 rows
+   still refetch. Confirmed by test, per the ruling.
+6. **Acquisition order moves**: the neighbourhood raw is acquired BEFORE
+   `computeFromRaw` on every path (live fetch with the existing
+   ceiling/budget rules; cache-hit from the row), so the live path writes
+   ONE cache entry carrying both raws and enrichment computes aggregates
+   from the in-hand payload without re-fetching. A neighbourhood-fetch
+   failure remains NON-FATAL twice over: the pool degrades to comps-only
+   AND the aggregates section says unavailable. (Rare residual, accepted:
+   a v5 row whose hood fetch failed at compute time serves comps-only
+   until its 14-day TTL turns it over.)
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live
