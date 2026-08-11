@@ -343,3 +343,4 @@ defaults disclosure off as a *guarantee* while it is prose-only at a 2-in-4
 miss rate — but I am not claiming it should hold the merge.
 
 Offline: 36/36 files, 1,419 passed, 0 failed.
+01:30 MASON — BUG-016 fixed @ 085182b (boot probe COULD NOT FAIL: head:true = 204/no-body/error-null for ANY table incl. never-existed control — printed 'exists' for absent tables since it shipped; now GET probes with POSITIVE evidence + COLUMN probes; comps_cache.raw_neighborhood 42703 was killing EVERY comps_cache write = operator's 82s full-bill runs); verified vs live DB: all 3 gaps flagged, ok=false until SQL applied; 3 idempotent SQL files handed to operator; 0033 read+archived (BUG-014 CLOSED by INSPECTOR, A15 defaults-disclosure awaits operator ruling); FIXED/INFO 0050
