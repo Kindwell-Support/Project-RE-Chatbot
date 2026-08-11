@@ -11,13 +11,41 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * (cache misses -> live runs; state writes warn) rather than taking the whole
  * mentor down with it.
  */
+/**
+ * BUG-016 — the old probe here used `select('*', { head: true, count:
+ * 'exact' })`, and a HEAD request CANNOT report a missing table: PostgREST
+ * has no response body to carry the error, the status comes back 204, and
+ * supabase-js surfaces `error: null`. Measured against the live DB: a
+ * table that has never existed probes identically to a real one (204/null
+ * vs 206/null). The probe therefore printed "table exists" for every name
+ * it was ever asked about, and reported success while three migrations
+ * were missing in production — a check that cannot fail is worse than no
+ * check.
+ *
+ * The probe is now a GET (`select(...).limit(0)`), which genuinely
+ * discriminates (missing table ⇒ PGRST205/404; missing column ⇒ 42703),
+ * and it demands POSITIVE evidence: only an errorless response with an
+ * array body counts as "exists". It also probes the COLUMNS that later
+ * migrations added to existing tables — a present table with a missing
+ * column is the worst failure mode of all, because writes naming that
+ * column fail and take the WHOLE row's caching down with them
+ * (comps_cache.raw_neighborhood did exactly this: every comps_cache upsert
+ * failed, so nothing cached and every lookup billed Apify in full).
+ */
 export async function ensureCompsTables(supabase: SupabaseClient): Promise<boolean> {
   let ok = true;
-  const tables: ReadonlyArray<{ table: string; sqlFile: string; degradation: string }> = [
+  const checks: ReadonlyArray<{ table: string; column?: string; sqlFile: string; degradation: string }> = [
     {
       table: 'comps_cache',
       sqlFile: 'sql/add_comps_tables.sql',
       degradation: 'no comps caching (every run bills Apify)',
+    },
+    {
+      table: 'comps_cache',
+      column: 'raw_neighborhood',
+      sqlFile: 'sql/add_comps_cache_neighborhood.sql',
+      degradation:
+        'EVERY comps_cache write fails (the upsert names this column), so NOTHING caches and every lookup bills Apify in full',
     },
     {
       table: 'session_state',
@@ -35,17 +63,22 @@ export async function ensureCompsTables(supabase: SupabaseClient): Promise<boole
       degradation: 'no demographics caching (every lookup re-queries the Census API)',
     },
   ];
-  for (const { table, sqlFile, degradation } of tables) {
-    const { error } = await supabase.from(table).select('*', { head: true, count: 'exact' }).limit(0);
-    if (error) {
-      ok = false;
-      console.warn(
-        `[migrate] ${table} table not found. Run ${sqlFile} in the Supabase SQL editor. ` +
-          `Comps will work but degrade: ${degradation}.`,
-      );
-    } else {
-      console.log(`[migrate] ${table} table exists`);
+  for (const { table, column, sqlFile, degradation } of checks) {
+    const target = column ? `${table}.${column}` : table;
+    const { data, error } = await supabase.from(table).select(column ?? '*').limit(0);
+    // Positive evidence only: no error AND an array body. Anything else —
+    // including shapes we did not anticipate — reports as NOT VERIFIED, so
+    // this check can never silently pass again.
+    if (!error && Array.isArray(data)) {
+      console.log(`[migrate] ${target} verified`);
+      continue;
     }
+    ok = false;
+    const detail = error ? `${error.code ?? ''} ${error.message ?? ''}`.trim() : `unexpected response shape`;
+    console.warn(
+      `[migrate] ${target} NOT VERIFIED (${detail}). Run ${sqlFile} in the Supabase SQL editor. ` +
+        `Until then: ${degradation}.`,
+    );
   }
   return ok;
 }
