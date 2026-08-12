@@ -24,9 +24,23 @@ import {
 } from '../../src/features/comps/service.js';
 import { makeProviderSpy } from '../helpers/compsFakes.js';
 import { normalizeAddress, cacheKey } from '../../src/features/comps/normalize.js';
-import { ALGO_VERSION, CACHE_TTL_DAYS } from '../../src/features/comps/config.js';
+import {
+  ALGO_VERSION,
+  CACHE_TTL_DAYS,
+  RAW_REFETCH_BELOW_VERSION,
+} from '../../src/features/comps/config.js';
 import { golden01 } from '../fixtures/golden/index.js';
 
+/**
+ * NOTE on `noDetailSupport`. These cases are about the COMPS cache and count
+ * provider calls to prove it. Detail enrichment (§14.14) adds a THIRD actor
+ * run per lookup, and with no detail cache wired it re-runs even on a comps
+ * hit — correct behaviour, since the comps cache deliberately stores the
+ * detail-FREE result. Rather than let that noise inflate every count here,
+ * these spies present as a provider that predates the slice. The detail
+ * cache's own cost guarantees are asserted in detailEnrichment.test.ts,
+ * including that a warm detail cache means ZERO detail runs.
+ */
 const MODS = ['service', 'cache/compsCache'] as const;
 
 const NOW = new Date('2026-08-05T12:00:00.000Z');
@@ -85,7 +99,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('miss, then hit', () => {
     it('the first call hits the provider and the second does not', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache, counts } = makeCache();
 
       const first = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
@@ -99,23 +113,53 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       expect(counts.set, 'nothing was written to the cache').toBeGreaterThan(0);
     });
 
-    it('the cached result carries the same ARV as the live one', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+    it('the cached result is the SAME COMP SET as the live one', async () => {
+      // Re-pointed: there is no ARV to compare any more, so the cache identity
+      // is the comp set and the tier that produced it. That is a stricter test
+      // than the ARV was — two different comp sets can round to the same ARV,
+      // but they cannot have the same zpids, prices and $/sqft.
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       const live = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       const hit = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       expect(live.ok && hit.ok).toBe(true);
       if (live.ok && hit.ok) {
-        expect(hit.arv.arv).toBe(live.arv.arv);
-        expect(hit.arv.arv).toBe(403000); // golden 01, hand-computed
+        // POSITIVE PRECONDITION — two empty comp sets are trivially identical.
+        expect(live.comps.length, 'the live run produced no comps to compare')
+          .toBeGreaterThanOrEqual(3);
+
+        const fingerprint = (r: typeof live) => r.comps.map(
+          (c) => `${c.comp.zpid}|${c.comp.soldPrice}|${c.pricePerSqft.toFixed(6)}|${c.score.toFixed(9)}`,
+        );
+        expect(fingerprint(hit), 'the cache hit returned a different comp set')
+          .toEqual(fingerprint(live));
+        expect(hit.radiusTierMi).toBe(live.radiusTierMi);
+        expect(hit.recencyTierMonths, 'the recency rung did not survive the round trip')
+          .toBe(live.recencyTierMonths);
+        expect(hit.subject.zpid).toBe(live.subject.zpid);
+
         expect(hit.fromCache, 'a cache hit is not flagged fromCache').toBe(true);
         expect(live.fromCache).toBe(false);
       }
     });
 
+    it('a cache hit carries nothing ARV-shaped either', async () => {
+      // The removal has to hold on BOTH sides of the cache. A pre-removal entry
+      // shape that still round-trips an `arv` key would resurrect the number
+      // for every session that hits a warm key.
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache } = makeCache();
+      await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      const hit = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(hit.ok && hit.fromCache, 'precondition: this was not a cache hit').toBe(true);
+      for (const k of ['arv', 'arvLow', 'arvHigh', 'confidence', 'arvConfidence']) {
+        expect(hit, `a cache hit still carries "${k}"`).not.toHaveProperty(k);
+      }
+    });
+
     it('address variants collapse to ONE provider run', async () => {
       // The cost-control payoff of §5.1 normalization, measured in Apify runs.
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       for (const variant of [
         '123 Main St, Seattle WA',
@@ -129,7 +173,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('genuinely different addresses do NOT share a cache entry', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       await runComps('123 Main St N, Seattle WA', { provider: spy.provider as never, cache, now });
       await runComps('123 Main St S, Seattle WA', { provider: spy.provider as never, cache, now });
@@ -140,7 +184,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('expiry', () => {
     it('an expired entry is treated as absent and refetches', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
@@ -157,7 +201,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('an entry inside the TTL is served without touching the provider', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       const billed = spy.callCount;
@@ -177,37 +221,118 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // raw, update result, DO NOT re-hit the provider."
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('ALGO_VERSION recompute', () => {
-    it('recomputes from the stored raw payload with ZERO provider calls', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
-      const { cache, counts } = makeCache({
+    /**
+     * EVERY version in the free-recompute window, not just the floor.
+     *
+     * The window is [RAW_REFETCH_BELOW_VERSION, ALGO_VERSION) and it has been
+     * widening fast — §14.19 took the version to 5, §14.20's tie-breaker to 6,
+     * §14.3's attached-lot amendment to 7, all with the floor held at 4. The
+     * cached corpus therefore contains rows at 4, 5 AND 6 right now, and every
+     * one of them must recompute for free. Pinning only the floor would have
+     * tested the oldest row and none of the ones a bump actually creates.
+     *
+     * Generated from the constants so it extends itself on the next bump
+     * rather than going quietly out of date.
+     */
+    const RECOMPUTE_WINDOW = Array.from(
+      { length: ALGO_VERSION - RAW_REFETCH_BELOW_VERSION },
+      (_, i) => RAW_REFETCH_BELOW_VERSION + i,
+    );
+
+    it.each(RECOMPUTE_WINDOW)(
+      'a STALE-BUT-SOUND row at v%i recomputes from raw with ZERO provider calls',
+      (stampedAt) => {
+      // THE SENTINEL FLIPPED, and it flipped by firing rather than by anyone
+      // remembering. It read: "if the floor and the version diverge, this path
+      // is REACHABLE and needs its assertion back, with a row stamped between
+      // 4 and 4." §14.19 took ALGO_VERSION to 5 and held the floor at 4, so
+      // that window is now exactly one version wide — and the case failed with
+      // its own instructions in the message.
+      //
+      // Verified rather than merely restored, per the operator: the path I
+      // documented as unreachable now runs, so the assertion is on what it
+      // DOES, not on the fact that it exists.
+      expect(ALGO_VERSION, 'the recompute window closed again').toBeGreaterThan(
+        RAW_REFETCH_BELOW_VERSION,
+      );
+      return (async () => {
+        const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+        const { cache, rows } = makeCache({
+          cacheKey: KEY,
+          normalizedAddress: normalizeAddress(ADDRESS),
+          rawSubject: SUBJECT as never,
+          rawComps: COMPS as never,
+          result: null,
+          // Stale by version (< 5, so it recomputes) and sound by regime
+          // (>= 4, so it must NOT refetch). Both true only in this window.
+          algoVersion: stampedAt,
+          provider: 'stub',
+          expiresAt: iso(CACHE_TTL_DAYS),
+        });
+
+        const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+
+        expect(out.ok, 'the recompute produced no result').toBe(true);
+        expect(
+          spy.subjectCalls + spy.compsCalls,
+          'a stale-but-sound row was REFETCHED. Its raw came from the §14.17 ' +
+            'regime and is trustworthy; re-billing it is the cost the floor ' +
+            'exists to avoid, and at scale it is the entire cached corpus.',
+        ).toBe(0);
+
+        // It genuinely recomputed rather than serving the stored (null) result.
+        if (out.ok) {
+          expect(out.comps.length, 'nothing was derived from the raw payload')
+            .toBeGreaterThanOrEqual(3);
+          expect(out.algoVersion, 'the recomputed result was not re-stamped')
+            .toBe(ALGO_VERSION);
+        }
+
+        // ...and the row is re-stamped, so the NEXT serve is a plain hit. A
+        // recompute that forgot to re-stamp would recompute forever — free in
+        // provider calls, but never converging.
+        expect(rows.get(KEY)?.algoVersion, 'the row kept its stale version')
+          .toBe(ALGO_VERSION);
+      })();
+      },
+    );
+
+    it('CONSEQUENCE, stated so it is a decision: the whole corpus refetches once', async () => {
+      // With the floor at the current version, every pre-existing cached row
+      // is below it and refetches on its next serve. One Apify run per cached
+      // address, once. That is the intended price of the fix — the alternative
+      // is serving eleven-day pools labelled as a year — but it is a real
+      // spend and it should be visible in a test rather than discovered on the
+      // bill.
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
         rawSubject: SUBJECT as never,
         rawComps: COMPS as never,
-        // A result computed by an OLDER algorithm — deliberately wrong now.
-        result: { ok: true, arv: { arv: 1 } } as never,
-        algoVersion: ALGO_VERSION - 1,
+        result: null,
+        algoVersion: 1, // below the floor: poisoned 40-cap raw, must refetch
         provider: 'stub',
         expiresAt: iso(CACHE_TTL_DAYS),
       });
 
       const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(out.ok).toBe(true);
+      expect(spy.compsCalls, 'a v1 row did not refetch').toBe(1);
 
+      // ...and ONCE. The refetched row is re-stamped, so the next serve is free.
+      const spy2 = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const again = await runComps(ADDRESS, { provider: spy2.provider as never, cache, now });
+      expect(again.ok).toBe(true);
       expect(
-        spy.callCount,
-        'an ALGO_VERSION bump re-billed Apify — this re-bills the ENTIRE cached corpus',
+        spy2.compsCalls,
+        'the refetched row was not re-stamped — every serve re-bills, forever, ' +
+          'which turns a one-time migration cost into a permanent one',
       ).toBe(0);
-      expect(out.ok, 'the recompute did not produce a result').toBe(true);
-      if (out.ok) {
-        // Recomputed from raw with the CURRENT algorithm, not the stale result.
-        expect(out.arv.arv).toBe(403000);
-        expect(out.algoVersion).toBe(ALGO_VERSION);
-      }
-      expect(counts.set, 'the recomputed result was not written back').toBeGreaterThan(0);
     });
 
     it('the recomputed entry is stamped with the CURRENT algo version', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache, rows } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
@@ -222,7 +347,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       expect(rows.get(KEY)!.algoVersion, 'a stale algoVersion survived the recompute')
         .toBe(ALGO_VERSION);
       // ...otherwise every subsequent call recomputes forever.
-      const spy2 = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy2 = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       await runComps(ADDRESS, { provider: spy2.provider as never, cache, now });
       expect(spy2.callCount).toBe(0);
     });
@@ -230,7 +355,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     it('a stale entry with NO raw payload must refetch rather than serve nothing', async () => {
       // Recompute-from-raw is only possible if raw was stored. An entry from
       // before raw-caching existed has to fall back to a live run.
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache({
         cacheKey: KEY,
         normalizedAddress: normalizeAddress(ADDRESS),
@@ -251,7 +376,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('a broken cache costs money, never correctness', () => {
     it('a read failure degrades to a live run rather than an error', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const cache: CompsCacheLike = {
         async get() { throw new Error('supabase unavailable'); },
         async set() { /* fine */ },
@@ -262,18 +387,24 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('a write failure still returns the result', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const cache: CompsCacheLike = {
         async get() { return null; },
         async set() { throw new Error('supabase unavailable'); },
       };
       const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
       expect(out.ok, 'a cache write failure lost the result').toBe(true);
-      if (out.ok) expect(out.arv.arv).toBe(403000);
+      if (out.ok) {
+        // Re-pointed off the ARV: a cache WRITE failure must still return the
+        // full comp set, not a degraded one.
+        expect(out.comps.length, 'a cache write failure cost us the comps')
+          .toBeGreaterThanOrEqual(3);
+        expect(out.fromCache, 'a failed write was reported as a cache hit').toBe(false);
+      }
     });
 
     it('runs at all with no cache injected', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const out = await runComps(ADDRESS, { provider: spy.provider as never, now });
       expect(out.ok).toBe(true);
     });
@@ -282,7 +413,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('the daily spend cap', () => {
     it('blocks a provider run once the cap is reached, BEFORE any provider work', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const budget = createDailyRunBudget(2);
       const opts = { provider: spy.provider as never, budget, now };
 
@@ -300,7 +431,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('RATE_LIMITED copy carries no number and offers manual entry', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const budget = createDailyRunBudget(0);
       const out = await runComps(ADDRESS, { provider: spy.provider as never, budget, now });
       expect(out.ok).toBe(false);
@@ -319,7 +450,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       // The cap guards Apify spend. A hit costs nothing, so charging for it
       // would lock a member out for re-reading one address at zero cost to
       // the client.
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       const budget = createDailyRunBudget(1);
       const opts = { provider: spy.provider as never, cache, budget, now };
@@ -337,7 +468,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
     });
 
     it('the cap resets on a new day', async () => {
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const budget = createDailyRunBudget(1);
       const day1 = await runComps('1 A St', { provider: spy.provider as never, budget, now });
       expect(day1.ok).toBe(true);
@@ -363,7 +494,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
         warn: (...a: unknown[]) => lines.push(a.map(String).join(' ')),
         error: (...a: unknown[]) => lines.push(a.map(String).join(' ')),
       };
-      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS });
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const { cache } = makeCache();
       await runComps(ADDRESS, {
         provider: spy.provider as never, cache, logger: logger as never, now,
@@ -372,7 +503,120 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       const all = lines.join('\n');
       expect(all, 'the raw address was logged').not.toContain('123 Main St, Seattle WA');
       expect(all).not.toMatch(/apify_api_|Bearer\s+\S+/i);
-      expect(all).not.toContain(process.env.APIFY_TOKEN ?? ' never-matches ');
+      expect(all).not.toContain(process.env.APIFY_TOKEN ?? '__NO_TOKEN_IN_ENV__');
+    });
+  });
+  // =========================================================================
+  // §14.16 raw_neighborhood — the aggregate raw rides the comps row, and the
+  // COMPUTED aggregates are never stored (they recompute per serve from raw).
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('the aggregate raw rides the cached comps row', () => {
+    it('a cached entry WITH raw neighbourhood costs ZERO provider runs', async () => {
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache } = makeCache();
+
+      // Cold: pays for everything, and stores the aggregate raw alongside.
+      const cold = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(cold.ok, 'the cold run failed').toBe(true);
+      const paid = spy.callCount;
+      expect(paid, 'the cold run cost nothing — nothing to compare against')
+        .toBeGreaterThan(0);
+
+      // Warm: a full cache hit must add NOTHING, neighbourhood included.
+      const warm = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(warm.ok).toBe(true);
+      expect(
+        spy.callCount - paid,
+        'a warm serve re-fetched — the aggregate raw is not riding the cached row',
+      ).toBe(0);
+    });
+
+    it('the COMPUTED aggregates are not stored — they recompute per serve', async () => {
+      // §14.16: raw is cached, the averages are not. Storing them would mean a
+      // cached row keeps serving figures computed under an older rule, which
+      // is the ALGO_VERSION problem in a place the version stamp does not
+      // reach.
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache, rows } = makeCache();
+      await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+
+      const stored = JSON.stringify([...rows.values()]);
+      expect(stored.length, 'nothing was cached').toBeGreaterThan(0);
+      expect(
+        stored,
+        'a computed aggregate was stored on the cache row — it must be derived ' +
+          'from raw on every serve, or a stale rule outlives its version stamp',
+      ).not.toMatch(/"avgSoldPrice"|"avgPricePerSqft"|"totalSales"/);
+    });
+  });
+  // =========================================================================
+  // §14.17 — the one case the version stamp does NOT save us.
+  //
+  // A bump normally means "recompute from raw", free. But raw fetched under
+  // the 40-item uncapped-window search is days deep in a dense market, so
+  // recomputing over it just re-derives a starved answer and stamps it fresh.
+  // Those rows must REFETCH.
+  //
+  // Both directions, because a floor that refetches everything forever would
+  // be as wrong as one that refetches nothing — it would re-bill the entire
+  // corpus on every future bump.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('RAW_REFETCH_BELOW_VERSION — poisoned raw refetches', () => {
+    function plant(algoVersion: number) {
+      return makeCache({
+        cacheKey: KEY,
+        normalizedAddress: normalizeAddress(ADDRESS),
+        rawSubject: SUBJECT as never,
+        rawComps: COMPS as never,
+        result: null,
+        algoVersion,
+        provider: 'stub',
+        expiresAt: iso(CACHE_TTL_DAYS),
+      });
+    }
+
+    it('a PRE-floor row REFETCHES — its raw came from the 40-cap regime', async () => {
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache } = plant(RAW_REFETCH_BELOW_VERSION - 1);
+
+      const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(out.ok, 'the refetch produced no result').toBe(true);
+      expect(
+        spy.compsCalls,
+        'a row whose raw predates the fetch fix was RECOMPUTED — that re-derives ' +
+          'from a pool that is days deep and stamps it with the current version, ' +
+          'which is the one case the stamp cannot catch',
+      ).toBeGreaterThan(0);
+    });
+
+    it('an AT-floor row RECOMPUTES — zero provider calls', async () => {
+      // The other direction, and the reason the floor is a floor rather than a
+      // blanket refetch: raw fetched under §14.17 is trustworthy, so a future
+      // ALGO_VERSION bump must still be free for it.
+      const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
+      const { cache } = plant(RAW_REFETCH_BELOW_VERSION);
+
+      const out = await runComps(ADDRESS, { provider: spy.provider as never, cache, now });
+      expect(out.ok).toBe(true);
+      expect(
+        spy.compsCalls,
+        'a row at the floor was refetched — a version floor that re-bills every ' +
+          'row forever is as wrong as one that never refetches',
+      ).toBe(0);
+      expect(spy.subjectCalls, 'the subject was re-billed too').toBe(0);
+    });
+
+    it('the floor is the version the fetch regime changed at', () => {
+      // Pins the relationship rather than the number: the floor must be the
+      // CURRENT algo version, because §14.17 is what changed the regime. If a
+      // later bump moves ALGO_VERSION without moving the floor, rows fetched
+      // under the good regime start refetching for no reason.
+      expect(RAW_REFETCH_BELOW_VERSION).toBe(4);
+      expect(
+        RAW_REFETCH_BELOW_VERSION,
+        'the floor drifted above the current algo version — every cached row ' +
+          'now refetches, forever',
+      ).toBeLessThanOrEqual(ALGO_VERSION);
     });
   });
 });

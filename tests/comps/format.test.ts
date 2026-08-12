@@ -17,10 +17,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import { pendingSlice, sliceNote } from '../helpers/compsGate.js';
-import { renderCompsForChat } from '../../src/features/comps/format.js';
-import { selectRadiusTier } from '../../src/features/comps/filter.js';
+import {
+  renderCompsForChat,
+  COMPS_OPENING,
+  COMPS_CLOSING,
+} from '../../src/features/comps/format.js';
+import { selectTiers } from '../../src/features/comps/filter.js';
 import { rankComps } from '../../src/features/comps/rank.js';
-import { calculateArv } from '../../src/features/comps/arv.js';
 import { ALGO_VERSION } from '../../src/features/comps/config.js';
 import { golden01, golden03, type GoldenCase } from '../fixtures/golden/index.js';
 import type { CompsFailureCode } from '../../src/features/comps/types.js';
@@ -29,18 +32,17 @@ const MODS = ['format'] as const;
 
 /** Build a real CompsResult from a golden case, through the real pipeline. */
 function resultFor(gc: GoldenCase) {
-  const tier = selectRadiusTier(gc.subject as never, gc.comps as never, gc.now);
+  const tier = selectTiers(gc.subject as never, gc.comps as never, gc.now);
   const ranked = rankComps(gc.subject as never, tier.kept, gc.now);
-  const arv = calculateArv(gc.subject as never, ranked);
   return {
     ok: true as const,
     algoVersion: ALGO_VERSION,
     runId: 'run-fixed-for-determinism',
     subject: gc.subject,
     radiusTierMi: tier.radiusTierMi,
+    recencyTierMonths: tier.recencyTierMonths,
     comps: ranked,
     rejected: tier.rejected,
-    arv,
     fromCache: false,
     provider: 'stub',
   };
@@ -83,20 +85,17 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       const outcome = resultFor(golden01);
       const text = renderCompsForChat(outcome as never);
 
+      // The ARV removal makes this test STRICTER, not weaker: the permitted
+      // set used to include five derived figures (arv, low, high, per-sqft in
+      // two roundings) plus the trimmed values. Now the ONLY currency that may
+      // appear is a comp's own sold price or its $/sqft. Anything else in the
+      // block is invented, and there is no longer any legitimate derived
+      // number for an invented one to hide behind.
       const permitted = new Set<number>();
-      permitted.add(outcome.arv.arv);
-      permitted.add(outcome.arv.arvLow);
-      permitted.add(outcome.arv.arvHigh);
-      permitted.add(Math.round(outcome.arv.arvPerSqft));
-      permitted.add(Number(outcome.arv.arvPerSqft.toFixed(2)));
       for (const c of outcome.comps) {
         permitted.add(c.comp.soldPrice!);
         permitted.add(Math.round(c.pricePerSqft));
         permitted.add(Number(c.pricePerSqft.toFixed(2)));
-      }
-      for (const t of outcome.arv.trimmedOut) {
-        permitted.add(Math.round(t.pricePerSqft));
-        permitted.add(Number(t.pricePerSqft.toFixed(2)));
       }
 
       const found = dollarAmounts(text);
@@ -145,17 +144,30 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('the block is defensible — a human can rebuild the ARV', () => {
-    it('shows the trimmed $/sqft, the subject sqft, and the ARV', () => {
+    it('shows the subject sqft and EVERY comp\'s own $/sqft', () => {
+      // RE-POINTED. There is no ARV, band or trimmed mean to show. What makes
+      // the block defensible now is that the member can do the arithmetic
+      // themselves: subject size, and each comparable's price per square foot.
       const outcome = resultFor(golden01);
       const text = renderCompsForChat(outcome as never);
       const digits = text.replace(/[$,\s]/g, '');
 
-      // golden 01, all hand-computed: 201.3333 $/sqft x 2,000 sqft = $403,000
-      expect(digits, 'the ARV is missing').toContain('403000');
       expect(text, 'the subject square footage is missing').toMatch(/2,?000/);
-      expect(text, 'the trimmed $/sqft is missing').toMatch(/201/);
-      expect(digits, 'the low end of the band is missing').toContain('394000');
-      expect(digits, 'the high end of the band is missing').toContain('412000');
+      expect(outcome.comps.length, 'precondition: no comps to check').toBe(5);
+      for (const c of outcome.comps) {
+        expect(digits, `comp ${c.comp.zpid} sold price missing`)
+          .toContain(String(c.comp.soldPrice));
+        expect(digits, `comp ${c.comp.zpid} $/sqft missing`)
+          .toContain(String(Math.round(c.pricePerSqft)));
+      }
+
+      // ...and the figures the module used to derive are ABSENT. golden 01's
+      // v1 answer was $403,000 with a $394,000-$412,000 band. If any of those
+      // reappear, something is still computing an ARV.
+      for (const gone of ['403000', '394000', '412000']) {
+        expect(digits, `a v1 derived figure (${gone}) is back in the block`)
+          .not.toContain(gone);
+      }
     });
 
     it('shows each comp\'s price, sqft, $/sqft, sold date and distance', () => {
@@ -164,32 +176,61 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       const first = outcome.comps[0];
       const digits = text.replace(/[$,\s]/g, '');
       expect(digits).toContain(String(first.comp.soldPrice));
-      expect(text).toContain(first.comp.soldDate!);
+      // §14.18 goal 4: dates read as DATES. Derived from the template, which
+      // pins `Mon D, YYYY` — and formatted from the calendar string directly,
+      // never re-parsed through Date(), so BUG-006's timezone lesson holds.
+      const [y, m, d] = first.comp.soldDate!.split('-').map(Number);
+      const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      expect(text, 'the sold date is not rendered as a human date')
+        .toContain(`${MON[m - 1]} ${d}, ${y}`);
+      expect(text, 'the raw ISO date leaked into member copy')
+        .not.toContain(first.comp.soldDate!);
       expect(text).toMatch(/mi\b|mile/i);
       expect(text).toMatch(/sq ?ft|\/sf|per sq/i);
     });
 
-    it('names the trimmed comps and which end they came off', () => {
-      // Without this the table shows 8 comps and an ARV derived from 6, and
-      // nothing explains the gap. §11 requires trimmedOut and why.
+    it('RETIRED trim reporting — every comp shown is a comp USED, with no gap to explain', () => {
+      // The old case existed because the table showed 8 comps while the ARV
+      // came from 6, and §11 required the block to name the two that were
+      // dropped. There is no trim now and no ARV, so the gap it explained
+      // cannot exist — which is worth asserting rather than merely deleting:
+      // any surviving trim language would be describing something that no
+      // longer happens.
       const outcome = resultFor(golden01);
       const text = renderCompsForChat(outcome as never);
-      expect(outcome.arv.trimmedOut.length).toBe(2);
-      expect(text.toLowerCase()).toMatch(/trim|excluded|discard|set aside/);
-      for (const t of outcome.arv.trimmedOut) {
-        expect(text.replace(/[$,\s]/g, ''), `trimmed $/sqft ${t.pricePerSqft} not shown`)
-          .toContain(String(Math.round(t.pricePerSqft)));
-      }
+      expect(outcome.comps.length, 'precondition: nothing rendered').toBeGreaterThan(0);
+      expect(text.toLowerCase(), 'trim language survived the removal of the trim')
+        .not.toMatch(/trimmed mean|trim(med)? (out|off)|set aside|outlier/);
     });
 
-    it('states the radius tier that was actually used', () => {
-      const g1 = renderCompsForChat(resultFor(golden01) as never); // tier 0.5
-      const g3 = renderCompsForChat(resultFor(golden03) as never); // tier 2.0
-      expect(g1).toMatch(/0\.5/);
-      expect(g3).toMatch(/2(\.0)?\s*mi/i);
-      // The tier is not cosmetic — golden 03 searched four times the area for
-      // three comps, and the block must say so.
-      expect(g3).not.toMatch(/\b0\.5\s*mi/i);
+    it('states BOTH rungs that were actually used, not just the radius', () => {
+      // §14.2: "CompsResult records BOTH radiusTierMi and recencyTierMonths.
+      // The rendered block names both." Naming only the radius hides half of
+      // how hard the search had to work — a set found within a mile over
+      // twelve months is a different quality of evidence from one found within
+      // a mile over three, and the member cannot tell them apart.
+      const r1 = resultFor(golden01);
+      const r3 = resultFor(golden03);
+      const g1 = renderCompsForChat(r1 as never);
+      const g3 = renderCompsForChat(r3 as never);
+
+      // POSITIVE PRECONDITION — the two cases must land on DIFFERENT rungs, or
+      // "the block names the rung it used" is satisfied by a hardcoded string.
+      expect([r1.radiusTierMi, r1.recencyTierMonths], 'golden 01 is not on rung 1')
+        .toEqual([1.0, 3]);
+      expect([r3.radiusTierMi, r3.recencyTierMonths], 'golden 03 is not on the last rung')
+        .toEqual([3.0, 12]);
+
+      expect(g1, 'golden 01 does not name its 1 mi radius').toMatch(/within 1\s*mi/i);
+      expect(g1, 'golden 01 does not name its 3-month window').toMatch(/last 3 months/i);
+      expect(g3, 'golden 03 does not name its 3 mi radius').toMatch(/within 3\s*mi/i);
+      expect(g3, 'golden 03 does not name its 12-month window').toMatch(/last 12 months/i);
+
+      // The rung is not cosmetic — golden 03 searched nine times the area over
+      // four times the window to find three comps, and the block must say so
+      // rather than reporting the tight search it started with.
+      expect(g3, 'golden 03 is reported as a tight, recent search').not.toMatch(/within 1\s*mi/i);
+      expect(g3).not.toMatch(/last 3 months/i);
     });
 
     it('carries the disclaimer footer on every success', () => {
@@ -203,25 +244,51 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('low confidence says so in the copy', () => {
-    it('golden 03 (3 comps, low) warns in prose, not just in a JSON field', () => {
-      // A confidence tier nobody reads is not a warning. §5.5: low still
-      // returns numbers, but the rendered copy must call the estimate weak and
-      // invite a manual override.
-      const outcome = resultFor(golden03);
-      expect(outcome.arv.confidence).toBe('low');
-      const text = renderCompsForChat(outcome as never);
-      expect(text.toLowerCase(), 'no weak-estimate warning on a low-confidence result')
-        .toMatch(/weak|thin|limited|few comps|low confidence|treat .* caution|rough/);
-      expect(text.toLowerCase(), 'no manual-override invitation on a low-confidence result')
-        .toMatch(/manual|your own|override|change arv|if you have/);
+    it('RETIRED — no confidence grade is emitted for a thin set OR a full one', () => {
+      // §14.8: `confidenceLine` is gone. The old pair of cases proved the
+      // warning fired on low and stayed silent on high; with no grade to
+      // qualify, a surviving line would be grading nothing.
+      //
+      // What replaces it as the member's signal is the plain comp COUNT, which
+      // a list makes self-evident in a way a single number never did: three
+      // rows read as three rows.
+      const thin = resultFor(golden03);
+      const full = resultFor(golden01);
+      expect([thin.comps.length, full.comps.length], 'precondition: these sets are the same size')
+        .toEqual([3, 5]);
+
+      for (const [name, outcome] of [['thin', thin], ['full', full]] as const) {
+        const text = renderCompsForChat(outcome as never).toLowerCase();
+        expect(text, `a confidence grade survived on the ${name} set`)
+          .not.toMatch(/confidence|weak estimate|high confidence|low confidence/);
+        expect(text, `the ${name} set does not state its comp count`)
+          .toContain(`${outcome.comps.length} sold comps`);
+      }
     });
 
-    it('a high-confidence result does NOT carry the weak-estimate warning', () => {
-      // Otherwise the warning is decoration and members learn to ignore it.
+    it('the emit order is opening -> header -> table -> closing -> footer, with no gap', () => {
+      // §14.8 pins the order and says there must be "no gap where the ARV used
+      // to be". A renderer that leaves the slot behind ships a double blank
+      // line mid-block, which reads as a truncated response.
       const outcome = resultFor(golden01);
-      expect(outcome.arv.confidence).toBe('high');
       const text = renderCompsForChat(outcome as never);
-      expect(text.toLowerCase()).not.toMatch(/weak estimate|low confidence/);
+
+      const at = (needle: string | RegExp) => {
+        const i = typeof needle === 'string' ? text.indexOf(needle) : text.search(needle);
+        expect(i, `missing from the block: ${needle}`).toBeGreaterThanOrEqual(0);
+        return i;
+      };
+      const opening = at('Sure. Here are recent comparable sales');
+      const header = at(/\*\*Comps for /);
+      const table = at(outcome.comps[0].comp.address!);
+      const closing = at('Evaluate each property carefully');
+      const footer = at(/not a formal appraisal/i);
+
+      expect([opening, header, table, closing, footer], 'the emit order is wrong')
+        .toEqual([...[opening, header, table, closing, footer]].sort((a, b) => a - b));
+
+      expect(text, 'a blank slot was left where the ARV block used to be')
+        .not.toMatch(/\n{3,}/);
     });
   });
 
@@ -452,6 +519,458 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       } as never);
       expect(String(rendered ?? '').trim().length, 'a failure rendered as an empty block')
         .toBeGreaterThan(0);
+    });
+  });
+  // =========================================================================
+  // THE NULL RULE — CONTRACT §14.5. "A null field renders as an explicit —
+  // (em dash). Never omitted silently, never inferred, never back-filled from
+  // another comp or from the subject." The fields are the v2 additions: beds,
+  // baths, lot size, and the property link (which nulls to the words "link
+  // unavailable" instead, because §14.9 makes it LOAD-BEARING: the client
+  // waived style/condition matching and named the link as the member's
+  // substitute for judging those, so its absence must be stated, not shown as
+  // just another dash).
+  //
+  // Derived from the contract text, not the renderer. The dangerous failure
+  // here is OMISSION: a dropped column reads as "not applicable" and the row
+  // silently changes meaning; a dash reads as "we don't know", which is true.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('null per-comp fields render an explicit em-dash (§14.5)', () => {
+    /** golden01 with chosen fields nulled on the comp that survives ranking first. */
+    function outcomeWithNulls(nulls: Partial<Record<'beds' | 'baths' | 'lotSize' | 'detailUrl', null>>) {
+      const gc = {
+        ...golden01,
+        comps: golden01.comps.map((c) =>
+          c.zpid === 'G1-C1' ? { ...c, ...nulls } : c,
+        ),
+      };
+      return resultFor(gc as never);
+    }
+
+    /** The rendered line for one comp, so assertions cannot match a sibling. */
+    function lineFor(text: string, address: string): string {
+      const lines = text.split('\n');
+      const i = lines.findIndex((l) => l.includes(address));
+      expect(i, `no rendered row for ${address}`).toBeGreaterThanOrEqual(0);
+      // The address line plus its continuation lines. §14.14 added a third
+      // (year built / DOM / parking), so a fixed slice of 3 silently cut the
+      // link line off the end and two "link unavailable" assertions started
+      // passing on text that no longer contained the row they meant. Bound by
+      // the NEXT row instead, so the helper cannot rot again when a line is
+      // added or removed.
+      // §14.18 renumbered the rows: `- **Addr**` became `**1. Addr**`. The old
+      // boundary stopped matching, so a "row" ran on into the NEXT comp and a
+      // back-fill assertion started reading a sibling's beds. Bound on the
+      // numbered heading, and on a blank-line-then-bold as a backstop.
+      const next = lines.findIndex((l, n) => n > i && /^\*\*\d+\. /.test(l));
+      return lines.slice(i, next === -1 ? undefined : next).join('\n');
+    }
+
+    /**
+     * A dash in a VALUE position. The renderer legitimately uses an em-dash
+     * as address-line punctuation ("** — sold $406,000"), so matching the bare
+     * character would flag every row; these three shapes are the only places
+     * the NULL marker can appear.
+     */
+    const NULL_MARKERS = [/— bd/, /\/ — ba/, /— sqft lot/, /lot —$/m];
+    const hasNullMarker = (t: string) => NULL_MARKERS.some((m) => m.test(t));
+
+    /** golden01 with detail attached to every comp — "fully populated" now includes §14.14. */
+    const fullyPopulated = () => {
+      const base = resultFor(golden01) as { comps: Array<Record<string, unknown>> };
+      return {
+        ...base,
+        comps: base.comps.map((c, i) => ({
+          ...c,
+          detail: {
+            daysOnMarket: 20 + i, parkingSpaces: 2, yearBuilt: 1990 + i,
+            architecturalStyle: 'Ranch', propertyCondition: 'Updated',
+          },
+        })),
+      };
+    };
+
+    it('PRECONDITION + §14.5 MARKER EXCLUSIVITY: a fully-populated render has ZERO em dashes', () => {
+      // Two guarantees in one. As a precondition: if the fully-populated
+      // golden already renders dashes, nothing below discriminates null from
+      // set. As a contract rule (§14.5, amended after this suite first
+      // landed): within the success block the em dash appears ONLY as the
+      // null marker — a marker that doubles as punctuation stops being
+      // explicit, because a member scanning a row cannot tell "missing data"
+      // from typography.
+      const text = renderCompsForChat(fullyPopulated() as never);
+      expect(
+        text.includes('—'),
+        'an em dash appears in a fully-populated success render — either a field ' +
+          'was nulled by accident or the renderer is using the null marker as punctuation',
+      ).toBe(false);
+    });
+
+    it('§14.14 the three detail fields are LABELLED, and null renders label-then-dash', () => {
+      // A bare dash in a three-value run ("— · — · —") has no referent; the
+      // member cannot tell which fact is missing. Labels make each absence
+      // self-describing, which is the whole point of an explicit marker.
+      const withDetail = renderCompsForChat(fullyPopulated() as never);
+      expect(withDetail, 'year built is not labelled').toMatch(/Built (19|20)\d{2}/);
+      expect(withDetail, 'days on market is not labelled').toMatch(/\d+ days on market/);
+      expect(withDetail, 'parking spaces is not labelled').toMatch(/\d+ parking spaces/);
+
+      // And with NO detail at all, all three read as labelled absences.
+      const bare = renderCompsForChat(resultFor(golden01) as never);
+      expect(bare, 'a comp with no detail lost its year-built column').toContain('Built —');
+      expect(bare).toContain('— days on market');
+      expect(bare).toContain('— parking spaces');
+    });
+
+    it('§14.14 YEAR BUILT is not a quantity — no thousands separator', () => {
+      // 1928 is a year. Rendering it as "1,928" is not a rounding nit: it
+      // reads as a quantity, it is what a member screenshots into a rehab
+      // scope, and it makes the column look machine-generated in the one
+      // place the block is asking to be trusted. Every comp built before the
+      // year 10000 is affected, which is all of them.
+      const text = renderCompsForChat(fullyPopulated() as never);
+      expect(text, 'the year is comma-formatted').not.toMatch(/Built \d,\d{3}/);
+      expect(text, 'the year did not render at all').toMatch(/Built (19|20)\d{2}\b/);
+    });
+
+    it('§14.14 style and condition are CAPTURED but must NOT be rendered', () => {
+      // Operator directive: the client waived them as MATCHING criteria,
+      // which is not the same as approving them for DISPLAY. Display needs
+      // its own ruling. They are carried on the type so that ruling is a
+      // render change rather than a re-scrape — and until it exists, leaking
+      // them into the block is shipping an un-approved claim about a house.
+      const text = renderCompsForChat(fullyPopulated() as never);
+      expect(text, 'architecturalStyle was rendered without a client ruling')
+        .not.toContain('Ranch');
+      expect(text, 'propertyCondition was rendered without a client ruling')
+        .not.toContain('Updated');
+      expect(text.toLowerCase()).not.toMatch(/\bstyle\b|\bcondition\b/);
+    });
+
+    it.each([
+      ['beds', { beds: null }, /— bd/],
+      ['baths', { baths: null }, /\/ — ba/],
+      ['lot size', { lotSize: null }, /— sqft lot/],
+    ] as const)('null %s renders a dash IN PLACE — not omitted, not back-filled', (_name, nulls, marker) => {
+      const outcome = outcomeWithNulls(nulls);
+      const text = renderCompsForChat(outcome as never);
+      const row = lineFor(text, '1204 NORTH MAIN STREET'); // G1-C1's address
+
+      expect(row, 'the null field was not rendered as an em-dash').toMatch(marker);
+
+      // NOT back-filled from the subject (3 bd / 2 ba / 6,000 lot) — the row
+      // structure must keep every other column intact, so the dash replaced
+      // the VALUE, not the column.
+      expect(row, 'the row lost its bd/ba column entirely').toMatch(/bd \/ .* ba/);
+      // §14.18 moved "lot" from prefix to SUFFIX: `6,200 sqft lot`.
+      expect(row, 'the row lost its lot column entirely').toContain(' sqft lot');
+
+      // ...and only THIS comp's row carries the dash; the siblings are whole.
+      const other = lineFor(text, '1208 NORTH MAIN STREET');
+      expect(hasNullMarker(other), "a sibling comp's row caught the null").toBe(false);
+    });
+
+    it('a null on one comp is never back-filled from a sibling or the subject', () => {
+      // The subject has 3 beds; every other comp has beds set. If any
+      // inference exists, "3" is what it would produce for the nulled comp.
+      const outcome = outcomeWithNulls({ beds: null });
+      const text = renderCompsForChat(outcome as never);
+      const row = lineFor(text, '1204 NORTH MAIN STREET');
+      expect(row, 'the null was back-filled with a plausible bed count')
+        .not.toMatch(/\b3 bd/);
+      expect(row).toMatch(/— bd/);
+    });
+
+    it('a null link renders the WORDS "link unavailable", not a dash (§14.9)', () => {
+      const outcome = outcomeWithNulls({ detailUrl: null });
+      const text = renderCompsForChat(outcome as never);
+      const row = lineFor(text, '1204 NORTH MAIN STREET');
+      expect(row.toLowerCase(), 'a missing load-bearing link was reduced to a dash')
+        .toContain('link unavailable');
+      // The link column never dashes: it is the one absence important enough
+      // to get a sentence.
+      expect(row, 'the link column rendered the generic null marker').not.toMatch(/\n\s*—\s*$/);
+    });
+
+    it('all four nulls together still yield a structurally complete row', () => {
+      const outcome = outcomeWithNulls({ beds: null, baths: null, lotSize: null, detailUrl: null });
+      const text = renderCompsForChat(outcome as never);
+      const row = lineFor(text, '1204 NORTH MAIN STREET');
+      expect(row).toMatch(/— bd \/ — ba/);
+      expect(row).toMatch(/— sqft lot/);
+      expect(row.toLowerCase()).toContain('link unavailable');
+      // Sold price and sqft were NOT nulled and must still be real values.
+      expect(row, 'a populated field was dashed alongside the null ones').toContain('$');
+      expect(row).toMatch(/2,000 sqft/);
+      expect(text, 'the degraded row broke the block').toContain('NORTH MAIN');
+    });
+  });
+  // =========================================================================
+  // §14.5 MARKER EXCLUSIVITY ACROSS EVERY RENDER STATE.
+  //
+  // The rule surfaced on one shape (a fully-populated comp table) and was
+  // fixed there. It then broke twice more as sections were added — the census
+  // header used an em dash as punctuation, and so did the neighbourhood
+  // header — because each new section is a new render state and the
+  // precondition only ever saw one of them.
+  //
+  // A rule verified on one state is not verified. This sweeps the product of
+  // the optional sections instead.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('the two $/sqft figures never float free of their populations', () => {
+    // THE OBSERVATION, from the operator: the neighborhood average reads
+    // $303/sqft while every kept comp is $268-417. Both figures are honest and
+    // neither is a bug. But they sit inches apart on one screen, and a member
+    // will compare them.
+    //
+    // WHAT THE RELATIONSHIP ACTUALLY IS, since "different populations" is not
+    // quite right and the imprecision is what makes the comparison tempting.
+    // aggregates.ts averages the deduped in-circle set and excludes NOTHING —
+    // the displayed comps are not held out. So when the ladder answers inside
+    // a mile (Sierra Vista: five comps at 0.14-0.97 mi) every kept comp is one
+    // of the sales in the neighborhood average. They are not rival estimates
+    // of the same quantity; the neighborhood figure is the UNFILTERED pool
+    // average and the comps are that pool after similarity filtering. A comp
+    // range straddling the neighborhood mean is the expected shape, not a
+    // discrepancy. When the ladder has to reach past a mile the sets only
+    // partially overlap, which is a third relationship again.
+    //
+    // WHY THERE IS A TEST FOR A NON-BUG. What makes it safe is entirely the
+    // labelling: $303 is legible as a 233-sale figure only because the sale
+    // count sits on its own line and the header carries the radius and window.
+    // Nothing pinned that. The DOM figure in the same section got an explicit
+    // "not a neighborhood figure" disclaimer because it was load-bearing; the
+    // $/sqft on the line above had only its adjacency. This block is BUG-008's
+    // rule one surface over — a figure and its provenance travel together —
+    // and the reflow it guards against has already happened once to this
+    // template, which is why the copy test next door is byte-exact.
+    const NB = {
+      radiusMi: 1, windowMonths: 12, windowTruncated: false, totalSales: 233,
+      avgSoldPrice: 432_100, avgPricePerSqft: 303, avgBeds: 3.2, avgBaths: 2.1,
+      earliestSaleDate: '2025-08-11', latestSaleDate: '2026-08-05',
+      avgDomOfDisplayedComps: 26, domCompCount: 5,
+    };
+    const render = () =>
+      String(renderCompsForChat({ ...(resultFor(golden01) as object), neighborhood: NB } as never));
+
+    /** The one line carrying the neighborhood $/sqft, so a sibling cannot satisfy these. */
+    const ppsfLine = (text: string) =>
+      text.split('\n').find((l) => l.includes('303')) ?? '';
+
+    it('the neighborhood $/sqft shares its LINE with the sale count it averages', () => {
+      const line = ppsfLine(render());
+      expect(line, 'the $303/sqft figure did not render at all').not.toBe('');
+      expect(
+        line,
+        'the neighborhood $/sqft was separated from its sale count. On its own ' +
+          'it is a bare rate sitting under a list of comps, and the only thing ' +
+          'telling a member it describes 233 sales rather than those 5 is gone.',
+      ).toMatch(/233 sales/);
+    });
+
+    it('and the section header still scopes it to a radius and a window', () => {
+      const text = render();
+      const header = text.split('\n').find((l) => l.includes('Neighborhood sales')) ?? '';
+      expect(header, 'the neighborhood header vanished').not.toBe('');
+      expect(header, 'the radius left the header — $/sqft over an unstated area')
+        .toMatch(/within 1 mile/);
+      expect(header, 'the window left the header — a rate over an unstated period')
+        .toMatch(/past 12 months/);
+    });
+
+    it('the per-comp rates stay ATTACHED to their comps, not pooled into a range', () => {
+      // The other half of the comparison. Each comp's $/sqft belongs to that
+      // comp's address; the moment the block renders them as a summary range
+      // it has manufactured a second aggregate to set against the first, and
+      // the member is comparing two averages neither of which is labelled.
+      const text = render();
+      const rows = text.split('\n').filter((l) => /\/sqft/.test(l) && !l.includes('233 sales'));
+      expect(rows.length, 'no per-comp $/sqft rows rendered').toBeGreaterThanOrEqual(3);
+      for (const row of rows) {
+        expect(
+          /\$[\d,]+\/sqft/.test(row),
+          `a per-comp rate row carries no concrete rate: ${row}`,
+        ).toBe(true);
+      }
+      expect(
+        /\$[\d,]+\s*[-\u2013]\s*\$[\d,]+\/sqft/.test(text),
+        'the block rendered a $/sqft RANGE across the comps. That is a second ' +
+          'aggregate, unlabelled, printed beside the neighborhood average — ' +
+          'which is precisely the comparison the current copy leaves to the ' +
+          'member rather than inviting.',
+      ).toBe(false);
+    });
+  });
+
+  describe.skipIf(pendingSlice(...MODS))('the em dash is the null marker in EVERY render state', () => {
+    const DETAIL = {
+      daysOnMarket: 25, parkingSpaces: 2, yearBuilt: 1990,
+      architecturalStyle: null, propertyCondition: null,
+    };
+    const NEIGHBORHOOD = {
+      radiusMi: 1, windowMonths: 12, windowTruncated: false, totalSales: 193,
+      avgSoldPrice: 432_100, avgPricePerSqft: 214, avgBeds: 3.2, avgBaths: 2.1,
+      earliestSaleDate: '2025-08-11', latestSaleDate: '2026-08-05',
+      avgDomOfDisplayedComps: 26, domCompCount: 5,
+    };
+    const DEMOGRAPHICS = {
+      tractGeoid: '04013111700', tractName: 'Census Tract 1117', acsYear: 2023,
+      medianHouseholdIncome: 93333, medianAge: 37.9,
+      ownerOccupiedPct: 62.2, renterOccupiedPct: 37.8,
+    };
+
+    /** Every combination of the optional sections, all values POPULATED. */
+    const STATES: Array<[string, Record<string, unknown>]> = [
+      ['comps only', {}],
+      ['+ neighbourhood', { neighborhood: NEIGHBORHOOD }],
+      ['+ demographics', { demographics: DEMOGRAPHICS }],
+      ['+ both', { neighborhood: NEIGHBORHOOD, demographics: DEMOGRAPHICS }],
+    ];
+
+    it.each(STATES)('%s: a fully-populated render contains ZERO em dashes', (_name, extra) => {
+      const base = resultFor(golden01) as { comps: Array<Record<string, unknown>> };
+      const text = renderCompsForChat({
+        ...base,
+        comps: base.comps.map((c) => ({ ...c, detail: DETAIL })),
+        ...extra,
+      } as never);
+      expect(
+        String(text).includes('\u2014'),
+        'an em dash appears in a fully-populated render of this state — either a ' +
+          'field was nulled by accident, or a section is using the null marker ' +
+          'as punctuation, which is how this rule broke twice before',
+      ).toBe(false);
+    });
+
+    it('the UNAVAILABLE lines carry no em dash either', () => {
+      // Both null-section lines previously separated their clauses with a
+      // dash. They are not null VALUES — they are prose about an absent
+      // section — so the marker must not appear in them.
+      const base = resultFor(golden01) as { comps: Array<Record<string, unknown>> };
+      const text = String(renderCompsForChat({
+        ...base,
+        comps: base.comps.map((c) => ({ ...c, detail: DETAIL })),
+        neighborhood: null, demographics: null,
+      } as never));
+      expect(text.toLowerCase(), 'the unavailable lines did not render').toMatch(/unavailable/);
+      expect(
+        text.includes('\u2014'),
+        'an unavailable-section line uses the null marker as punctuation',
+      ).toBe(false);
+    });
+
+    it('and a NULLED field still produces the marker — the rule has teeth', () => {
+      // The control. Without it, "zero em dashes" passes for a renderer that
+      // stopped emitting the marker at all.
+      const base = resultFor(golden01) as { comps: Array<Record<string, unknown>> };
+      const text = String(renderCompsForChat({
+        ...base,
+        comps: base.comps.map((c, i) => ({
+          ...c, detail: i === 0 ? { ...DETAIL, yearBuilt: null } : DETAIL,
+        })),
+        neighborhood: NEIGHBORHOOD, demographics: DEMOGRAPHICS,
+      } as never));
+      expect(
+        text.includes('\u2014'),
+        'a nulled field produced no marker — the em dash has stopped meaning anything',
+      ).toBe(true);
+    });
+  });
+  // =========================================================================
+  // THE CLIENT'S COPY — weighted highest, because a reflow is exactly what
+  // rewrites prose "while tidying" and this text is hers, not ours.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('the prescribed copy survives the reflow BYTE-EXACT', () => {
+    // Transcribed from CONTRACT §14.7, character by character, NOT imported
+    // from the constants — importing them would assert that the constants
+    // equal themselves, which is true of any wording anyone ever types there.
+    const OPENING_VERBATIM =
+      'Sure. Here are recent comparable sales for that location and home type. ' +
+      'Please note responses are for education and based on available public data. ' +
+      'Investors are encouraged to review each address for additional information.';
+
+    it('COMPS_OPENING matches the contract text exactly', () => {
+      expect(
+        COMPS_OPENING,
+        'the opening copy drifted from CONTRACT §14.7. This is the client\'s ' +
+          'prescribed text — a reflow may move nothing and reword nothing.',
+      ).toBe(OPENING_VERBATIM);
+    });
+
+    it('both constants reach the RENDER unaltered — not just the module', () => {
+      // The constant being right is not the guarantee; the member seeing it is.
+      // A template that interpolates it into a heading, trims it, or wraps it
+      // would pass the case above and fail this one.
+      const text = renderCompsForChat(resultFor(golden01) as never);
+      expect(text, 'the opening copy is not in the rendered block verbatim')
+        .toContain(COMPS_OPENING);
+      expect(text, 'the closing copy is not in the rendered block verbatim')
+        .toContain(COMPS_CLOSING);
+    });
+
+    it('the opening is FIRST and the closing is LAST before the footer', () => {
+      // Position is part of the prescription (§14.7/§14.18), and position is
+      // what a reflow actually breaks — the words survive, the order does not.
+      const text = String(renderCompsForChat(resultFor(golden01) as never));
+      const open = text.indexOf(COMPS_OPENING);
+      const close = text.indexOf(COMPS_CLOSING);
+      // From the START of the footer LINE, not from the phrase inside it —
+      // the line opens "_Automated estimate from public sold data, not a
+      // formal appraisal...". Measuring from the phrase left the line's own
+      // opening words sitting in the "content after the closing" slice, and
+      // the case failed on the product being correct.
+      const footerPhrase = text.search(/not a formal appraisal/i);
+      const footer = text.lastIndexOf('\n', footerPhrase) + 1;
+
+      expect(open, 'the opening is missing').toBeGreaterThanOrEqual(0);
+      expect(close, 'the closing is missing').toBeGreaterThan(open);
+      expect(footer, 'the footer is missing').toBeGreaterThan(close);
+
+      // Nothing but whitespace and the footer line may follow the closing.
+      const after = text.slice(close + COMPS_CLOSING.length, footer);
+      expect(
+        after.trim(),
+        `content was inserted between the closing copy and the footer: ${after.trim()}`,
+      ).toBe('');
+    });
+
+    it('the closing stays last even with every optional section attached', () => {
+      // The reflow added sections BETWEEN the table and the closing. That is
+      // exactly the change that turns "last" into "third from last", and no
+      // single-shape test would notice.
+      const base = resultFor(golden01) as Record<string, unknown>;
+      const text = String(renderCompsForChat({
+        ...base,
+        neighborhood: {
+          radiusMi: 1, windowMonths: 12, windowTruncated: false, totalSales: 193,
+          avgSoldPrice: 432_100, avgPricePerSqft: 214, avgBeds: 3.2, avgBaths: 2.1,
+          earliestSaleDate: '2025-08-11', latestSaleDate: '2026-08-05',
+          avgDomOfDisplayedComps: 26, domCompCount: 5,
+        },
+        demographics: {
+          tractGeoid: '04013111700', tractName: 'Census Tract 1117', acsYear: 2023,
+          medianHouseholdIncome: 93333, medianAge: 37.9,
+          ownerOccupiedPct: 62.2, renterOccupiedPct: 37.8,
+        },
+      } as never));
+
+      const close = text.indexOf(COMPS_CLOSING);
+      expect(close, 'the closing vanished once sections were added').toBeGreaterThan(0);
+      expect(
+        text.indexOf('Neighborhood sales'),
+        'the neighbourhood block rendered AFTER the closing copy',
+      ).toBeLessThan(close);
+      expect(
+        text.indexOf('Neighborhood snapshot'),
+        'the census block rendered AFTER the closing copy',
+      ).toBeLessThan(close);
+    });
+
+    it('NO ARV anywhere, including anything shaped like one', () => {
+      const text = String(renderCompsForChat(resultFor(golden01) as never)).toLowerCase();
+      expect(text, 'an ARV is named').not.toMatch(/\barv\b|after.repair value/);
+      expect(text, 'a value estimate is named').not.toMatch(/estimated value|value range|worth about/);
+      expect(text, 'a confidence grade survived').not.toMatch(/confidence/);
     });
   });
 });

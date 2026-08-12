@@ -24,32 +24,58 @@
  * Subject: 2,000 sqft, 3 bed / 2 bath, SFR, lot 6,000. `now` = 2025-07-15Z.
  *
  * ---------------------------------------------------------------------------
+ * v2 (CONTRACT §14, ALGO_VERSION 3). REWRITTEN. The header previously carried
+ * the v1 numbers under a "SUPERSEDED" note, which meant the $/sqft table in
+ * front of the reader described prices the fixture no longer holds — G6-A was
+ * shown as 400,000 while the data said 350,000. Re-derived from the data.
+ * ---------------------------------------------------------------------------
+ *
  * STEP 1 — $/sqft for every input comp (all six have computable $/sqft):
- *   G6-A  400,000 / 2,000 =  200
- *   G6-B  420,000 / 2,000 =  210
- *   G6-C  380,000 / 2,000 =  190
+ *   G6-A  350,000 / 2,000 =  175
+ *   G6-B  380,000 / 2,000 =  190
+ *   G6-C  410,000 / 2,000 =  205
  *   G6-D  1,000,000 / 1,000 = 1000   (1,000 sqft cottage on a teardown lot)
  *   G6-E  1,440,000 / 1,200 = 1200   (same story, next street over)
- *   G6-F  160,000 / 2,000 =   80     (grandmother -> grandson)
+ *   G6-F  156,000 / 2,000 =  78      (grandmother -> grandson)
  *
- * STEP 2 — rules 1–9. D and E fail rule 4:
- *   sqft band = 2,000 ± 25% = [1500, 2500]; 1,000 and 1,200 are outside
- *   -> SQFT_OUT_OF_RANGE (they pass rules 1–3 first: SOLD, recent, sqft present)
- *   A, B, C and F pass rules 1–9 untouched.
+ * STEP 2 — rules 1-9. D and E fail rule 4:
+ *   sqft band = 2,000 ± 20% = [1600, 2400]   (v1 was ±25% => [1500, 2500])
+ *   1,000 and 1,200 are outside under EITHER band, so this case does not
+ *   depend on the tolerance change -> SQFT_OUT_OF_RANGE (they pass rules 1-3
+ *   first: SOLD, recent, sqft present).
+ *   A, B, C and F pass rules 1-9 untouched.
  *
- * STEP 3 — rule 10, THE CONTRACT WAY (candidate set = all six):
- *   sorted [80, 190, 200, 210, 1000, 1200], n = 6 (even)
- *   median = mean of the middle two = (200 + 210) / 2 = 205
- *   threshold = 0.4 × 205 = 82
- *   G6-F at 80 < 82  ->  NON_ARMS_LENGTH. Rejected.
+ * STEP 3 — rule 10, THE CONTRACT WAY (candidate set = all six, deduped):
+ *   sorted [78, 175, 190, 205, 1000, 1200], n = 6 (even)
+ *   median = mean of the middle two = (190 + 205) / 2 = 197.5
+ *   threshold = 0.4 × 197.5 = 79
+ *   G6-F at 78 < 79  ->  NON_ARMS_LENGTH. Rejected.
  *   => kept = A, B, C
  *
- * STEP 3' — rule 10, THE WRONG WAY (median over rule-1–9 survivors only):
- *   survivors are A, B, C, F -> sorted [80, 190, 200, 210], n = 4 (even)
- *   median = (190 + 200) / 2 = 195
- *   threshold = 0.4 × 195 = 78
- *   G6-F at 80 >= 78  ->  survives. Not rejected.
+ *   The margin is ONE DOLLAR per square foot, deliberately. An earlier version
+ *   of this fixture put the gift at $80/sqft, which cleared the v2 threshold
+ *   and let the transfer through — the case passed for the wrong reason and
+ *   proved nothing. A discriminator has to sit on the right side of the line
+ *   by a margin you chose, not one you inherited.
+ *
+ * STEP 3' — rule 10, THE WRONG WAY (median over rule-1-9 survivors only):
+ *   survivors are A, B, C, F -> sorted [78, 175, 190, 205], n = 4 (even)
+ *   median = (175 + 190) / 2 = 182.5
+ *   threshold = 0.4 × 182.5 = 73
+ *   G6-F at 78 >= 73  ->  survives. Not rejected.
  *   => kept = A, B, C, F
+ *
+ * STEP 4 — the LADDER (§14.2). Ages against now = 2025-07-15:
+ *   G6-F  30 d = 0.9855 mo   G6-A  60 d = 1.9711 mo
+ *   G6-B  90 d = 2.9566 mo   G6-C 120 d = 3.9422 mo
+ *   No rung reaches MIN_COMPS_FOR_TIER (5) — there are only three usable
+ *   comps in the whole set — so the walk exhausts the ladder and reports the
+ *   LAST rung tried.
+ *   => radiusTierMi = 3.0, recencyTierMonths = 12, kept = A, B, C.
+ *   Note C is STALE_SALE at the 3-month rungs and only joins at 6 months; the
+ *   rejected list is the FINAL rung's, so C is not in it.
+ *
+ * STEPS 5+ — RETIRED with `arv.ts` (§14.8). See V2-RECOMPUTE.md.
  *
  *   Note the mechanism: excluding D and E drags the median DOWN, which drags
  *   the threshold down, which lets the family transfer through. The bug is
@@ -96,20 +122,20 @@ const subject: SubjectProperty = {
 const comps: RawComp[] = [
   {
     zpid: 'G6-A', address: '644 NORTHWEST ALDER PLACE', status: 'SOLD',
-    soldPrice: 400000, soldDate: '2025-05-16', // 60 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 6000, // $/sqft 200
+    soldPrice: 350000, soldDate: '2025-05-16', // 60 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6000, // $/sqft 175
     propertyType: 'SFR', lat: 47.601, lng: -122.3, // 0.0690941 mi
   },
   {
     zpid: 'G6-B', address: '648 NORTHWEST ALDER PLACE', status: 'SOLD',
-    soldPrice: 420000, soldDate: '2025-04-16', // 90 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 6200, // $/sqft 210
+    soldPrice: 380000, soldDate: '2025-04-16', // 90 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6200, // $/sqft 190
     propertyType: 'SFR', lat: 47.602, lng: -122.3, // 0.1381882 mi
   },
   {
     zpid: 'G6-C', address: '652 NORTHWEST ALDER PLACE', status: 'SOLD',
-    soldPrice: 380000, soldDate: '2025-03-17', // 120 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 5800, // $/sqft 190
+    soldPrice: 410000, soldDate: '2025-03-17', // 120 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 5800, // $/sqft 205
     propertyType: 'SFR', lat: 47.603, lng: -122.3, // 0.2072823 mi
   },
   {
@@ -131,8 +157,8 @@ const comps: RawComp[] = [
     // type, sold three weeks ago, next door. Only rule 10 stands between it and
     // a $60,000 haircut on the ARV.
     zpid: 'G6-F', address: '664 NORTHWEST ALDER PLACE', status: 'SOLD',
-    soldPrice: 160000, soldDate: '2025-06-15', // 30 d
-    beds: 3, baths: 2, livingArea: 2000, lotSize: 6100, // $/sqft 80
+    soldPrice: 156000, soldDate: '2025-06-15', // 30 d
+    beds: 3, baths: 2, livingArea: 2000, lotSize: 6100, // $/sqft 78
     propertyType: 'SFR', lat: 47.597, lng: -122.3, // 0.2072823 mi
   },
 ];
@@ -152,18 +178,19 @@ export const golden06: GoldenCase = {
       { zpid: 'G6-E', reason: 'SQFT_OUT_OF_RANGE' },
       { zpid: 'G6-F', reason: 'NON_ARMS_LENGTH' },
     ],
-    radiusTierMi: 2.0,
+    radiusTierMi: 3.0,
+    recencyTierMonths: 12,
 
     trimCount: 0,
-    usedPpsf: [190, 200, 210],
+    usedPpsf: [175, 190, 205],
     trimmedOutPpsf: [],
 
-    arvPerSqft: 200,
-    arv: 400000,
-    arvLow: 380000,
-    arvHigh: 420000,
-    sd: 10,
-    cv: 0.05,
+    arvPerSqft: 190,
+    arv: 380000,
+    arvLow: 350000,
+    arvHigh: 410000,
+    sd: 15,
+    cv: 0.0789474,
     confidence: 'low',
 
     epsilon: 1e-9,
@@ -171,7 +198,7 @@ export const golden06: GoldenCase = {
   wrongAnswers: [
     {
       bug: 'candidate median taken over rule-1-9 survivors only (median 195, threshold 78) — transfer survives',
-      arv: 340000,
+      arv: 324000,
     },
   ],
 };

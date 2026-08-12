@@ -1,12 +1,18 @@
-# CONTRACT — Comps Lookup + ARV (`feat/comps-lookup`)
+# CONTRACT — Comps Lookup (`feat/comps-client-spec`; formerly "Comps Lookup + ARV" on `feat/comps-lookup` — the computed ARV is REMOVED, §14.8, and the branch moved with the client-spec alignment)
 
 Owner: MASON. INSPECTOR tests from this file. If code and contract disagree, the
 contract wins until a `CONTRACT_CHANGE` is agreed.
 
-- `ALGO_VERSION = 1`
-- Status: **token available; full module in scope for tonight.** Pure logic
-  stays offline-testable against the stub + fixtures; the Apify provider is
-  being built against a recorded spike payload.
+- `ALGO_VERSION = 9` (1→2 client-spec alignment §14; 2→3 ARV removal §14.8;
+  3→4 truncation fix §14.17; 4→5 the union §14.19; 5→6 completeness
+  tie-breaker §14.20; 6→7 attached lot weights §14.3 amendment; 7→8
+  thin-market disclosure §14.21; 8→9 price-outlier disclosure §14.23.
+  `RAW_REFETCH_BELOW_VERSION = 4`: rows below it REFETCH on touch — their
+  raw was fetched under the 40-cap regime; v4+ raw is sound and recomputes
+  free.)
+- Status: **feature-complete; development CLOSED (operator, 2026-08-12).**
+  §14.23 was the final slice. INSPECTOR verifies, issues GREEN, the module
+  ships. Nothing new starts without a fresh operator ruling.
 
 ## 0. Change log (operator-directed, 2026-08-05 evening)
 
@@ -36,6 +42,1178 @@ contract wins until a `CONTRACT_CHANGE` is agreed.
 
 ---
 
+## 14. CLIENT-SPEC ALIGNMENT (ALGO_VERSION 2, then 3 after §14.8) — branch `feat/comps-client-spec`
+
+Operator-directed alignment with the client's written comp-selection method.
+**This section is binding and supersedes the older values wherever they
+conflict**; the tables in §3/§5 have been edited in place to match.
+
+### 14.1 Parameter changes
+
+| Parameter | Was (v1) | Now (v2) | Note |
+| --- | --- | --- | --- |
+| `SQFT_TOLERANCE` | 0.25 | **0.20** | Her spec reads "generally within 10–20%". **Pinned reading:** 20% is the HARD GATE; closeness inside the band is already rewarded by the sqft scoring term, so gate-at-20% + existing scoring together satisfy "generally within 10–20%" without a second gate at 10% that would decimate thin markets. |
+| `RADIUS_TIERS_MI` | [0.5, 1.0, 2.0] | **[1.0, 3.0]** | **Widens the outer bound from 2 mi to 3 mi.** Fewer, wider rungs. |
+| Recency | flat 12-month gate, recency scored | **`RECENCY_TIERS_MONTHS = [3, 6, 12]`** | Her spec ("start at 3 months, extend to 12 in a slower market") is TIERING, not scoring. The 12-month wall remains the outer bound; the recency term still scores within it. |
+| `MAX_COMPS_KEPT` | 8 | **5** | Display AND compute — no split. The ARV is computed from the same 5 the member sees. |
+| `MIN_COMPS_TO_COMPUTE` | 3 | **3** (unchanged) | |
+| Lot size | hard gate (`LOT_ANOMALY`, >5× subject) | **soft scoring factor** | A hard lot gate decimates thin markets. Rule 11 `LOT_ANOMALY` is REMOVED from §5.3; lot becomes a scored term (§14.3). `RejectReason` keeps the member for back-compat with cached v1 results but it is never emitted. |
+
+### 14.2 The two ladders, and the order they widen (design decision, pinned)
+
+Two tiered gates now exist. They are walked as ONE ordered ladder, stopping at
+the first rung yielding ≥ `MIN_COMPS_FOR_TIER` (5):
+
+```
+1.0 mi / 3 mo  →  1.0 mi / 6 mo  →  1.0 mi / 12 mo
+              →  3.0 mi / 3 mo  →  3.0 mi / 6 mo  →  3.0 mi / 12 mo
+```
+
+**Recency widens BEFORE radius.** Rationale, pinned so it is not "corrected"
+later: location is a stronger determinant of value than recency inside a
+12-month window — a same-neighbourhood sale from eight months ago is usually a
+better comp than one three miles away from last month. Exhaust time before
+distance. If no rung reaches 5, the LAST rung's outcome is used (and may still
+satisfy `MIN_COMPS_TO_COMPUTE` = 3).
+
+`CompsResult` records BOTH: `radiusTierMi` (existing) and **`recencyTierMonths`**
+(new). The rendered block names both.
+
+### 14.3 Scoring, with lot reinstated as soft
+
+Weights must sum to 100. Lot takes 10, drawn 5 from distance and 5 from sqft —
+the minimum disturbance that leaves the two dominant terms dominant:
+
+```
+distance = min(distanceMi / DISTANCE_NORM_MI, 1)                  * 35   (was 40)
+sqft     = min(|cSqft - sSqft| / sSqft / SQFT_TOLERANCE, 1)       * 25   (was 30)
+recency  = min(max(monthsAgo, 0) / RECENCY_NORM_MONTHS, 1)        * 20   (unchanged)
+bedbath  = min((|dBeds| + |dBaths|) / 2, 1)                       * 10   (unchanged)
+lot      = min(|cLot - sLot| / sLot / LOT_NORM_RATIO, 1)          * 10   (NEW)
+```
+
+`LOT_NORM_RATIO = 1.0` — a 100% lot difference saturates the term. **Null lot on
+either side scores 0**, exactly as null beds/baths do: unknown is not a penalty.
+
+**§14.3 AMENDMENT (operator rulings, folded 2026-08-13; ALGO_VERSION 7).
+Three rules now govern scoring/ordering beyond the base weights:**
+
+1. **Lot weight is ZERO for ATTACHED subjects (CONDO, TOWNHOUSE) —
+   RULED.** Evidence: Zillow's parcel records for attached housing are
+   internally inconsistent — verified raw (`spike-evergreen-lots.json`):
+   same-complex townhouse units with 1,105–1,135 sqft interiors carry
+   lots of 684, 1,202 and 2,276 sqft, each explicitly `lotAreaUnits:
+   "Square Feet"` in Zillow's own record. A soft term that is noise is
+   not neutral — it displaces signal from terms that are not. The freed
+   10 points redistribute PROPORTIONALLY across distance, sqft and
+   recency: each × `ATTACHED_REDISTRIBUTION_FACTOR` = (80+10)/80 = 9/8,
+   DERIVED from the weights (35→39.375, 25→28.125, 20→22.5; bedbath
+   stays 10). **SFR keeps the original 35/25/20/10/10 — lot is real
+   there.** `effectiveWeights(subjectType)` (rank.ts, exported) is the
+   single source; BOTH branches total exactly 100 (9/8 is dyadic, so the
+   float sum is exact). INSPECTOR asserts the totals in both branches and
+   that an SFR subject is unaffected.
+2. **Null lot (either side) scores 0** — unchanged, as null beds/baths do:
+   unknown is not a penalty.
+3. **Completeness tie-breaker (§14.20)**: unknown is not an ADVANTAGE
+   either — ordering (not score) demotes missing bed/bath fields by
+   5/field within the concealment margin.
+
+### 14.4 Confidence, rebased — **REMOVED WITH THE ARV (§14.8). PRESERVED SPEC, not live.**
+
+Nothing in this subsection describes shipping code: the confidence grade
+died with `arv.ts` and no tier is computed or rendered anywhere. Kept,
+like §5.5, solely because §14.8 defines reinstatement as a rebuild from
+this contract. (Coherence pass, 2026-08-12: this banner was missing while
+§5.5 had one — the same removal, inconsistently marked.)
+
+`high` required n ≥ 6; with the cap at 5 that is structurally unreachable and
+every run would return medium or low forever. Rebased:
+
+- **high** — compsUsed ≥ **5** (the full set kept) ∧ cv ≤ 0.15 ∧ median distance ≤ 0.75 mi ∧ median age ≤ 6 months
+- **medium** — compsUsed ≥ 4 ∧ cv ≤ 0.25
+- **low** — otherwise
+
+CV thresholds unchanged.
+
+**The trim consequence, stated plainly rather than buried:** at n = 5,
+`trimCount = max(1, floor(5 × 0.15)) = 1`, so one comp is dropped from each end
+and **the ARV is the mean of 3 values, with the sample standard deviation also
+computed over those 3** (n−1 = 2 degrees of freedom). That is the client's
+method as written — 5 comps shown, 5 kept, 3 averaged after outlier trimming.
+It is a deliberately small sample and the confidence tiers are what qualify it.
+
+### 14.5 Per-comp fields — VERIFIED AGAINST THE RECORDED PAYLOAD
+
+Evidence: 73 sold comps across both recorded search runs
+(`spike-comps.json`, `spike-comps-2.json`).
+
+**Buildable — render these:**
+
+| Field | Source | Availability |
+| --- | --- | --- |
+| address, sold price, sold date, sqft, $/sqft, distance | existing | already rendered |
+| **beds** | `homeInfo.bedrooms` | 70/73 |
+| **baths** | `homeInfo.bathrooms` | 71/73 |
+| **lot size** | `homeInfo.lotAreaValue` + `lotAreaUnit` | 73/73 (68 sqft, 5 acres → normalized to sqft) |
+| **property link** | `detailUrl` | 73/73 — **LOAD-BEARING (§14.9)**; unbuildable ⇒ explicit "link unavailable" |
+
+**Additional per-comp fields via the DETAIL BATCH (§14.14.1, BUILT):** year
+built, days on market (real `daysOnZillow`), parking spaces — rendered
+label-first on their own line, em-dash nulls. Style/condition captured but
+NOT rendered (display needs its own ruling).
+
+**NOT buildable from the comps SEARCH payload alone — see §14.6; the ones the
+client approved now arrive through the detail batch (§14.14).**
+
+**Null rendering rule (no-fabrication extends to every new field):** a null
+field renders as an explicit **`—`** (em dash). Never omitted silently, never
+inferred, never back-filled from another comp or from the subject.
+**Marker exclusivity (pinned via INSPECTOR's format suite):** within the
+success block the em dash appears ONLY as the null marker — the renderer
+must not use it as punctuation, or "explicit" stops being true. A
+fully-populated render contains zero em dashes.
+
+### 14.6 What the payload does NOT contain — for the client conversation
+
+The comps come from the **search** scraper; the subject comes from the
+**detail** scraper. They carry different data, and that distinction is the
+whole answer:
+
+| Client criterion | In comps (search) payload? | Note |
+| --- | --- | --- |
+| **Days on market** | **NO — effectively absent.** `daysOnZillow` is **−1 on 73/73** sold comps (a sentinel, not a value). `timeOnZillow` exists in ms (5.6–14.6 days observed) but its meaning for a SOLD listing is unverified — it may be time-on-site, not marketing time. | Not rendered. Would be a guess. |
+| **Parking spaces** | **NO** — absent from every search field. | Present in the DETAIL payload only (`resoFacts.parkingCapacity`, `garageParkingCapacity`, `hasGarage`). |
+| **Year built / similar age** | **NO** in search. | Present in DETAIL (`yearBuilt`) — so available for the SUBJECT, not for comps. |
+| **Architectural style** | **NO** in search. | Present in DETAIL (`resoFacts.architecturalStyle` — observed "Ranch", "Spanish"). |
+| **Construction quality / condition** | **NO** in search. | DETAIL has `resoFacts.propertyCondition` (observed "Fixer") but only in 1 of 2 recorded subjects — inconsistent even there. |
+| **Garage / basement / ADU** | **NO** in search. | DETAIL has garage fields; **basement absent in both** recorded subjects; no ADU field at all (`hasAdditionalParcels` is not an ADU). |
+
+**The cost fact the client decision turned on:** every one of the missing
+criteria exists in the DETAIL payload. The naive shape was one detail run per
+comp (2 → 7 runs, ~3.5×); the spike proved BATCHING (§14.14), and the client
+approved **3 runs per lookup** (subject + search + ONE batched detail). DOM /
+parking / year built are now BUILT per comp (§14.14.1). Style and condition
+are OBTAINABLE and captured; their DISPLAY awaits a separate client ruling
+(§14.9 waived them as matching criteria only — not the same as declining to
+see them).
+
+### 14.7 Prescribed copy — verbatim, from constants, structural in format.ts
+
+Exported as named constants and emitted by `format.ts` structurally (not
+model-authored, not prompt-dependent), on every SUCCESSFUL comps render:
+
+- `COMPS_OPENING` (before the table): *"Sure. Here are recent comparable sales
+  for that location and home type. Please note responses are for education and
+  based on available public data. Investors are encouraged to review each
+  address for additional information."*
+- `COMPS_CLOSING` (always the LAST content before the footer — the FULL
+  emit order as of §14.23 is opening → header → table → [thin-market
+  §14.21] → [outlier §14.23] → [neighborhood §14.16.1] → [demographics
+  §14.10] → closing → footer; the bracketed sections are conditional and
+  their insertion never displaced the closing's position): evaluate each
+  property carefully;
+  current quality of home, overall appeal, lot location and usability can
+  drastically impact value; consider external factors such as view properties,
+  environmental concerns, powerlines, busy roads.
+
+The existing not-an-appraisal footer remains. (The low-confidence warning is
+GONE with the confidence grade itself, §14.8; an earlier draft of this
+section referenced an `ARV_SURFACING` flag that §14.8 also deleted.)
+
+### 14.8 ARV REMOVED — a ONE-WAY DOOR (client decision, final)
+
+Supersedes the earlier flag-gated version entirely. The client removed the
+computed ARV from the comps response AND the calculator pre-fill. It is
+**deleted, not gated and not dark**: `ARV_SURFACING` and
+`AppConfig.arvSurfacingEnabled` are gone with it.
+
+**Recorded so its absence never reads as an oversight:** this is a ONE-WAY
+DOOR. `arv.ts` — the trimmed mean, sample standard deviation, cv, confidence
+tiers, `arvLow`/`arvHigh`, rounding — is deleted, along with `ArvResult`,
+`ArvConfidence`, `CompsResult.arv`, and the `TRIM_FRACTION` / `ARV_ROUND_TO` /
+`CONF_HIGH` / `CONF_MEDIUM` constants. **Reinstating the ARV is a REBUILD from
+this contract, not a flag flip.** The client asked for it out; it is out.
+
+What went, precisely:
+
+- `arv.ts` deleted; `service.ts` no longer computes an ARV; `CompsResult` has
+  no `arv` field.
+- `format.ts`: the ARV block and `confidenceLine` are gone. The emit order is
+  now opening → header → table → closing → footer, with no gap where the ARV
+  used to be.
+- `tools.ts`: the model-facing success result is `{ rendered_block,
+  instruction }` — **no `arv`, no `confidence`**, and the old instruction
+  claiming the ARV "will pre-fill the Flip/BRRRR calculators" is gone, since
+  it had become false.
+- **`run_comps` no longer touches `session_state` at all** — see below.
+
+**What SURVIVES, deliberately (manual ARV is unaffected):** `session_state`
+and its table, `CompsStateBlock`, the atomic single-block write, the
+address-mismatch guard, the echo machinery, `set_manual_arv`,
+`applyArvPrefill` and `applyFormArvPrefill`.
+
+- The two pre-fill functions are **NOT deleted** — deleting them would make
+  `set_manual_arv` write to something nothing reads, i.e. a silent no-op,
+  contradicting "manual ARV is unaffected". They now serve **`arvSource:
+  'manual'` blocks only**; a leftover `'comps'` block from a cached v2 session
+  is ignored and never pre-fills.
+- **`clearCompsBlock` is no longer called before the provider.** That clear
+  existed to stop a failed run leaving the previous *comps* ARV behind. Comps
+  no longer writes an ARV, so the only thing the clear could still destroy is
+  a number the MEMBER typed — running comps must never silently delete that.
+  The address-mismatch guard still prevents a manual ARV bound to address A
+  being applied to address B: ambiguity resolves to asking, not assuming.
+  (`clearCompsBlock` remains exported and tested; production simply has no
+  caller.)
+
+**`ALGO_VERSION` 2 → 3.** Cached v2 blobs carry an `arv` key that no longer
+deserializes into `CompsResult`; the version stamp forces recompute-from-raw
+rather than relying on the deserializer to tolerate a dead field.
+
+### 14.9 Style / condition / quality matching — FORMALLY WAIVED
+
+The client has waived, in writing: similar age, architectural style, matching
+garage/basement/ADU, similar construction quality and condition. Recorded here
+so it does not resurface as a gap. **Not a limitation — a scope decision.**
+
+**Consequence: the property link is now LOAD-BEARING.** It is the client's
+stated substitute for those three matching criteria — the member follows it to
+evaluate style, condition and quality themselves. So:
+
+- A comp whose link cannot be built (missing `zpid`/`detailUrl`) is a REAL
+  degradation, not a cosmetic gap.
+- It renders as an explicit **"link unavailable"**, never a silently omitted
+  field. Same no-fabrication rule as every other column, and here it also
+  tells the member that the thing standing in for three criteria is missing
+  for that row.
+
+### 14.10 Census demographics — IN SCOPE, SEPARATE SLICE, AFTER the parameters
+
+US Census ACS API (free, no key at light volume): median household income,
+median age, owner-vs-renter occupancy. Keyed off the subject lat/lng already
+in hand.
+
+**Sequencing is binding: parameters + fields ship and hand off FIRST. Census
+does not interleave** — the client is waiting on the parameter work and it is
+what addresses her complaint.
+
+When built: cache by tract/ZIP with its own TTL; a Census failure is
+NON-FATAL (comps still render in full, the demographics section says
+unavailable); never infer a figure the API did not return.
+
+**BUILT (2026-08-11). Shapes and discoveries:**
+
+- **The "no key at light volume" assumption above is STALE**: the Census
+  data API now 302s every keyless request to a "Missing Key" page (verified
+  live across vintages, incl. with a bogus key). The key is FREE
+  (api.census.gov/data/key_signup.html) — **OPERATOR ACTION: register one
+  and set `CENSUS_API_KEY`**. Until then the feature is dormant by design:
+  no key ⇒ no provider ⇒ `CompsResult.demographics` stays ABSENT ⇒ **no
+  section renders at all** — an unconfigured feature is not a failure (same
+  gate pattern as `run_comps`/APIFY_TOKEN). The free GEOCODER still works
+  keyless; its payload is recorded (`spike-census-geocode.json`).
+- **Three-state field**: `CompsResult.demographics?: Demographics | null` —
+  ABSENT = never attempted (no section); NULL = attempted, failed or no
+  tract (section renders the plain "unavailable" line, comps unaffected);
+  PRESENT = tract figures. Attached on EVERY serve, never stored in
+  comps_cache — same decoration pattern as detail.
+- **Two calls per cold tract** (providers/census.ts): geocoder lat/lng →
+  tract (GEOID/name), then ACS 5-year (`CENSUS_ACS_YEAR = 2023`) for
+  B19013_001E (median household income), B01002_001E (median age), B25003
+  tenure counts. Columns located BY HEADER NAME never position; ACS values
+  arrive as STRINGS; suppression sentinels (large negatives) and anything
+  non-finite/negative map to null. Tenure percentages are ARITHMETIC ON
+  RETURNED COUNTS (owner/(owner+renter), 1dp) — allowed arithmetic, never
+  inference; 0 counts are values.
+- **Cache**: `census_cache` (tract_geoid PK, demographics jsonb;
+  `sql/add_census_cache.sql`, migrate.ts probes it),
+  `CENSUS_CACHE_TTL_DAYS = 180` — ACS changes once a year; the cache buys
+  latency and key-quota headroom, not dollars. Tract resolution runs per
+  serve (free); only the ACS figures cache.
+- **Ceiling**: each Census call is clamped to
+  `min(CENSUS_TIMEOUT_MS = 10s, remaining pipeline headroom)`; zero
+  headroom ⇒ skip to null non-fatally. **NO retry** (same pinned posture as
+  the detail batch — the "unavailable" line is the retry). The provider
+  fetches with `redirect: 'error'` so the API's 302-to-HTML failure mode
+  for key problems surfaces as an HTTP-class failure, not a parse error;
+  the key rides only in the query string and typed errors carry no URL.
+- **Render** (§14.8 emit order EXTENDED): opening → header → table →
+  **[demographics]** → closing → footer — `COMPS_CLOSING` remains the last
+  content before the footer exactly as pinned. Section copy: tract name +
+  "US Census ACS 5-year, <year>" + income (USD) · median age · owner/renter
+  % (rounded), em-dash nulls. Unavailable line: *"Neighborhood demographics
+  are unavailable right now — the comps above are unaffected."*
+- **Fixtures — ALL RECORDED as of the first keyed run (2026-08-11);** the
+  hand-built ACS fixture is deleted:
+  - `spike-census-geocode.json` — real geocoder, subject-2 coords → tract
+    04013111700;
+  - `spike-census-acs.json` — real keyed ACS for that tract: income
+    $93,333, median age 37.9, tenure 2296/1427/869 (owner 62.2%);
+  - `spike-census-acs-sentinel.json` — real keyed ACS for tract 061017:
+    **a LIVE `-666666666` income sentinel** with tenure counts 0/0/0 (zero
+    denominator ⇒ null percentages) and a real median age 39.5 — one row
+    exercising Guarantee 3's sentinel, its zero-denominator edge, and a
+    passing value simultaneously. The county-wide sweep behind it: 35
+    sentinel hits across 1,009 Maricopa tracts, ALL `-666666666`, zero
+    negative non-sentinel values, zero API-null cells.
+  Live e2e render, verbatim: `**Neighborhood snapshot**: Census Tract 1117
+  (US Census ACS 5-year, 2023)` / `Median household income $93,333 · median
+  age 37.9 · owner-occupied 62% · renter-occupied 38%`, positioned
+  table → snapshot → closing → footer as pinned. (Header separator changed
+  from an em dash to a colon during the aggregates build: §14.5 marker
+  exclusivity applies to every success-block section, and a punctuation
+  dash here would have broken the fully-populated zero-em-dash guarantee
+  the moment the section joined a populated render. The unavailable lines
+  likewise carry no em dash.)
+
+**GUARANTEE 3 (operator ruling) — suppression sentinels render as
+unavailable, never as a number and never as zero.** ACS returns its
+annotations IN the numeric field as negative sentinels. The guard is an
+**ENUMERATED LIST, not a threshold** — a range check on "negative" is the
+wrong shape (this is the third appearance of the sentinel class, after the
+search payload's `daysOnZillow: -1` and the detail DOM):
+
+| Sentinel | Meaning (Census annotation) |
+| --- | --- |
+| `-666666666` | estimate not computable |
+| `-999999999` | suppressed / N-A |
+| `-888888888` | not applicable |
+| `-222222222` | too few samples |
+| `-555555555` | estimate controlled (documented annotation, added to complete the class — flag to operator if unwanted) |
+| `-333333333` | median falls in lowest/highest interval (same) |
+
+Any listed value ⇒ null ⇒ em-dash. **The inverse is guarded too: `0` is a
+REAL value** — a 0% owner-occupied tract exists (all-rental), and a
+"drop anything ≤ 0" filter would eat it. Zero tenure counts flow through
+the percentage arithmetic; only a zero DENOMINATOR (no occupied households
+returned at all) nulls the percentages.
+
+**BUG-013 (operator ruling) — a DOMAIN FLOOR sits UNDER the enumeration,
+not instead of it.** The two layers have different jobs:
+
+- the enumerated set stays the primary mechanism: documented suppression,
+  nulled SILENTLY because it is expected;
+- none of income, age, or the tenure counts can be negative, so an
+  unlisted negative is bad data: it nulls out AND **logs at WARN with the
+  raw value, the variable, and the tract**. The log line is the point — it
+  is how we learn Census added a seventh annotation, rather than from a
+  member screenshot. (Wire: the mapper reports through an `onUnrecognized`
+  observer; the service owns the WARN.)
+- **Percentages: clamp is wrong, null is right.** If the tenure counts do
+  not reconcile to their denominator — any computed percentage outside
+  [0,100] — BOTH lines render unavailable and the anomaly is reported. We
+  do not repair data we do not understand. (Structurally unreachable while
+  the floor holds; kept so the guarantee survives refactors. **Operator
+  approved as built**, with the backstop's independence from the floor
+  called out as the point: a guarantee that depends on the floor staying
+  correct is weaker than one that holds if the floor breaks.)
+- **Observer fires on LIVE fetches only** (approved): a null cached from
+  an anomalous row re-serves silently, so the WARN fires once per cold
+  fetch per tract — not per member view.
+- The denominator for the percentages is the SUM of the two returned
+  counts, never the returned B25003 total — computing owner% against a
+  total that counts households the tenure split does not classify would be
+  inference (INSPECTOR-verified: 300/100/500 reads 75%, not 60%; a
+  suppressed renter count nulls BOTH percentages).
+
+**GUARANTEE 4 (operator ruling; INSPECTOR's framing adopted) — the
+provenance rule, standing:** *a number the member did not supply must carry
+its provenance, and if the provenance cannot render, the number must not
+render.* One rule, three surfaces today:
+
+1. **The widget ARV pre-fill** (§8.1): label and value live in one object —
+   no label, no pre-fill, by construction.
+2. **Census figures** (this section): the tract name and "US Census ACS
+   5-year, <vintage>" render in the SAME template as the figures — the
+   section cannot emit numbers without its geography and vintage.
+3. **The aggregates DOM line** (§14.16, when built): the 5-comp-average
+   label is load-bearing — if the label cannot render, the line does not
+   render.
+
+Any future member-visible number that the member did not type inherits this
+rule by default; rendering one bare is a bug without needing a new ruling.
+
+### 14.11 Out of scope
+
+- ~~**Neighbourhood summary** — all of it. Separate block.~~ Superseded:
+  the sales-aggregate half is now scoped and ruled (§14.16); Census
+  demographics were already in scope (§14.10).
+
+### 14.16 Neighbourhood sales aggregates — RULED 2026-08-10, BUILT per §14.16.1
+
+Client spec: per lookup, 1-mile radius, past 12 months — total sales, avg
+price, avg $/sqft, avg bed/bath, avg DOM. Scoping evidence in
+`reports/NEIGHBOURHOOD_AGGREGATES_SCOPING.md` (both recorded search runs hit
+the 40-result cap; the pool's "12 months" is really 4–5 weeks deep).
+
+**RULING 1 — dedicated 1-mile fetch with the 12-month window SERVER-SIDE**
+(Zillow `doz=12m`), never the candidate pool. Cost was not the deciding
+factor: the pool version is structurally wrong in a way no member could
+detect. `dedupeSales` runs on the aggregate set BEFORE any average — BUG-010's
+duplicate pair sat in a recorded pool and would double-count.
+
+**RULING 2 — DOM is the labelled 5-comp average** (option b): already paid
+for by the detail slice. The full-accuracy version (a detail run per sale
+over 100+ sales) blows the 90s ceiling — an accurate number that times out is
+worth less than a labelled approximation that arrives. **The label is
+LOAD-BEARING and non-negotiable: it must read as the average of the 5 comps
+shown, never as the neighbourhood figure. If the label cannot render, the
+line does not render.** (An instance of the standing provenance rule,
+§14.10 Guarantee 4.)
+
+**Build gate — the resultsLimit spike comes FIRST (one run):** does
+`MAP_MARKERS` honour a `resultsLimit` above ~40, and how many items does a
+real urban 1-mile/12-month query return? Reported to the operator BEFORE any
+aggregate code exists; if the cap holds regardless, the approach needs
+rethinking.
+
+**SPIKE RUN 2026-08-11 (gate satisfied, reported, build still awaits the
+operator's go):** `resultsLimit: 500` returned **235 items in 6.4s** — the
+old 40-item wall was OUR limit, not Zillow's — and `doz=12m` held
+server-side (dateSold spans a true 12 months). 233 usable sold, all
+distinct zpids; **193 inside the 1-mile circle** (box corners excluded —
+the CIRCLE subset is the aggregate set); price 100% / sqft 95% / beds 88%.
+Cost: one run × ~235 per-result billing units in an urban market; the
+per-result rate is in the client's console. Recorded:
+`__fixtures__/spike-agg-1mi-12mo.json`. Full table in
+`reports/NEIGHBOURHOOD_AGGREGATES_SCOPING.md`.
+
+**Build authorization + test-design principle (operator, post-spike):**
+the aggregates START once INSPECTOR re-issues census verification.
+Dedicated 1-mile fetch, `doz=12m` server-side, `dedupeSales` before any
+average, DOM as the labelled 5-comp average with the label load-bearing —
+all as ruled above. **The window-truncation tests are the design: a
+truncated window produces a PLAUSIBLE number, so the assertions must be on
+the CALL (bounds, doz parameter, resultsLimit) and the SPAN (the date
+range actually covered), never on the figure.** A test that checks the
+average is a number would pass on four weeks of data wearing a 12-month
+label — the exact failure the dedicated fetch exists to prevent.
+
+### 14.16.1 Aggregates BUILD SPEC (gate fired 2026-08-11; contract precedes code)
+
+**Fetch** (the 4th actor run of a cold lookup):
+- `PropertyDataProvider.fetchNeighborhoodSales?(subject, radiusMi, windowMonths, opts?): Promise<RawComp[]>`
+  — OPTIONAL, like `fetchDetailBatch`: a provider without it renders no
+  section (absent ⇒ not attempted). Apify impl: the SAME search actor and
+  URL builder with `doz` (window) added server-side and
+  `NEIGHBORHOOD_RESULTS_LIMIT = 500` (spike: 235 returned, query
+  exhausted — the old 40 wall was ours). Items map through the existing
+  `mapCompItems` — the aggregate set speaks `RawComp`.
+- Config: `NEIGHBORHOOD_RADIUS_MI = 1.0`, `NEIGHBORHOOD_WINDOW_MONTHS =
+  12`, `NEIGHBORHOOD_MIN_REMAINING_MS = 10_000` (spike measured 6.4s; less
+  headroom than this ⇒ skip, comps render without the section).
+- **NO retry** — same pinned posture as detail and Census: decoration's
+  degradation line IS the retry.
+- **Budget**: one cap unit per Apify-touching lookup, SHARED with detail:
+  whichever decoration fetch fires first on a cache-hit path consumes the
+  lookup's unit; the rest ride it. Denial ⇒ skip (null), never
+  RATE_LIMITED. Live path already consumed at the provider stage.
+
+**Pure computation** (`aggregates.ts`, offline-testable):
+1. status SOLD, computable `soldDate` inside the window, **haversine ≤
+   `NEIGHBORHOOD_RADIUS_MI` — THE CIRCLE, NOT THE BOX** (spike: 193 of 233
+   were in-circle; box corners are excluded);
+2. **`dedupeSales` BEFORE any average** (BUG-010's pair would double-count);
+3. then: `totalSales` (deduped count), `avgSoldPrice` (rounded to $),
+   `avgPricePerSqft` (mean of per-sale ppsf over sales with price>0 AND
+   sqft>0 — mean of ratios, not ratio of means; rounded to $),
+   `avgBeds`/`avgBaths` (1dp, over non-null), and the SPAN actually
+   covered: `earliestSaleDate`/`latestSaleDate` of the deduped in-window
+   set — the field the truncation tests assert on.
+4. Averages over empty subsets are null (em-dash); `totalSales: 0` is a
+   REAL figure and renders as one.
+5. **Cap-detection invariant (INSPECTOR's CASE 3, adopted into contract):**
+   the fetch returning `NEIGHBORHOOD_RESULTS_LIMIT` items means the window
+   is almost certainly truncated (`isWindowTruncated`, exported;
+   `windowTruncated` on the result). A truncated set MUST NOT carry a
+   12-month label — the render switches to the actual covered span
+   ("sales since <earliest> within 1 mile; older sales exceeded the data
+   limit"). Silence beats a mislabelled average; an honest span beats
+   silence.
+
+**DOM (Ruling 2)**: `avgDomOfDisplayedComps` = mean of
+`detail.daysOnMarket` over the DISPLAYED comps that carry one (rounded,
+whole days), plus `domCompCount`. Computed from the detail-enriched comps,
+zero extra spend. **Label load-bearing**: the DOM line renders ONLY inside
+its labelled template — "average across N of the M comps shown above, not
+a neighbourhood figure" — and `domCompCount: 0` renders an em-dash inside
+the same label. No label, no line (Guarantee 4).
+
+**Caching**: the RAW sales payload rides the EXISTING `comps_cache` row —
+new nullable `raw_neighborhood` jsonb column
+(`sql/add_comps_cache_neighborhood.sql`, additive; migrate.ts probe
+unchanged — same table). Aggregates are COMPUTED on every serve from the
+cached raw (recompute-from-raw unchanged, zero spend); rows predating the
+column simply fetch live once on next touch. The computed aggregates are
+NEVER stored — same rule as detail/demographics enrichment.
+
+**Result + render**: `CompsResult.neighborhood?: NeighborhoodAggregates |
+null` — three states exactly like `demographics` (absent = no section;
+null = "Neighborhood sales data is unavailable right now — the comps above
+are unaffected."; present = the block). Emit order becomes: opening →
+header → table → **[neighborhood]** → [demographics] → closing → footer;
+COMPS_CLOSING stays last-before-footer. Per Guarantee 4 the section header
+carries geography AND window verbatim: **"past 12 months within 1 mile"**.
+
+**Failure posture**: identical to detail/Census — a neighborhood fetch
+failure can never fail a working comps run; ceiling breach renders comps
+without the section.
+
+**Candidate, recorded NOT built (operator):** once the aggregate pool exists
+(potentially hundreds of sales), it is a far better basis for outlier
+detection than 5 comps — flag when the comp set sits meaningfully above or
+below the neighbourhood distribution. Would have caught the Don Frank case
+(tight comps, high confidence, subject sold ~15% above every one). A
+candidate for a future ruling; nothing here authorizes building it.
+
+### 14.13 BUG-010 — duplicate-sale dedupe (operator ruling)
+
+Zillow carries one sale under TWO zpids with different address formatting
+(recorded: `830 America St` / `830 W AMERICA Street`, both $360,000 / 1,315
+sqft / 2026-07-17, coordinates 0.3 m apart). Under the v2 cap of 5 it took
+**two of five slots**, double-weighted that sale in a trimmed mean of three
+values, displaced a genuine comp, and — duplicates shrink variance — pushed
+the confidence tier up.
+
+- **Identity is the SALE, never the id**: equal `soldPrice`, `livingArea` and
+  `soldDate`, plus coordinates within `DUPLICATE_COORD_TOLERANCE_MI` (~10 m).
+  A DISTANCE threshold, not float equality — the recorded pair differs in the
+  sixth decimal of latitude, which exact matching misses.
+- **Winner**: the record with more non-null fields among lot / beds / baths /
+  link; ties break on the longer street address. Deterministic.
+- **Placement**: `dedupeSales` runs inside the tier walker, AFTER the hard
+  filters and BEFORE ranking, so a duplicate can never consume a slot and only
+  a comp that would otherwise have been KEPT is ever labelled a duplicate. The
+  tier's sufficiency test runs on the DEDUPED count, so a rung cannot "reach
+  5" on four real sales plus a copy.
+- **Reported** as `RejectReason.DUPLICATE_SALE`, visible in the rejection
+  table like every other drop.
+- **One deviation from the literal instruction, flagged:** the ruling's
+  rationale also required duplicates not to skew "the candidate-set median the
+  non-arms-length rule depends on". Placement after the gates CANNOT achieve
+  that — the median is computed inside the gate pass. So
+  `candidateMedianPpsf` additionally dedupes its own input. Both halves of the
+  stated rationale now hold; the rejection semantics stay honest.
+
+### 14.14 Per-comp detail enrichment — PRE-BUILD RULES (client approved; build gated on INSPECTOR GREEN)
+
+Client approved detail runs for the final comps (DOM, parking, year built —
+style/condition are obtainable but DISPLAY needs a separate client ruling).
+Spike recorded in `spike-detail-batch5.json` / `spike-detail-batch-mixed.json`.
+Pinned now, while fresh, so the build cannot drift from the evidence:
+
+1. **THE JOIN KEY IS `addressOrUrlFromInput`. NEVER POSITION.** This is a
+   RULE, not a note: the batch returns items OUT of input order (recorded —
+   input 1,2,3,4,5 came back 1,4,5,2,3). Positional matching would assemble
+   five comps wearing each other's parking counts and year built, and nothing
+   about that looks broken from the outside. Any adapter matching batch
+   output to comps by index is a bug regardless of passing tests.
+2. **Batch size is bounded by `MAX_COMPS_KEPT`, never an independent
+   constant.** Detail runs happen AFTER ranking and dedupe, on the FINAL kept
+   set only — if the cap changes, the batch changes with it automatically.
+   (Get this wrong and it is ~40 runs per lookup, not 1.)
+3. **Partial failure is non-fatal**, and the actor's own semantics support it:
+   a bad address in a batch returns as its own `{isValid:false,
+   invalidReason}` item while the rest succeed (recorded). A failed item
+   renders em-dash detail fields exactly like today; a detail failure never
+   turns a working comps run into a failure.
+4. **Detail cached BY ZPID, separately from the comps result, with its own
+   LONGER TTL** — property facts barely change; nearby lookups share comps
+   and therefore share detail payloads. This is the main cost lever.
+5. **The 90s ceiling applies to the WHOLE pipeline.** If detail would breach
+   it, return the comps without detail.
+6. **Economics**: 3 actor runs per lookup (subject + search + one batched
+   detail), not 7. Batch of 5 measured at 16s vs 10s for a single.
+7. **Parallel fallback (individual detail runs) MUST NOT be built blind**:
+   the account limits endpoint returns nothing to this token, so the plan's
+   concurrency ceiling is unknown. If batching ever stops sufficing, that
+   number comes from the client's Apify console FIRST. Recorded so nobody
+   starts it without it.
+
+**Daily cap ruling (operator):** `COMPS_DAILY_RUN_CAP` stays **50** and counts
+**LOOKUPS** — the client accepted the 3-runs-per-lookup multiplier knowingly,
+and dropping to a spend-neutral 33 would quietly claw back capacity she did
+not agree to give up. 50 lookups ≈ 150 actor runs/day worst case. The old
+"provider runs" config comment is fixed; the multiplier is documented next to
+the value. **Precise semantics as built:** one provider-hitting lookup
+consumes ONE unit regardless of actor-run count; lookups served entirely from
+cache are free; a cache-hit lookup that still needs a live detail batch
+consumes one unit (every actor run stays behind the cap), and a denial there
+degrades to comps-without-detail — never `RATE_LIMITED`.
+
+### 14.14.1 BUILT (this slice) — shapes and pinned decisions
+
+- **Types**: `CompDetail { daysOnMarket, parkingSpaces, yearBuilt,
+  architecturalStyle, propertyCondition }` (all `| null`);
+  `ScoredComp.detail?: CompDetail` — attached ONLY by the service's
+  enrichment step; the pure filter/rank pipeline never sets it.
+- **Mapping** (`mapDetailBatchItems`, providers/apifyZillow.ts, pure):
+  `daysOnZillow` real in the detail payload (recorded 11–34); negative =
+  sentinel class ⇒ null; 0 is a value. Parking:
+  `resoFacts.parkingCapacity` falling back to `parking.totalSpaces`
+  (both recorded, agreeing); 0 is a value. Items without
+  `addressOrUrlFromInput` are dropped (unjoinable — attaching them could
+  only be positional). `{isValid:false}` items map to `ok:false` WITH the
+  join key intact.
+- **Join** (`detail.ts`, pure): `attachDetails` / `joinDetailBatch` —
+  address-keyed, exact echo first, §5.1-normalized fallback; items for
+  addresses nobody asked for are ignored; order- and length-preserving.
+  `detailBatchFor` clamps any batch to `MAX_COMPS_KEPT` as a structural
+  rule-2 backstop (tracks the constant, no literal).
+- **Detail cache**: table `comps_detail_cache` (zpid PK, detail jsonb,
+  expires_at; RLS, service-role only — `sql/add_comps_detail_cache.sql`),
+  `DETAIL_CACHE_TTL_DAYS = 90`, expiry enforced on read. Cache rows are
+  keyed by the COMP's zpid (the key future lookups probe), not the batch
+  item's. **The comps_cache result is stored DETAIL-FREE** and enrichment
+  re-attaches on every serve — the 14-day and 90-day lifetimes never
+  entangle, and NO ALGO_VERSION bump was needed for this slice.
+- **Ceiling** (rule 5): the pipeline clock starts at runComps entry; the
+  detail batch gets `PROVIDER_TIMEOUT_MS − elapsed` as its timeout and is
+  skipped entirely below `DETAIL_MIN_REMAINING_MS = 20_000` (spike measured
+  ~16s for a batch of 5 — starting with less mostly buys a timeout we still
+  paid for).
+- **NO retry on the detail batch** — a pinned DEVIATION from the §6 seam
+  policy (one retry on transient): detail is decoration; a retry doubles
+  the bill for it and eats the ceiling. The em-dash degradation IS the
+  retry. Subject/search retry behaviour is unchanged.
+- **Render** (§14.5 extension): one added per-comp line, label-first —
+  `year built <v> · days on market <v> · parking spaces <v>` — em-dash per
+  §14.5 for any missing value or a wholly missing detail. Em-dash marker
+  exclusivity holds: a fully-enriched, fully-populated render still
+  contains zero em dashes.
+- **Style / condition: CAPTURED, NOT RENDERED** (operator directive). The
+  client waived them as MATCHING criteria, which is not the same as
+  declining to SEE them — they ride in `CompDetail` and the detail cache so
+  a display ruling is a render change, not a re-scrape. `format.ts` must
+  not emit them until that ruling exists.
+- **Logs**: skip/failure reasons at info/warn with `cacheKey` and COUNTS
+  only — comp addresses never reach info logs (§3).
+- **Failure posture**: every enrichment failure (cache read, cache write,
+  batch error, ceiling, budget) degrades to comps-without-detail; a detail
+  problem can never turn a working comps run into a failure (rule 3).
+
+### 14.15 BUG-011 — manual ARV address binding (operator ruling)
+
+The ARV removal (§14.8) orphaned `subjectAddress`: with `run_comps` writing
+nothing, `set_manual_arv`'s inherit-or-`'manual entry'` fallback bound every
+manual ARV to a literal placeholder — which the guard then "defended"
+(refusing the member's own number on the address they had just named) and
+which shipped in member-visible copy ("for manual entry"). INSPECTOR's
+mailbox 0024; blocker.
+
+Ruling, binding:
+
+1. `set_manual_arv` gains an **OPTIONAL `address` argument** (§9), bound
+   from the member's **CURRENT message only**, never conversation history.
+   The binding is verified structurally, not trusted from the model (§8,
+   `bindAddressToCurrentMessage`).
+2. **No verifiable address ⇒ `subjectAddress: null`** — a real "unbound"
+   state, NOT a placeholder string. The block inherits nothing from any
+   previous block. **Amended by RULING 0026:** "no address" means *no
+   address verifiable in the current message, by argument or extraction* —
+   see item 7.
+3. **The guard does not fire on null.** An unbound ARV has nothing to
+   conflict with and pre-fills wherever the member takes it (chat and form).
+   The value-based stale-figure refusal (§8 explicit-ARV rule, case 3)
+   still fires when unbound — only its wording drops the address.
+4. **A bound ARV on address A still conflicts with address B.** That
+   guarantee is untouched, on both surfaces.
+5. **Echo on null carries no address clause**: `Using your ARV of $450,000 —
+   say "change ARV" to override.` The placeholder never renders anywhere;
+   form label reads "the ARV you set earlier".
+6. **Legacy shim**: rows already storing the literal `'manual entry'` are
+   coerced to null on read (`sessionState.ts`), so the placeholder class
+   cannot re-enter from production data.
+7. **RULING 0026 (operator, closes INSPECTOR's residual): extraction
+   fallback on omission.** The original shape bound only when the model
+   PASSED the address — so model non-compliance alone ("use 450k for 123
+   Main St" → `set_manual_arv({arv})`) reached the guard-free unbound path
+   and failed toward a silent number on the wrong property. Now, when the
+   argument yields no binding (omitted or unverifiable), the handler
+   extracts from the member's CURRENT message itself
+   (`extractAddressFromMessage`): the ONE distinct address fragment,
+   over-capture-refined, passed through the SAME verification the argument
+   route uses. Zero or multiple DISTINCT addresses in the message ⇒ stays
+   unbound — **ambiguity is never guessed**. History is never consulted on
+   either route; the prohibition that matters is unchanged.
+8. **RULING 0026, unbinding is announced.** The fresh-statement rule means
+   re-stating a number without an address DROPS a previous binding — that
+   is correct and stands, but it is member-visible: the tool result carries
+   `unbound_from` and the echo must say the new ARV replaces the one set
+   for that property and is no longer tied to it, so the member sees the
+   address clause disappear rather than discovering it at the calculator.
+
+Known, flagged, not fixed (needs its own ruling if wanted):
+`ADDRESS_FRAGMENT_RE` over-captures when a pure dollar figure precedes the
+address ("my ARV is 620000 for 830 W America St" fragments as "620000 for
+830 …"). Binding compensates (street-part check); the guard's pre-existing
+behaviour is unchanged — worst case an unnecessary clarifying question,
+never a wrong number.
+
+### 14.17 The comps-fetch truncation fix (operator ruling; ALGO_VERSION 4)
+
+The comps search ran 40 items over an uncapped window, so in dense markets
+the pool was ~11 days deep and the recency ladder was decorative — the
+6/12-month rungs re-examined what the 3-month rung already covered.
+Recorded proof: Sierra Vista's pool spanned 2026-07-30→08-10.
+
+**Report finding (owed, delivered): ONE wide fetch serves all six rungs.**
+The rungs are client-side subsets of one pool; a single `doz=12m` fetch at
+the widest radius gives every rung its true candidate set when the fetch
+exhausts, and truncation detection covers the dense case where it cannot.
+Six per-rung fetches would cost 6× and still truncate the same dense rungs
+(each query has the same ceiling) — banned and pointless. Measured
+(`spike-comps-3mi-doz12.json`, dense Tempe, 3mi/doz=12m/limit 500): 499
+raw in 8.6s spanning 2026-04-22→08-10; rung candidates 1mi/3mo=48 →
+1mi/6mo=64.
+
+Built:
+
+1. **`doz=12m` on the comps search** (window = `MAX_COMP_AGE_MONTHS`,
+   server-side) and **`SEARCH_RESULTS_LIMIT` 40 → 500**. The 40 was ours —
+   not Zillow's, not the client's. Billing: per result; a dense cold
+   lookup now bills up to ~limit × the per-result rate.
+2. **Truncation detection transfers** (from §14.16.1):
+   `CompsResult.searchTruncated` + `searchEarliestSoldDate`; a truncated
+   fetch must not claim its window — the header renders `sales since
+   <earliest> (older sales exceeded the data limit)` instead of "sold in
+   the last N months".
+3. **The predicate boundary is AMENDED BY EVIDENCE** (supersedes the
+   exact `>= limit` reading of §14.16.1 item 5): the recorded truncated
+   fetch returned **499 of 500** — at-limit-exactly misses real
+   truncation. `TRUNCATION_DETECT_FRACTION = 0.9` (exported, one
+   predicate for comps AND aggregates): count ≥ 90% of limit ⇒ truncated.
+   Slack covers the actor's raw-count jitter (499/500 recorded) and the
+   raw→mapped skip (~3–7% recorded). Error direction is deliberate: a
+   false positive relabels to the honest actual span; a false negative
+   ships a 12-month claim over weeks of data.
+4. **ALGO_VERSION 3 → 4, and old raw REFETCHES, never recomputes**
+   (`RAW_REFETCH_BELOW_VERSION = 4`): raw payloads fetched under the
+   40-cap are days deep — recompute-from-raw over them would relabel a
+   truncated pool. Rows with `algo_version < 4` fall through to the
+   provider on next touch (one-time re-bill per row, ruled acceptable);
+   v4+ rows recompute free as before. §7's recompute rule is subject to
+   this gate.
+5. **Rung-admission verified on the recorded payload**: at a
+   representative subject, the 1mi/6mo rung admits 4 sales the 1mi/3mo
+   rung rejected as STALE_SALE (kept 19 → 23) — structurally impossible
+   under the old fetch. (At the actual 959-sqft Sierra Vista subject the
+   sqft band still binds — honest market reality, correctly reported.)
+
+**Ground-truth re-runs (operator-ordered), old v1 kept sets vs new:**
+
+| Address | Old | New | Overlap |
+| --- | --- | --- | --- |
+| Vale (dense) | 7 kept @1mi, 0.49–0.96 mi | 5 kept @**1mi/3mo**, 0.19–0.61 mi (median distance ~halved) | 1/5 |
+| Danbury (dense) | 6 kept @0.5mi | 5 kept @1mi/3mo, **four within 0.2 mi** | 3/5 |
+| Don Frank (thin) | 5 kept incl. the pre-BUG-010 duplicate pair | 5 kept incl. **745 & 796 N Don Frank Ln — the subject's own street, 0.02/0.05 mi** | 2/5 |
+
+Dense markets flag `truncated=true` (honest label); Wickenburg exhausts
+(`truncated=false`) — both exactly as the model predicts. The deeper pool
+surfaces nearer sales the 40-cap had displaced; every set moved closer.
+
+### 14.18 PRESENTATION (operator-directed. Coherence note: "the module's
+LAST change" as originally issued — §14.19–§14.23 were each subsequently
+ruled; §14.23 is the actual final slice)
+
+The block was correct but dense — members scan, not read. Goals in ruled
+priority order: (1) sold price / $/sqft / distance findable per comp
+without re-reading; (2) comps visually separated; (3) neighbourhood and
+census blocks clearly distinct from the comps list; (4) dates read as
+dates; (5) comps numbered so "best match first" is visible.
+
+**THE PINNED TEMPLATE** (format.ts renders exactly this; INSPECTOR derives
+from HERE, not from output):
+
+```
+{COMPS_OPENING — client copy, VERBATIM, position unchanged}
+
+**Comps for {subject.address}**
+Subject: {beds} bd / {baths} ba, {sqft} sqft {type}. Searched within {radius} mi, {window clause} ({N} candidate(s) rejected).
+
+**{N} sold comps** (best match first):
+
+**1. {comp address}**
+Sold {price} · {Mon D, YYYY} · {D.DD} mi away
+{sqft} sqft · {ppsf}/sqft · {beds} bd / {baths} ba · {lot} sqft lot
+Built {year} · {dom} days on market · {parking} parking spaces
+[View property]({url})
+
+**2. …**   ← one blank line between comps
+
+**Neighborhood sales** ({window label})
+{totalSales} sales · average price {p} · average {ppsf}/sqft · average {b} bd / {b} ba
+Days on market: {dom} (average across {n} of the {m} comps shown above, not a neighborhood figure)
+
+**Neighborhood snapshot**: {tract} (US Census ACS 5-year, {year})
+Median household income {i} · median age {a} · owner-occupied {o}% · renter-occupied {r}%
+
+{COMPS_CLOSING — client copy, VERBATIM, still LAST before the footer}
+
+{footer}
+```
+
+Rules carried over UNCHANGED and re-affirmed against the reflow:
+- Client opening/closing VERBATIM, unmoved (the most likely reflow
+  casualty — pinned first for that reason).
+- §14.5 em-dash exclusivity: nulls render `—` in place (e.g. `Built —`,
+  `— bd / — ba`); the em dash appears NOWHERE else; interpunct separates.
+- Guarantee 4 on every surface (DOM label load-bearing; census
+  geography+vintage in-template; no label ⇒ no line).
+- No ARV, nothing ARV-shaped.
+- The §14.17 truncated header (`sales since {date} (older sales exceeded
+  the data limit)`) SURVIVES: the window clause is a variable of the
+  template, not prose a reflow can drop.
+- **Post-template addition (coherence note, 2026-08-12):** the disclosure
+  slot — §14.21's thin-market line, then §14.23's per-comp outlier
+  line(s) — sits between the last comp entry and the Neighborhood sales
+  header. Both are conditional; the template above predates them and
+  §14.21/§14.23 pin their placement.
+
+**Date rendering (goal 4):** ISO dates become `Mon D, YYYY` (e.g. `Aug 5,
+2026`) EVERYWHERE member-visible — per-comp sold dates and the
+truncated-window clauses (comps header AND aggregates header). Formatted
+from the calendar date string directly (no Date()/timezone re-parsing —
+BUG-006's lesson stays honoured). Null date ⇒ `—`.
+
+**Link line (goal 1 + widget):** `[View property]({url})` on its OWN line;
+null/unbuildable ⇒ the literal text `link unavailable` (§14.9 unchanged —
+never an empty or dead control).
+
+**Widget button rule (BUG-017 in INSPECTOR's register — the fix MASON's
+commit c8f29fe provisionally labelled 015; §12.5 records the mapping)
+(presentational, general — no comps coupling):** a
+line consisting ONLY of a link (markdown link or bare http(s) URL) renders
+as a BUTTON; the existing http(s)-only href gate now also gates the button
+— a model-authored `javascript:` URL stays inert literal text and never
+becomes a button (a button is a more inviting target than an anchor).
+`link unavailable` is text, never a control. public/widget.js is gitignored
+build output — the deployed widget needs a redeploy.
+
+**The architectural constraint (ruled):** the model re-types this block
+verbatim; every added element is drift surface. Fewer, clearer lines win;
+anything hard to reproduce exactly is banned. Token cost is real
+(live-battery pacing was derived from a 3,378-token largest turn; the same
+growth is ~9s member latency) — the before/after token count of a full
+rendered block is REPORTED with the build.
+
+### 14.19 THE UNION (operator ruling; ALGO_VERSION 5. Coherence note: "the
+LAST slice" as issued at the time — superseded by later rulings; §14.23 is
+the actual final slice)
+
+**Ruling + rationale, on record:** the 1-mile `doz=12m` aggregate fetch is
+already paid for, already cached on the same row, and it is an EXHAUSTED
+twelve-month universe within a mile. The comps fetch truncates at 500 and
+loses exactly the near sales the ladder wants most. Unioning the aggregate
+payload into the comps candidate pool recovers them at ZERO additional
+Apify cost. Evidence: the Sierra Vista audit — three real band-passing
+sales displaced below the comps pool's Apr-22 floor; with them, the ladder
+stops at 1 mile with 5 comps instead of reaching 2.9 miles.
+
+**Build rules (each constraint operator-pinned):**
+
+1. **Union BEFORE the hard filters** (`unionCandidatePools(primary,
+   secondary)` in filter.ts, called inside `computeFromRaw`):
+   aggregate-sourced sales face EVERY gate identically — no shortcut for
+   coming from a trusted fetch. Same-zpid records collapse at union time
+   (primary/comps-search record wins — same actor, same mapper, so the
+   records are near-identical; deterministic and documented).
+2. **`dedupeSales` runs over the union** — unchanged machinery, riding
+   inside `selectTiers` per rung AND inside `candidateMedianPpsf`. The two
+   payloads overlap heavily BY CONSTRUCTION and the same sale can wear two
+   zpids across them — BUG-010's exact shape at larger scale, and the
+   slice's main risk. The zpid-level collapse in (1) handles identical
+   ids; sale-identity dedupe handles the rest, visibly (DUPLICATE_SALE).
+3. **Field parity**: both payloads come from the SAME search actor through
+   the SAME mapper, so fields match by construction — and it does not
+   matter, because (1) sends every unioned sale through the normal gates:
+   missing sqft/type rejects exactly as it always did. **Detail enrichment
+   joins unioned comps identically** (the join key is the comp's address,
+   which mapCompItems always sets).
+4. **Truncation labelling — the place this could quietly start lying,
+   pinned precisely.** New field `nearRingCompleteMi: number | null` =
+   `NEIGHBORHOOD_RADIUS_MI` when the aggregate payload is present AND
+   itself un-truncated; else null. The header's window clause:
+   - comps fetch not truncated ⇒ `sold in the last {W} months` (as before);
+   - truncated BUT the SERVED rung's radius ≤ nearRingCompleteMi ⇒ the
+     served set is drawn from a COMPLETE universe: `sold in the last {W}
+     months` — honest, because the claim attaches to the rung served;
+   - truncated, served rung beyond the complete ring ⇒ mixed truth:
+     `sold in the last {W} months within 1 mile; beyond that, sales since
+     {comps-fetch floor} (older sales exceeded the data limit)`;
+   - truncated, no complete ring ⇒ the §14.17 clause unchanged.
+   `searchEarliestSoldDate` stays the COMPS-fetch floor (the union's
+   1-mile portion legitimately extends earlier; the floor describes the
+   capped fetch the clause is about).
+5. **ALGO_VERSION 4 → 5; `RAW_REFETCH_BELOW_VERSION` STAYS 4.** Pre-union
+   v4 rows are stale in a way recompute-from-raw CAN fix — both raw
+   payloads are on the row and the raw is SOUND (unlike the 40-cap case).
+   v4 rows recompute free (zero provider calls), stamping v5; ≤v3 rows
+   still refetch. Confirmed by test, per the ruling.
+6. **Acquisition order moves**: the neighbourhood raw is acquired BEFORE
+   `computeFromRaw` on every path (live fetch with the existing
+   ceiling/budget rules; cache-hit from the row), so the live path writes
+   ONE cache entry carrying both raws and enrichment computes aggregates
+   from the in-hand payload without re-fetching. A neighbourhood-fetch
+   failure remains NON-FATAL twice over: the pool degrades to comps-only
+   AND the aggregates section says unavailable. (Rare residual, accepted:
+   a v5 row whose hood fetch failed at compute time serves comps-only
+   until its 14-day TTL turns it over.)
+
+### 14.20 Completeness tie-breaker (operator ruling; ALGO_VERSION 6)
+
+Found on a live run (1323 W 10th Pl): the #1 comp carried `beds: null`,
+its bedbath term scored 0 ("null diff counts 0", §5.4 — a PERFECT match),
+and the counterfactual showed a disclosed one-unit mismatch would have
+dropped it to #3 (gap to #2: 1.91 points). "Unknown is not a penalty" had
+become "unknown is an advantage".
+
+**Ruling:** null diffs still SCORE 0 — the §5.4/§14.3 pin stands, no
+invented penalty for missing data. But ORDERING changes: when two comps
+are within a small margin, the one with complete bed/bath data ranks
+above the one missing it — a comp that disclosed a mismatch must not lose
+to one that disclosed nothing.
+
+**The margin, reported as required: `COMPLETENESS_TIEBREAK_PER_FIELD =
+WEIGHT_BEDBATH / 2 = 5 points per missing bed/bath field` — DERIVED, not
+chosen.** A kept comp with KNOWN fields can disclose at most a one-unit
+mismatch (larger is gate-rejected), and one field's maximum score
+contribution is 5 — so 5 points is exactly the largest ordering advantage
+one undisclosed field could have concealed. Within it, disclosure wins;
+beyond it, the genuinely better score still wins.
+
+**Mechanism (amended by FINDING-013):** an ORDERING KEY (`orderingKey(scored,
+subject)` in rank.ts, exported) = `score + chargeableMissingFields ×
+(effectiveWeights(subjectType).bedbath / 2)`, used only in the sort. Two
+FINDING-013 corrections: (1) a comp's missing field is CHARGEABLE only if
+the SUBJECT has that field — scoring zeroes the term when either side is
+null, so against a bedless subject nothing is concealable and the charge
+was unearned (a live ordering error at the cap); (2) the margin derives
+from `effectiveWeights`, not `WEIGHT_BEDBATH` — the two agreed only
+because the §14.3 redistribution skipped bedbath, and a future
+branch-specific re-weighting must not desynchronize them silently. The
+5-point bound arithmetic stands: one field conceals at most — and can
+reach — bedbath/2; two compound to exactly bedbath without the clamp
+saturating.
+`ScoredComp.score` and `parts` are UNTOUCHED — rendered and asserted as
+computed. The shadow key is what makes the rule transitive and
+deterministic (a pairwise within-margin comparator is not); tie chain:
+orderingKey → raw score → distance → zpid.
+
+**Verified on the originating case** (cached 1323 W 10th Pl row,
+recomputed): comp 1 (null beds, score 22.9 → key 27.9) drops **#1 → #4**,
+behind the three fully-disclosed comps at 24.8/25.4/27.6, and stays ahead
+of #5 (33.7) — within-margin demotion, beyond-margin unaffected, exactly
+the ruling's shape.
+
+**ALGO_VERSION 5 → 6** (order is member-visible — the comps are NUMBERED);
+`RAW_REFETCH_BELOW_VERSION` stays 4: v4/v5 rows recompute free from sound
+raw.
+
+**Operator principle pinned from the same session (the recall-phrasing
+lesson — BUG-019 in INSPECTOR's register):** any guarantee keyed to
+NATURAL LANGUAGE must have its test
+parametrized across phrasings — a fix verified against the one wording
+that already worked is unverified. (INSPECTOR parametrizes the recall
+case; the principle applies to every prompt-enforced rule.)
+
+### 14.21 Thin-market disclosure (RULING 2, approved as proposed; ALGO_VERSION 8)
+
+**Composite trigger, both signals structural, no tuned thresholds:**
+served `radiusTierMi > NEIGHBORHOOD_RADIUS_MI` (1 mi) **AND**
+`nearInBandSameTypeSales < MIN_COMPS_TO_COMPUTE` (3). The second is a NEW
+REQUIRED field on `CompsResult`: the deduped count of SOLD, in-sqft-band,
+same-mapped-type sales within 1 mile and 12 months, computed over the
+UNION pool in `computeFromRaw`. Ratio is NEVER the trigger (0.31 band on
+two observations does not survive a third market; ppsf dispersion is
+regime-dependent) — it appears in the copy as a quoted fact only.
+
+**Serve-with-disclosure, not refusal.** Operator constraints, pinned:
+- **The comp set is BYTE-IDENTICAL with and without the disclosure** — no
+  re-ranking, no scoring change, no refusal. It is a line of copy and
+  nothing else.
+- **Guarantee 4**: the block carries what a member needs — the 1-mile
+  count, the actual radius served, median distance of the kept set, and
+  the ppsf range as quoted fact. If the trigger holds and the block cannot
+  render, that is a BUG, not a degradation — silence must not read as
+  endorsement. The field is REQUIRED on the type so a result without it
+  cannot exist; ALGO_VERSION 8 recomputes cached rows into the new shape.
+- Placement: directly AFTER the comps table, before the neighbourhood
+  block; §14.5 em-dash exclusivity holds; no ARV.
+
+Verification rows (operator-named): **Mesquite triggers** (3mi served, 2
+near in-band same-type — both in the subject's own complex), **Grandview
+must not** (1mi/3mo, five), **Don Frank is the rural control** — it
+serves WIDE (3mi, signal 1 TRUE) and stays silent because its near
+in-band count ≥ 3 holds signal 2 false; that is precisely what makes it
+the control for "a wide serve is normal in rural markets". (Coherence
+fix, 2026-08-12: this line originally claimed a 1mi serve/signal-1
+silence, contradicting both the ruling's intent and the measured run.)
+
+### 14.22 The multi-unit ask (RULING 1; live path only)
+
+The Mesquite anatomy: a bare multi-unit address ("700 E Mesquite Cir")
+resolves silently to ONE unit of the complex (zpid 7584173, 804 sqft),
+while the member expected another (7584180, 934 sqft). **Ruling: ASK.**
+
+- **Detection (live path, after pool acquisition, before compute) —
+  THREE CONJUNCTIVE CONDITIONS (FINDING-015 ruling; the original build
+  checked only 1 and a weaker 3, and INSPECTOR demonstrated the failure:
+  a plain SFR whose pool held one stale unit-bearing card got an ask it
+  could not satisfy):**
+  1. the member's RAW input has no unit designator (`hasUnitDesignator`
+     false — conservative, bare trailing numbers excluded);
+  2. the RESOLVED subject shows unit evidence — `hasUnitDesignator` on
+     the resolved address **OR an ATTACHED-type resolution
+     (CONDO/TOWNHOUSE, `ATTACHED_SUBJECT_TYPES`)**. This IS the ruled
+     rule (operator approved 2026-08-12, superseding the ruling's
+     original "carries a unit designator" wording — the evidence
+     overruled it): the raw-verified Mesquite payload
+     (`spike-mesquite-bare-detail.json`, one live detail run) carries
+     NO unit designator in ANY field — streetAddress, abbreviatedAddress
+     and unitNumber all bare on resolved zpid 7584173 — yet it is an
+     804-sqft CONDO wearing the building's address: a silently-picked
+     unit, not the "whole property" the rationale describes. The
+     discriminator: an SFR/MANUFACTURED resolution IS a whole property
+     (condition 2 FALSE, regardless of what sits in the pool); a bare
+     attached-type resolution is the Mesquite anatomy; unit-designator
+     evidence counts whenever Zillow does surface one. The condition-3
+     street comparison uses the street BASE via `stripUnitDesignator`
+     (normalize.ts), which shares the ONE designator regex with
+     `hasUnitDesignator` so detect and strip cannot drift — without the
+     strip, a resolved address carrying its unit never prefix-matches
+     its siblings and this condition's designator arm is unsatisfiable;
+  3. the union pool holds **≥ 2 DISTINCT unit cards at the subject's
+     street** — different zpid from the subject, same normalized street
+     part, a unit designator in the address; DISTINCT by normalized
+     street-part-plus-unit (ZIP variants of one unit are one card; the
+     recorded Mesquite pool holds 4: M129, O210, L107, J135). One lone
+     unit-bearing card is not evidence of a multi-unit building — it is
+     exactly the stale-card false positive INSPECTOR demonstrated.
+- **Outcome**: `ADDRESS_NOT_FOUND` with `resolution: 'unit_mismatch',
+  inputHasUnit: false` — the EXISTING §10 ask copy ("try including the
+  unit number… otherwise tell me your ARV") is the ruled ask; no new copy.
+- **Live path only, deliberately**: recompute-from-raw has no raw input
+  string (normalization strips `#`), so detection there would
+  false-positive on members who DID type a unit. Cached successes serve
+  until their 14-day TTL; new lookups get the ask.
+
+### 14.23 Price-outlier disclosure (operator ruling; ALGO_VERSION 9; the FINAL slice)
+
+The Bellevue anatomy: comp 1 at $1,452/sqft ranked FIRST (closest, exact
+bed/bath match — scoring has no price term, by design) against peers at
+$596–833. §14.21 never fires (served rung was 1 mile). The ARV removal
+took the trimmed mean, the only mechanism that ever saw a price outlier;
+the low-side `NON_ARMS_LENGTH` gate (0.4×) is the sole survivor and it is
+an exclusion, not a disclosure. Measured across all 13 cached rows before
+ruling (outlier report, 2026-08-12); every parameter below is
+evidence-decided, none defaulted.
+
+**Reference (two-level, per the measurements):**
+- **PRIMARY: the matched near-pool median ppsf** — median $/sqft over the
+  deduped SOLD, in-sqft-band, same-mapped-type sales within 1mi/12mo (the
+  §14.21 pool pointed at prices), **when its ppsf sample count ≥
+  `OUTLIER_REFERENCE_MIN_COUNT` (5)**. Two NEW REQUIRED fields on
+  `CompsResult`, computed in `computeFromRaw` beside
+  `nearInBandSameTypeSales`: `nearInBandMedianPpsf: number | null` and
+  `nearInBandPpsfCount: number` (the ppsf sample can be smaller than the
+  §14.21 count — a counted sale without a usable price/sqft pair carries
+  no ppsf).
+- **FALLBACK: the kept set's leave-one-out median** — each comp judged
+  against the median of the OTHER kept comps, so a comp cannot drag its
+  own reference — when the primary's count is below the floor. This level
+  exists because of Coronado: A=1.79 with the matched pool unreliable at
+  n=4.
+- **The neighbourhood aggregate mean is NOT a trigger — RULED OUT by
+  measurement**: Sierra Vista reads 1.60 against it while internally
+  tight (1.25/1.26 on the other two references), because the aggregate is
+  a population mean across ALL types and sizes. Quotable as fact in copy;
+  never a trigger.
+
+**Threshold: `OUTLIER_PPSF_RATIO = 1.6`, TWO-SIDED** — flag above 1.6×
+the reference or below 1/1.6 (0.625×). Evidence beside the constant: on
+13 cached rows, normal spread topped out at ~1.3 and true positives
+started at 1.79 — 1.6 sits in the gap with headroom both directions.
+Two-sided because the low band is a real gap (`NON_ARMS_LENGTH` excludes
+below 0.4× and nothing flags 0.4×–0.625×), not because high mattered
+more; Grandview's comp 5 at 0.73× sits inside the band and correctly
+gets no note.
+
+**Copy — PER-COMP, naming the comp, its ppsf, and the reference** (a
+set-level note makes the member hunt for which comp it means):
+- primary: *"Comp 1 sold at $1,452/sqft against a neighbourhood median
+  of $723/sqft for this home's type and size; weigh its price
+  accordingly."*
+- fallback: *"...against a median of $365/sqft for the other comps in
+  this set; ..."* — the reference is NAMED honestly per Guarantee 4; the
+  fallback line must never claim to be a neighbourhood figure.
+
+**Architecture — identical to §14.21, no deviation:** disclosure only
+(no re-ranking, no exclusion, no scoring change); comp set BYTE-IDENTICAL
+with and without the flag, asserted by render diff; trigger fields
+REQUIRED on the type so flag-holds-but-no-block is unrepresentable;
+Guarantee 4 (cannot-render is a BUG); §14.5 em-dash exclusivity in the
+new copy (this rule has broken three times, every one a copy edit);
+placement in the disclosure slot between the table and the neighbourhood
+block, after the §14.21 line when both fire. **ALGO_VERSION 8 → 9**;
+recompute-from-raw works (the raw is sound); `RAW_REFETCH_BELOW_VERSION`
+stays 4.
+
+**Verification rows (operator-named, from the outlier report):**
+**Bellevue fires via the primary** (comp 1: 1,452 vs 723, ratio 2.01,
+n=15); **Coronado fires via the fallback** (comp 5 at 1.79 against
+peers, matched pool n=4 — the case that justifies the fallback
+existing); **Grandview, Evergreen, 10th Place, Sierra Vista and Don
+Frank all stay silent** (maxima 1.09–1.27, inside the band).
+
+### 14.24 DECLINED OPTIONS — recorded with reasons (operator close-out, 2026-08-12)
+
+Things that look like easy wins and were considered and DECLINED. A
+future reader proposing one of these is not discovering something we
+missed; they are reopening a decision, and the reason it was closed is
+recorded here.
+
+1. **Direct `rendered_block`-to-widget delivery (skip the model relay) —
+   DECLINED.** The honesty architecture RESTS on the relay: format.ts
+   renders structurally, the model re-types the block verbatim, and every
+   prompt-enforced guarantee (no ARV from memory, recall re-runs, the
+   echo rules) attaches at that seam. Piping the block straight to the
+   widget would remove the drift surface AND the enforcement surface with
+   it — the model could then author comp-shaped claims in its
+   surrounding prose with nothing structural to anchor them to, and the
+   §14.18 relay-fidelity constraint (token cost, reported per build)
+   would become unmeasurable. Faster, cheaper, and it dismantles the
+   thing the guarantees hang from. If revisited, it needs a replacement
+   enforcement design FIRST, not a wiring change.
+2. **Building-aware condo fetching (resolve the building, enumerate
+   units, pick or ask) — DECLINED AS UNMEASURED.** The Mesquite anatomy
+   made it tempting; §14.22's ask ships instead because it needs no new
+   data. The building-aware version rests on unverified assumptions
+   about how Zillow models buildings (`isBuilding` cards carry no unit
+   enumeration in any recorded payload). The gate, pinned: measure
+   FIRST — run 5–10 real multi-unit condo addresses through the detail
+   scraper and record what a building actually returns — then rule on
+   the evidence. Nothing here authorizes the spike; it costs real actor
+   runs.
+3. **The computed ARV — REMOVED as a ONE-WAY DOOR (§14.8, client
+   decision, final).** Restated in this list for completeness because it
+   is the likeliest "easy win" of all: the trimmed mean, confidence
+   tiers, and calculator pre-fill wiring are all specified (struck) in
+   §5.5/§14.4 and would take an afternoon to revive. §14.8 defines
+   reinstatement as a REBUILD from this contract requiring a new client
+   ruling; the removal also took the only price-outlier mechanism, which
+   is why §14.23 exists. An afternoon to revive; a client decision to
+   authorize.
+
+### 14.12 Blast radius
+
+Every golden expected value, every mapped fixture, and all three live
+ground-truth runs change. **Tests are INSPECTOR's and must be recomputed by
+hand from this contract — never adjusted to match implementation output.**
+
+---
+
 ## 1. Where this plugs into the existing repo (read-only facts)
 
 | Concern | Existing mechanism | Comps integration |
@@ -43,7 +1221,7 @@ contract wins until a `CONTRACT_CHANGE` is agreed.
 | Config | `loadConfig()` in `src/config.ts`; required keys enforced in `assertRuntimeConfig` | New optional fields (§3). `apifyToken` absent ⇒ tools still registered, provider calls fail soft as `PROVIDER_ERROR` with stub note; caps still enforced |
 | LLM tools | `TOOL_DEFINITIONS` (`src/agent/toolDefs.ts`) + `executeTool` switch (`src/agent/agent.ts`) | Append `run_comps`, `set_manual_arv` defs; add switch cases delegating to `src/features/comps/tools.ts` |
 | Conversation memory | Transcript only — `chat_messages` (`src/server/memory.ts`); **no structured state exists today** | New `session_state` table (§8). Read in `/chat`, threaded through `runAgent` ctx, written by comps tools |
-| Migrations | `sql/*.sql` run in Supabase SQL editor + check-and-warn in `src/server/migrate.ts` | `sql/add_comps_tables.sql` creates `comps_cache` + `session_state`; `migrate.ts` gains the same zero-cost existence checks |
+| Migrations | `sql/*.sql` run in Supabase SQL editor + check-and-warn in `src/server/migrate.ts` | `sql/add_comps_tables.sql` creates `comps_cache` + `session_state`; `sql/add_comps_detail_cache.sql` creates `comps_detail_cache` (§14.14); `migrate.ts` probes all three |
 | Logging | Fastify `request.log` / `Logger` interface (`src/server/logger.ts`) | Same. Log `cacheKey`, never the raw address, at info; never the token |
 | Failure style to model | Tool result objects with `error` string; agent instructed not to invent numbers | Comps failures are returned as rendered failure copy (§10), never bare stacks |
 
@@ -54,39 +1232,43 @@ Dev server: MASON on port 3000 (already running), INSPECTOR on 3001.
 ```
 src/features/comps/
   types.ts       config.ts      normalize.ts   filter.ts      rank.ts
-  arv.ts         format.ts      service.ts     tools.ts
+  format.ts      service.ts     tools.ts       # arv.ts DELETED (§14.8)
+  formPrefill.ts sessionState.ts               # §8/§8.1 state + form surface
+  detail.ts                                    # §14.14 join + batch bound (pure)
   providers/types.ts  providers/apifyZillow.ts  providers/stub.ts   # geocode.ts dropped — detail scraper takes plain addresses (§6.1)
-  cache/compsCache.ts
+  cache/compsCache.ts  cache/detailCache.ts    # detail: zpid-keyed, own TTL (§14.14)
   __fixtures__/            # shared with INSPECTOR — hand-written now, real recordings when token lands
 sql/add_comps_tables.sql
+sql/add_comps_detail_cache.sql
 ```
 
 ## 3. Config — `src/features/comps/config.ts` (named exports; zero magic numbers elsewhere)
 
 | Export | Default | Meaning |
 | --- | --- | --- |
-| `ALGO_VERSION` | `1` | stamped on every result; cache recompute trigger |
+| `ALGO_VERSION` | `9` | stamped on every result; cache recompute trigger. Full 1→9 history in the document header. The recompute mechanism: until the constant advances, stale rows keep serving old-parameter results for 14 days, indistinguishable from fresh; a bump recomputes from raw (zero provider calls) EXCEPT rows below `RAW_REFETCH_BELOW_VERSION = 4`, whose 40-cap-era raw is unsound and REFETCHES (§14.17 item 4). |
 | `MAX_COMP_AGE_MONTHS` | `12` | hard filter |
-| `SQFT_TOLERANCE` | `0.25` | subject sqft ±25% |
+| `SQFT_TOLERANCE` | `0.20` | subject sqft ±20% — hard gate (§14.1) |
 | `MAX_BED_DIFF` | `1` | hard filter |
 | `MAX_BATH_DIFF` | `1` | hard filter |
-| `RADIUS_TIERS_MI` | `[0.5, 1.0, 2.0]` | stop at first tier with ≥ `MIN_COMPS_FOR_TIER` |
+| `RADIUS_TIERS_MI` | `[1.0, 3.0]` | outer bound widened 2→3 mi (§14.1) |
+| `RECENCY_TIERS_MONTHS` | `[3, 6, 12]` | recency is TIERED, not just scored (§14.1). Recency widens BEFORE radius (§14.2) |
 | `MIN_COMPS_FOR_TIER` | `5` | tier advance threshold |
 | `MIN_COMPS_TO_COMPUTE` | `3` | below ⇒ `TOO_FEW_COMPS` |
-| `MAX_COMPS_KEPT` | `8` | after ranking |
+| `MAX_COMPS_KEPT` | `5` | after ranking — display AND compute, no split (§14.1) |
 | `NON_ARMS_LENGTH_PPSF_FRACTION` | `0.4` | ppsf < 40% of candidate median ⇒ reject |
-| `LOT_ANOMALY_MULTIPLE` | `5` | lot > 5× subject lot ⇒ reject |
-| `WEIGHT_DISTANCE` / `WEIGHT_SQFT` / `WEIGHT_RECENCY` / `WEIGHT_BEDBATH` | `40 / 30 / 20 / 10` | score weights |
+| ~~`LOT_ANOMALY_MULTIPLE`~~ | REMOVED | lot is now a soft SCORING term, not a gate (§14.1/§14.3) |
+| `LOT_NORM_RATIO` | `1.0` | lot-score normalizer; 100% difference saturates |
+| `WEIGHT_DISTANCE` / `WEIGHT_SQFT` / `WEIGHT_RECENCY` / `WEIGHT_BEDBATH` / `WEIGHT_LOT` | `35 / 25 / 20 / 10 / 10` | base weights, sum 100 (§14.3). **ATTACHED subjects (CONDO/TOWNHOUSE): lot 0, distance/sqft/recency × 9/8 (§14.3 amendment) — both branches sum 100 via `effectiveWeights`** |
 | `DISTANCE_NORM_MI` | `1.0` | score normalizer |
 | `RECENCY_NORM_MONTHS` | `12` | score normalizer |
-| `TRIM_FRACTION` | `0.15` | trimmed-mean trim per end (n ≥ 5) |
-| `ARV_ROUND_TO` | `1000` | round ARV/low/high to nearest |
-| `CONF_HIGH` | `{ minComps: 6, maxCv: 0.15, maxMedianDistanceMi: 0.75, maxMedianAgeMonths: 6 }` | |
-| `CONF_MEDIUM` | `{ minComps: 4, maxCv: 0.25 }` | |
-| `CACHE_TTL_DAYS` | `14` | |
-| `PROVIDER_TIMEOUT_MS` | `90_000` | per Apify run |
-| `PROVIDER_MAX_RETRIES` | `1` | transient only (timeout/5xx/network); **0 on 4xx** |
-| `COMPS_DAILY_RUN_CAP` | `50` | env-overridable. Counts PROVIDER runs only — cache hits are free (change log #9). ~~per-session cap~~ cut (change log #2) |
+| ~~`TRIM_FRACTION` / `ARV_ROUND_TO` / `CONF_HIGH` / `CONF_MEDIUM`~~ | REMOVED | deleted with `arv.ts` (§14.8); values preserved in §5.5's struck spec |
+| `CACHE_TTL_DAYS` | `14` | comps result + raw payload |
+| `DETAIL_CACHE_TTL_DAYS` | `90` | zpid-keyed detail rows (§14.14 rule 4) — the detail slice's main cost lever |
+| `DETAIL_MIN_REMAINING_MS` | `20_000` | skip the detail batch below this much pipeline headroom (§14.14 rule 5; spike measured ~16s per batch of 5) |
+| `PROVIDER_TIMEOUT_MS` | `90_000` | per Apify run for subject/search AND the whole-pipeline ceiling once detail enters (§14.14 rule 5) |
+| `PROVIDER_MAX_RETRIES` | `1` | transient only (timeout/5xx/network); **0 on 4xx**; **detail batch: 0 retries always** (§14.14.1, pinned deviation) |
+| `COMPS_DAILY_RUN_CAP` | `50` | env-overridable. Counts **LOOKUPS that touch Apify** (§14.14 cap ruling), up to 3 actor runs each; all-cache lookups free. ~~per-session cap~~ cut (change log #2) |
 | `DAYS_PER_MONTH` | `30.44` | the only months↔days conversion used anywhere |
 | `EARTH_RADIUS_MI` | `3958.8` | haversine |
 
@@ -96,6 +1278,20 @@ Token absent ⇒ `run_comps` is not registered in `TOOL_DEFINITIONS` at all
 (change log #11); `set_manual_arv` is always registered.
 
 ## 4. Types — `src/features/comps/types.ts` (exported signatures; no `any`)
+
+> **Coherence note (2026-08-12): the snippets below are the ORIGINAL v2/v3
+> base shapes and are SUPERSEDED where §14 extended them.** The live
+> `CompsResult` additionally carries (all §-pinned, all in types.ts with
+> doc comments): `searchTruncated` + `searchEarliestSoldDate` (§14.17),
+> `nearRingCompleteMi` (§14.19), `nearInBandSameTypeSales` (§14.21),
+> `nearInBandMedianPpsf` + `nearInBandPpsfCount` (§14.23), and the
+> three-state decorations `demographics?` (§14.10) and `neighborhood?`
+> (§14.16.1). `ScoredComp` gained `detail?: CompDetail` (§14.14.1). The
+> pure-function list below likewise predates `dedupeSales`, `median`,
+> `monthsBetween`, `unionCandidatePools` (filter.ts), `effectiveWeights`,
+> `orderingKey` (rank.ts), and the aggregates/detail modules — §14's
+> sub-sections name each seam. types.ts itself is the authority on the
+> full current shapes; this section remains as the base-spec record.
 
 ```ts
 export interface CompsRequest { address: string; sessionId: string }
@@ -118,36 +1314,43 @@ export interface RawComp {
   beds: number | null; baths: number | null;
   livingArea: number | null; lotSize: number | null;
   propertyType: PropertyType; lat: number; lng: number;
+  detailUrl: string | null;   // LOAD-BEARING (§14.9): null renders "link unavailable", never omitted
 }
 
 export type RejectReason =
+  | 'SUBJECT_PROPERTY'                               // rule 0, BUG-004
   | 'NOT_SOLD' | 'STALE_SALE' | 'SQFT_MISSING' | 'SQFT_OUT_OF_RANGE'
   | 'BEDS_DIFF' | 'BATHS_DIFF' | 'TYPE_MISMATCH' | 'TOO_FAR'
-  | 'PRICE_MISSING' | 'NON_ARMS_LENGTH' | 'LOT_ANOMALY' | 'FUTURE_SOLD_DATE';
+  | 'PRICE_MISSING' | 'NON_ARMS_LENGTH'
+  | 'LOT_ANOMALY'                                    // never emitted in v2 (§14.1); kept so cached v1 rows type
+  | 'FUTURE_SOLD_DATE'                               // rule 12, BUG-003
+  | 'DUPLICATE_SALE';                                // BUG-010: post-gate dedupe, not a numbered rule
 
 export interface RejectedComp { comp: RawComp; reason: RejectReason }
 
 export interface ScoredComp {
   comp: RawComp; distanceMi: number; monthsAgo: number;
   pricePerSqft: number; score: number;               // 0–100, lower better
-  parts: { distance: number; sqft: number; recency: number; bedbath: number };
+  // FIVE terms in v2 (§14.3) — weights 35/25/20/10/10, sum 100
+  parts: { distance: number; sqft: number; recency: number; bedbath: number; lot: number };
 }
 
-export type ArvConfidence = 'high' | 'medium' | 'low';
-
-export interface ArvResult {
-  arv: number; arvLow: number; arvHigh: number;      // rounded to ARV_ROUND_TO
-  arvPerSqft: number; sd: number; cv: number;
-  confidence: ArvConfidence;
-  trimmedOut: { zpid: string; pricePerSqft: number; end: 'low' | 'high' }[];
-  compsUsed: number;  // RULING CF-001: kept/ranked comps — n BEFORE the trim (the charter's `n = ppsf.length`)
-}
+// ────────────────────────────────────────────────────────────────────────
+// REMOVED — DO NOT REBUILD (§14.8, client decision, ONE-WAY DOOR).
+// `ArvConfidence` and `ArvResult` are DELETED from types.ts along with
+// arv.ts and `CompsResult.arv`. Their definitions are preserved ONLY in
+// §5.5's struck spec, because §14.8 defines reinstatement as "a REBUILD
+// from this contract". Nothing that compiles refers to them. If you are
+// reading this because you found a reference to either type somewhere:
+// that reference is the bug.
+// ────────────────────────────────────────────────────────────────────────
 
 export interface CompsResult {
   ok: true; algoVersion: number; runId: string;      // runId = crypto.randomUUID()
   subject: SubjectProperty; radiusTierMi: number;
+  recencyTierMonths: number;                         // which recency rung produced the set (§14.2)
   comps: ScoredComp[]; rejected: RejectedComp[];
-  arv: ArvResult; fromCache: boolean; provider: string;
+  fromCache: boolean; provider: string;              // NO `arv` field (§14.8)
 }
 
 export type CompsFailureCode =
@@ -157,7 +1360,12 @@ export type CompsFailureCode =
 export interface CompsFailure {
   ok: false; algoVersion: number; code: CompsFailureCode;
   message: string;                                    // plain English, ends offering manual ARV
-  detail?: { kept?: number; needed?: number; radiusTierMi?: number };
+  detail?: {
+    kept?: number; needed?: number; radiusTierMi?: number;
+    resolution?: 'unit_mismatch' | 'not_found';       // ADDRESS_NOT_FOUND copy branch (§10)
+    inputHasUnit?: boolean;                           // unit_mismatch sub-branch (§10)
+    pool?: 'no_type_match';                           // TOO_FEW_COMPS copy branch (§10)
+  };
 }
 
 export type CompsOutcome = CompsResult | CompsFailure;   // discriminated on `ok`
@@ -170,21 +1378,21 @@ Pure-function signatures INSPECTOR can import directly:
 export function normalizeAddress(raw: string): string;
 export function cacheKey(normalized: string): string;      // sha256 hex
 
-// filter.ts
+// filter.ts — both gates are per-rung arguments (§14.2)
 export function haversineMiles(aLat: number, aLng: number, bLat: number, bLng: number): number;
-export function applyHardFilters(subject: SubjectProperty, comps: RawComp[], radiusMi: number, now: Date):
-  { kept: RawComp[]; rejected: RejectedComp[] };
-export function selectRadiusTier(subject: SubjectProperty, comps: RawComp[], now: Date):
-  { kept: RawComp[]; rejected: RejectedComp[]; radiusTierMi: number };
+export function applyHardFilters(subject: SubjectProperty, comps: RawComp[], radiusMi: number,
+  maxAgeMonths: number, now: Date): { kept: RawComp[]; rejected: RejectedComp[] };
+export function selectTiers(subject: SubjectProperty, comps: RawComp[], now: Date): TierSelection;
+  // { kept, rejected, radiusTierMi, recencyTierMonths } — renamed from
+  // selectRadiusTier: it walks BOTH ladders, and dedupeSales (BUG-010) runs
+  // inside it, after the gates and before the sufficiency test
 
 // rank.ts
 export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): ScoredComp;
 export function rankComps(subject: SubjectProperty, kept: RawComp[], now: Date): ScoredComp[]; // sorted asc, capped MAX_COMPS_KEPT
 
-// arv.ts
-export function pricePerSqft(soldPrice: number, livingArea: number): number;
-export function trimmedMean(values: number[]): { mean: number; trimmedOut: number[]; used: number[] };
-export function calculateArv(subject: SubjectProperty, ranked: ScoredComp[]): ArvResult;
+// arv.ts — DELETED (§14.8). pricePerSqft / trimmedMean / calculateArv are
+// gone; their spec survives, struck, in §5.5 only.
 
 // format.ts
 export function renderCompsForChat(outcome: CompsOutcome): string;   // pure, data-only
@@ -222,7 +1430,9 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
    the member's own purchase price; prepended so the reject table names the
    real reason)
 1. `NOT_SOLD` — status ≠ SOLD (case-insensitive)
-2. `STALE_SALE` — `soldDate` null or > `MAX_COMP_AGE_MONTHS` months before `now` (months = days / `DAYS_PER_MONTH`). **All date arithmetic (`monthsBetween`) runs at UTC CALENDAR-DAY granularity** (BUG-006): `soldDate` is an ISO date, so a sale "today" is 0 months old at every hour of the day, and comp sets are deterministic per calendar day rather than per hour
+2. `STALE_SALE` — `soldDate` null or older than the **ACTIVE recency rung**
+   (`RECENCY_TIERS_MONTHS`, §14.2 — the outer rung equals
+   `MAX_COMP_AGE_MONTHS`; months = days / `DAYS_PER_MONTH`). **All date arithmetic (`monthsBetween`) runs at UTC CALENDAR-DAY granularity** (BUG-006): `soldDate` is an ISO date, so a sale "today" is 0 months old at every hour of the day, and comp sets are deterministic per calendar day rather than per hour
 3. `SQFT_MISSING` — `livingArea` null or ≤ 0
 4. `SQFT_OUT_OF_RANGE` — outside subject ± `SQFT_TOLERANCE`
 5. `BEDS_DIFF` — both non-null and |Δbeds| > `MAX_BED_DIFF` (null on either side = no rejection)
@@ -230,14 +1440,18 @@ Fetched fields per `SubjectProperty`. `livingArea` null or ≤ 0 ⇒ **hard stop
 7. `TYPE_MISMATCH` — `propertyType` ≠ subject's (OTHER never matches anything, including OTHER)
 8. `TOO_FAR` — haversine miles > active radius tier
 9. `PRICE_MISSING` — `soldPrice` null or ≤ 0
-10. `NON_ARMS_LENGTH` — ppsf < `NON_ARMS_LENGTH_PPSF_FRACTION` × median ppsf of the **candidate set** (all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters; median of even n = mean of middle two). Deterministic, order-independent.
-11. `LOT_ANOMALY` — both lots non-null and comp lot > `LOT_ANOMALY_MULTIPLE` × subject lot
+10. `NON_ARMS_LENGTH` — ppsf < `NON_ARMS_LENGTH_PPSF_FRACTION` × median ppsf of the **DEDUPED candidate set** (BUG-010: `candidateMedianPpsf` runs `dedupeSales` on its own input first. The DUPLICATE_SALE rejection happens after the gates, but this median is computed INSIDE the gate pass, so a later drop cannot reach it — without deduping here, a sale counted twice would skew the very threshold the rule depends on. Implement it as written or the next reader will reintroduce the skew.) Median over all input comps with computable ppsf — soldPrice > 0 and livingArea > 0 — regardless of other filters; median of even n = mean of middle two. Deterministic, order-independent.
+11. ~~`LOT_ANOMALY`~~ — **REMOVED in v2** (§14.1): lot is a soft scoring term now. The `RejectReason` union keeps the member so cached v1 results still type, but it is never emitted.
 12. `FUTURE_SOLD_DATE` — `soldDate` parses to strictly after `now` (BUG-003: a sale that hasn't happened is not a comp; Zillow emits pending-close and timezone-shifted dates)
 
-Radius tiers: run filters at 0.5 mi; if kept < `MIN_COMPS_FOR_TIER`, rerun the
-full filter pass at 1.0, then 2.0. Stop at the first tier with ≥ 5 kept, else
-use the 2.0 mi outcome. `radiusTierMi` recorded on the result. Rejected list
-reported from the **final** tier only.
+Tier ladder (v2, §14.2 — the v1 one-dimensional 0.5/1.0/2.0 radius walk is
+GONE): the full filter pass reruns per rung of the ONE ordered ladder
+`[1.0, 3.0] mi × [3, 6, 12] mo`, **recency widening BEFORE radius**:
+`1.0/3 → 1.0/6 → 1.0/12 → 3.0/3 → 3.0/6 → 3.0/12`. Stop at the first rung
+with ≥ `MIN_COMPS_FOR_TIER` (5) kept after dedupe, else use the last rung's
+outcome. `radiusTierMi` AND `recencyTierMonths` recorded on the result.
+Rejected list reported from the **final** rung only. Rationale and rung
+reachability: §14.2.
 
 ### 5.4 Scoring (lower better)
 ```
@@ -256,7 +1470,26 @@ negative number is the evidence of a future date, and the field stays honest.
 Sort ascending; ties broken by `distanceMi` asc, then `zpid` asc (determinism).
 Keep top `MAX_COMPS_KEPT`. Fewer than `MIN_COMPS_TO_COMPUTE` kept ⇒ `TOO_FEW_COMPS`.
 
-### 5.5 ARV
+### 5.5 ARV — **REMOVED (§14.8). This subsection is a PRESERVED SPEC, not a live requirement.**
+
+Nothing below this banner describes shipping code: `arv.ts` is deleted,
+`CompsResult` has no `arv`, and no confidence grade exists anywhere. The text
+is kept solely because §14.8 defines reinstatement as "a REBUILD from this
+contract" — this, plus the types below, is that rebuild spec. Implementing
+any of it without a new client ruling is the bug §14.8 exists to prevent.
+
+```ts
+// Types that lived in types.ts until §14.8 — preserved here only:
+// export type ArvConfidence = 'high' | 'medium' | 'low';
+// export interface ArvResult {
+//   arv: number; arvLow: number; arvHigh: number;    // rounded to ARV_ROUND_TO
+//   arvPerSqft: number; sd: number; cv: number;
+//   confidence: ArvConfidence;
+//   trimmedOut: { zpid: string; pricePerSqft: number; end: 'low' | 'high' }[];
+//   compsUsed: number;  // RULING CF-001: kept/ranked count, BEFORE the trim
+// }
+```
+
 ```
 ppsf       = kept comps' soldPrice / livingArea
 n          = ppsf.length
@@ -268,10 +1501,11 @@ sd         = SAMPLE std dev of trimmed (n-1 denominator; sd = 0 when trimmed.len
 arvLow/High= arv ∓ round(sd * subjectSqft / ARV_ROUND_TO) * ARV_ROUND_TO
 cv         = sd / arvPerSqft
 ```
-Confidence: `high` if compsUsed ≥ 6 ∧ cv ≤ 0.15 ∧ median distance ≤ 0.75 mi ∧
-median age ≤ 6 months (medians over the kept, ranked set); `medium` if
-compsUsed ≥ 4 ∧ cv ≤ 0.25; else `low`. `low` still returns numbers but the
-rendered copy must call the estimate weak and invite manual override.
+Confidence (as last agreed — the §14.4 REBASE, not the original v1 tiers):
+`high` if compsUsed ≥ 5 ∧ cv ≤ 0.15 ∧ median distance ≤ 0.75 mi ∧ median age
+≤ 6 months (medians over the kept, ranked set); `medium` if compsUsed ≥ 4 ∧
+cv ≤ 0.25; else `low`. `low` still returned numbers but the rendered copy had
+to call the estimate weak and invite manual override.
 
 Boundary guards (BUG-002, change log #6): `trimmedMean([])` **throws**
 (`TypeError`), and `pricePerSqft(price, livingArea)` **throws** when
@@ -289,6 +1523,14 @@ export interface PropertyDataProvider {
   fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]>;
 }
 ```
+
+> **Coherence note (2026-08-12), superseded where §14 extended it:**
+> `fetchSoldComps` gained an optional `windowMonths` third parameter
+> (§14.17 — the server-side `doz` window rides the seam), and the
+> interface gained OPTIONAL `fetchDetailBatch` (§14.14) and
+> `fetchNeighborhoodSales` (§14.16.1) — a provider lacking an optional
+> fetch renders no corresponding section. providers/types.ts is the
+> authority on the full current seam.
 Errors: providers throw `ProviderTimeoutError` / `ProviderHttpError(status)` /
 `ProviderNetworkError`; `service.ts` maps them to failure codes (a leaked
 `SyntaxError` from a malformed body maps to `PROVIDER_ERROR` too). **The retry
@@ -397,21 +1639,50 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
 - The comps block is written as **ONE atomic object**, never field-by-field:
   ```ts
   interface CompsStateBlock {
-    subjectAddress: string; subjectSqft: number;
+    // BUG-011 (§14.15): null = UNBOUND — the member stated a number without
+    // naming a property. A real state, not a placeholder; the retired
+    // 'manual entry' literal is coerced to null on read (legacy shim).
+    subjectAddress: string | null;
+    subjectSqft: number;
     subjectBeds: number | null; subjectBaths: number | null;
     arv: number; arvLow: number | null; arvHigh: number | null;
-    arvConfidence: ArvConfidence | null;
+    arvConfidence: null;               // the confidence grade is gone (§14.8)
     arvSource: 'comps' | 'manual';
     compsRunId: string | null;
     computedAt: string;                // ISO timestamp
   }
   // state.comps: CompsStateBlock | undefined — the whole block or nothing
   ```
-- **The block is CLEARED at the START of every `run_comps` call, before the
-  provider is hit.** A failed run leaves NO ARV behind — not the previous one.
-- `set_manual_arv` writes the same shape with `arvSource: 'manual'`,
-  `arvLow/arvHigh/arvConfidence/compsRunId: null`, and `subjectAddress`
-  carried from the existing block when present (else `'manual entry'`).
+- ~~The block is CLEARED at the START of every `run_comps` call~~ —
+  **REVERSED by §14.8**: `run_comps` no longer touches `session_state` at
+  all, and the clear would now only ever destroy a number the MEMBER typed.
+- `set_manual_arv` (BUG-011, §14.15) writes the shape above with
+  `arvSource: 'manual'`, `arvLow/arvHigh/arvConfidence/compsRunId: null`,
+  `subjectSqft: 0`, `subjectBeds/Baths: null` — **a fresh statement,
+  inheriting NOTHING from any previous block.** `subjectAddress` binds in
+  this order (RULING 0026), history never consulted on either route:
+  1. the optional `address` argument, **verified against the member's
+     CURRENT message** (`bindAddressToCurrentMessage`: an
+     ADDRESS_FRAGMENT_RE fragment of the message contained in the
+     normalized candidate, OR the candidate's street part contained
+     verbatim in the normalized message — the same normalizer the guard
+     uses, so a binding can never conflict with the message that bound it);
+  2. failing that (argument omitted OR unverifiable), **extraction from the
+     CURRENT message** (`extractAddressFromMessage`): the message's ONE
+     distinct address fragment, over-capture-refined, then passed through
+     the SAME verification. Zero fragments, or two-plus DISTINCT fragments
+     (compared normalized), extract nothing — **ambiguity is never
+     guessed**. Without this fallback, model non-compliance alone reached
+     the guard-free path and failed toward a silent number.
+  "Unbound" therefore means: **no address verifiable in the current
+  message, by argument or extraction.** Failure direction is always
+  "unbound", never "bound wrong".
+- **Unbinding is announced (RULING 0026)**: when a fresh statement stores
+  `subjectAddress: null` and the previous block was a manual ARV bound to a
+  property, the tool result carries `unbound_from: <that address>` and the
+  echo must SAY the new ARV replaces the one set for that property and is
+  no longer tied to it — the member sees the address clause disappear at
+  the moment it disappears, not at the calculator.
 - Pre-fill: when `flip_calculator` / `brrrr_calculator` is invoked **without**
   `after_repair_value` and `state.comps` exists, the agent layer injects
   `state.comps.arv` before `assertRequired` runs. The reply MUST echo the bound
@@ -420,7 +1691,12 @@ write  .from('session_state').upsert({ session_id, state, updated_at })
   visible instead of silently wrong.
 - **Address-mismatch guard**: if the user's message states an address that is
   not the same property as `subjectAddress` (compare normalized forms), do NOT
-  pre-fill. Ask which deal they mean.
+  pre-fill. Ask which deal they mean. **The guard requires a real binding
+  (BUG-011): `subjectAddress: null` never conflicts** — an unbound ARV
+  applies wherever the member takes it, and every echo of it drops the
+  address clause (`Using your ARV of $450,000 — say "change ARV" to
+  override.`) rather than naming a placeholder. A BOUND ARV keeps the full
+  A-vs-B refusal on both surfaces.
 - **Explicit-ARV rule (operator ruling, blocker-level; replaces the plain
   "explicit wins")** — when a stored block exists, an explicit
   `after_repair_value` in a flip/brrrr call resolves by WHO said the number:
@@ -466,11 +1742,17 @@ the other is worse than no guard, because the tests look green.
   (src/features/comps/formPrefill.ts) on a CLONE; the static
   `CALCULATOR_FORMS` never carry session data.
 - **Label copy**: `Pre-filled from your comps on <subjectAddress> — edit to
-  override.` (manual-source variant names the manual entry). Label and value
-  live in ONE object — **no label means no pre-fill, by construction**.
+  override.` Manual-source variant: `Pre-filled from the ARV you set for
+  <subjectAddress> — edit to override.`, or, when the binding is null
+  (BUG-011), `Pre-filled from the ARV you set earlier — edit to override.`
+  Label and value live in ONE object — **no label means no pre-fill, by
+  construction**. (An instance of the standing provenance rule, §14.10
+  Guarantee 4.)
 - **Mismatch ⇒ blank**: if the member's current message names a different
   property (same `findConflictingAddress` discriminator as chat), the form
-  renders WITHOUT a default — never a silent carry.
+  renders WITHOUT a default — never a silent carry. **Bound blocks only
+  (BUG-011): a null binding pre-fills regardless of what the message names**
+  — nothing claims it belongs to any property, and the label says so.
 - **No block ⇒ no default, ever.** State read failure ⇒ plain form.
 - **Widget obligations**: render `prefill.value` into the control, render
   `prefill.label` visibly beside it, do NOT mark it as an omittable sheet
@@ -495,10 +1777,18 @@ the other is worse than no guard, because the tests look green.
     "properties": { "address": { "type": "string", "description": "Full street address incl. city+state (and ZIP if given)" } },
     "required": ["address"], "additionalProperties": false } }
 
-// set_manual_arv
+// set_manual_arv — address OPTIONAL (BUG-011, §14.15): the model passes the
+// property the member named IN THE CURRENT MESSAGE, or omits it entirely.
+// The handler verifies the claim structurally (bindAddressToCurrentMessage,
+// §8) — an unverifiable address is never trusted. On omission or failed
+// verification the handler falls back to extracting the message's ONE
+// unambiguous address itself (RULING 0026), so binding does not depend on
+// model compliance; nothing verifiable ⇒ null.
 { "name": "set_manual_arv",
   "parameters": { "type": "object",
-    "properties": { "arv": { "type": "number", "description": "User-supplied ARV in dollars, > 0" } },
+    "properties": {
+      "arv": { "type": "number", "description": "User-supplied ARV in dollars, > 0" },
+      "address": { "type": "string", "description": "Property the member tied this ARV to in THIS message; omit when none is named" } },
     "required": ["arv"], "additionalProperties": false } }
 ```
 Handlers live in `tools.ts`; agent.ts switch delegates. `run_comps` returns the
@@ -514,8 +1804,10 @@ even attempt a comps run, and the prompt must not advertise it.
 address already run this conversation is RE-RUN through `run_comps` — a
 repeat is a cache hit and costs nothing, and the member gets the full
 rendered block again, inside every guarantee. The prompt forbids answering a
-comps request by summarising an earlier result from memory: every ARV the
-member sees must come from a `run_comps` result in that turn. (The previous
+comps request by summarising an earlier result from memory: every comps
+figure the member sees must come from a `run_comps` result in that turn
+(the ruling predates §14.8 and originally said "every ARV" — the substance,
+never answer from memory, stands unchanged). (The previous
 "don't re-run" spend guard solved a problem the cache already solves, and
 pushed replies onto a transcript-recall path outside `format.ts` — see
 mailbox 0023 for the evidence.) No recall-with-constraints path exists or is
@@ -543,11 +1835,20 @@ work; cache hits bypass it entirely; breach ⇒ `RATE_LIMITED`.
 
 ## 11. Rendered chat block (`format.ts`, pure)
 
-Success: per comp — address, sold price, sqft, $/sqft, sold date, distance —
-plus which comps were trimmed and why (`trimmedOut`), the trimmed $/sqft, the
-subject sqft, the multiplication, ARV with low–high band and confidence, radius
-tier used, and the one-line footer: *automated estimate from public sold data,
-not a formal appraisal*. Confidence `low` adds the weak-estimate warning.
+Success (v2/v3 — the ARV block, trim narrative and confidence line are GONE,
+§14.8): the base emit order was `COMPS_OPENING` → header → table →
+`COMPS_CLOSING` → footer, with no gap where the ARV used to sit; the FULL
+current order including the conditional sections added since is pinned in
+§14.7 (coherence pass, 2026-08-12 — the closing's last-before-footer
+position never moved). The header names the subject
+(beds/baths/sqft/type), BOTH tiers used (`radiusTierMi`,
+`recencyTierMonths`) and the rejected count. Per comp: address, sold price,
+sold date, sqft, $/sqft, beds, baths, lot size, distance, and the
+LOAD-BEARING property link (§14.9 — null renders the literal "link
+unavailable"). Null fields render an explicit `—` (§14.5), never omitted or
+inferred. Footer: *automated estimate from public sold data, not a formal
+appraisal — verify these comps with your agent* (de-ARVed wording; ours to
+edit, unlike the §14.7 prescribed copy).
 
 Failure copy ownership (FINDING-002): the §10 wording is COMPOSED in
 `service.ts` (from format.ts's exported `FAILURE_COPY` table — one source) and
@@ -564,6 +1865,35 @@ Starter set: `subject-standard`, `comps-standard` (≥ 10 solds, mixed quality),
 `comps-thin` (2 valid), `comps-outlier` (one flip-priced ppsf outlier),
 `subject-no-sqft`. Real recordings replace/extend these when the token lands —
 MASON coordinates before overwriting anything INSPECTOR references.
+
+## 12.5 Known limitations + deferred tickets (operator-ruled)
+
+**Bug-number register mapping (collision resolved, INSPECTOR's register
+canonical — their 0036):** BUG-015 = the defaults-disclosure gap below
+(NOT the widget-link fix, which MASON's commit c8f29fe provisionally
+labelled 015 — that fix is **BUG-017**). **BUG-016** = the boot probe
+that could never fail (085182b), confirmed as used. Commit messages are
+immutable; the register records both numbers per entry, and the standing
+rule is: register canonical, provisional labels yield, reassignments
+record both.
+
+**BUG-015 (INSPECTOR's register; the defaults-disclosure gap, live case
+A15) — KNOWN LIMITATION, does NOT block the merge.** Operator ruling,
+2026-08-12: pre-existing, predates this branch, surfaced by the live
+battery's pacing rather than caused by it. Recorded plainly: the
+calculator defaults disclosure (systemPrompt.ts rule 6) is
+instruction-only and **the model misses it roughly 2 runs in 4** — a
+tendency, not a guarantee, and it is NOT signed off as a guarantee in any
+GREEN. Replies on the failing runs say "these are estimates based on your
+inputs" while James's standard defaults were applied.
+
+**Deferred ticket (separate from the comps module — a CALCULATOR fix):**
+enforce the disclosure structurally in `finish()` exactly the way
+`ensurePrefillEcho` enforces the ARV echo — driven off the
+`defaults_applied` object already present on every calculator tool result
+(toolRunners.ts). Same class of disclosure, same risk if missed, same
+proven pattern. Nothing here authorizes building it inside this module's
+scope; it rides its own ticket.
 
 ## 13. Non-negotiables restated
 

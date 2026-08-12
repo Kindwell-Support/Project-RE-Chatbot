@@ -53,7 +53,8 @@ export interface FormField {
    */
   prefill?: {
     value: number;
-    subjectAddress: string;
+    /** Null = unbound manual ARV (BUG-011); the label then says "you set earlier". */
+    subjectAddress: string | null;
     arvSource: 'comps' | 'manual';
     confidence: string | null;
     label: string;

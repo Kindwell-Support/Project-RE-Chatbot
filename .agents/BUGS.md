@@ -1,11 +1,777 @@
 # BUGS — INSPECTOR's running log
 
+**NUMBERING (operator ruling, MASON 0051):** this register is canonical. MASON
+numbers concurrently and his yield on collision. When a number is reassigned,
+the entry records BOTH the assigned number and whatever the commit message
+says, because commit messages cannot be rewritten and a reader will search for
+the one they saw.
+
 Newest first. A bug leaves this list only after the original repro has been
 re-run and confirmed fixed, not when MASON says it's fixed.
 
 Status: `OPEN` · `FIXED-UNVERIFIED` (MASON claims fixed, I haven't re-run) ·
 `CLOSED` (repro re-run, passes) · `WONTFIX` (accepted as a known limitation,
 carried into the GREEN message with its severity).
+
+---
+
+## FINDING-006 — a literal U+0008 inside a regex literal, and the class behind it
+
+- **Status**: CLOSED (repaired + swept)
+- **Severity**: high as a CLASS — one instance was loud, the other was silent
+
+`format.test.ts` carried **five** U+0008 (backspace) characters across two
+lines, where `\b` (word boundary) was intended. MASON found the first; the
+sweep found the rest.
+
+| line | assertion | effect |
+| --- | --- | --- |
+| 617 | `toMatch(/year built (19\|20)\d{2}<BS>/)` | can never match ⇒ **always FAILS** — loud |
+| 631 | `not.toMatch(/<BS>style<BS>\|<BS>condition<BS>/)` | can never match ⇒ **always PASSES** — silent |
+
+617 was the visible one and it blocked BUG-012's gate. **631 is the dangerous
+one**: it is the guard on the operator's directive that style/condition must
+not be rendered without a client ruling, and it was vacuous. It would not have
+noticed un-approved claims about someone's house shipping to a member.
+
+**Root cause, mine**: authoring test files through shell heredocs. `\\b` in a
+heredoc reaches Python as `\b`, which Python resolves to U+0008 inside a
+string literal. It compiles, it runs, it silently never matches. Fixed by
+writing generator scripts with the Write tool instead of heredocs.
+
+**Both repaired predicates were then mutation-checked** against renders that
+should fail them, and the pre-repair forms proven blind to every one.
+
+**Sweep**: 49 files under `tests/`, scanning for C0 controls, DEL, zero-width
+and bidi characters. `format.test.ts` was the only carrier. Now clean.
+
+---
+
+## BUG-017 — the widget never parsed links: the load-bearing Zillow URL rendered as literal text
+
+- **Status**: CLOSED — fixed by MASON at `c8f29fe`, both markdown forms,
+  security-bounded to http(s).
+- **Severity**: major. §14.9 makes the per-comp listing link LOAD-BEARING —
+  the client waived style/condition/quality matching in writing and named this
+  link as the member's substitute for evaluating them. A link that renders as
+  raw text is that substitute withheld.
+- **Found**: by the operator, in the product.
+
+**NUMBERING — read this before searching.** Commit `c8f29fe` and mailbox `0049`
+label this **BUG-015**. That number belongs to the defaults-disclosure gap
+(A15, instruction-only, ~2 runs in 4). MASON's numbering ran concurrently with
+mine and collided; the register is canonical and his yields, so this is
+BUG-017. The commit message cannot be rewritten, so both numbers are recorded
+here and either search lands on this entry.
+
+Searchable phrasings for future readers: *widget rendered markdown link as
+plain text*, *comps listing URL not clickable*, *`[text](url)` shown literally
+in chat*.
+
+---
+
+## BUG-016 — a boot migration check that reported SUCCESS for tables that never existed
+
+- **Status**: CLOSED — fixed by MASON at `085182b`: positive-evidence GET
+  probes plus per-COLUMN probes.
+- **Severity**: blocker. Production ran without three migrations while the
+  probe printed "exists" on every boot.
+- **Found**: by the operator.
+
+Number confirmed as MASON already used it — `085182b` and mailbox `0050` both
+say BUG-016, so the identifier is already in git history and needs no
+correction. Recorded here to make it findable rather than to renumber it.
+
+**The mechanism, in the words someone will actually search for.** The probe
+used a `head: true` count query. PostgREST answers that with headers only, and
+the client swallowed the error body — so a query against a table that does not
+exist returned no rows AND no error, which the probe read as "present". **A
+migration check that reported success on a missing table.** It could not fail:
+there was no input for which it printed absent.
+
+This is the *assertion-reach* family the TEST_PLAN appendix describes, in
+production code rather than in a test — a check whose predicate could not
+discriminate, passing for every input including the broken one. Same shape as
+FINDING-006's `.not.toMatch` against a corrupted regex, and the same tell: ask
+what input would make it report failure, and find there isn't one.
+
+Searchable phrasings: *migrate probe says table exists when it does not*,
+*head:true swallows PostgREST error*, *boot check passes for missing table*,
+*migrations silently skipped in production*.
+
+---
+
+## FINDING-015 — §14.22's ask is LOOSER than RULING 1; one stale card false-asks
+
+- **Status**: OPEN. Reported to MASON and the operator. Not a merge blocker.
+- **Severity**: moderate, and in the direction the ruling explicitly weighted.
+
+RULING 1 gave three conjunctive conditions. The build checks one:
+
+| ruling condition | in `service.ts` |
+| --- | --- |
+| member supplied no unit | checked (`!hasUnitDesignator(rawAddress)`) |
+| the RESOLVED CARD has a unit | **not checked** |
+| 2+ DISTINCT unit cards at that street | **not checked** — one sibling suffices |
+
+Both missing conditions loosen the trigger, and the ruling's emphasis was the
+opposite: *"a false ask is worse than the guess it replaces, because it makes
+the tool look broken on ordinary addresses."*
+
+**Demonstrated, not argued** (`tests/comps/multiUnitAsk.test.ts`): a plain SFR
+subject whose pool contains a SINGLE unit-bearing card sharing the street
+prefix — a stale Zillow record, a converted garage apartment, a neighbouring
+duplex — is answered with an ask. The member cannot satisfy it: their house has
+no unit number to give. That is the false ask, reachable with one bad row.
+
+**What the build gets right**, and it is the important half: a plain SFR with
+no unit cards never asks, and a member who supplied a unit is never asked
+again. So the ask is genuinely keyed to what the member left out; it is the
+evidence threshold for "this building has units" that is too low.
+
+**Suggested shape** (MASON's call, and it may be the operator's): require two
+distinct unit-bearing siblings, or require the resolved subject card to carry a
+unit itself. Either restores a condition the ruling named.
+
+Recorded as probes rather than as failing tests: the cases assert what the build
+DOES, each with a message saying to delete it if the trigger tightens, so the
+gap stays visible without reddening the suite over a decision that is not mine.
+
+Searchable: *false unit ask*, *single sibling triggers ask*, *ruling 1
+conditions not conjunctive*.
+
+---
+
+## FINDING-014 — every multi-turn LIVE case ran with EMPTY history, and passed
+
+- **Status**: FIXED in both fakes. The live battery must be re-run; its prior
+  greens on multi-turn cases proved nothing.
+- **Severity**: high, and entirely mine. This is the largest vacuity I have
+  shipped.
+
+Both Supabase doubles read history from a fixed seed:
+
+```ts
+const history = options.history ?? [];
+...
+if (table === 'chat_messages') return [...history].reverse();
+```
+
+`appendExchange` writes each turn, the fakes recorded the payload into
+`inserts[]` for assertion, and then **discarded it**. Nothing fed it back. So
+the second `chat()` in a session read an empty transcript, and the model was
+being asked to recall a conversation it had never seen.
+
+**Why it stayed invisible for the whole project.** Every multi-turn live
+assertion is of the form *"every figure in this reply must be a legitimate
+one"*. A model with no memory quotes no figures at all, so the set is empty and
+the assertion passes. The recall cases are the worst of it — their entire
+subject is memory, and they were the least capable of detecting its absence.
+One of them is even guarded by `if (/\d{6}/.test(reply))`, so it skips its only
+assertion when the reply has no number, which is precisely what an amnesiac
+model returns. FINDING-007's shape, at the scale of a whole surface.
+
+**How it surfaced**: two new BUG-019 follow-up cases failed with the model
+asking for an address it had been given one turn earlier. The reply was too
+sensible to be a model failure, and "asks for something it was just told" reads
+as missing context rather than bad instruction-following. Re-run four times to
+rule out FINDING-010's intermittency bucket — consistent every time, which is
+what a structural cause looks like.
+
+**Resolution**: appended turns now feed the history read, scoped by
+`session_id`. The scoping is not incidental — flattening every session's turns
+into one transcript would have leaked conversations into each other, a worse
+bug than the empty history, and the session-isolation case could not have
+caught it because it asserts on absence rather than on content.
+
+**THE NEAR-MISS INSIDE THE FIX, which is the part worth remembering.** I fixed
+`fakes.ts` first, re-ran the live cases, and they failed identically. The live
+battery builds on `makeCompsSupabase` in `compsFakes.ts` — a *different*
+double with the same defect. A real fix that reached nothing the failing tests
+exercise, and had the cases passed for some other reason I would have recorded
+it as verified. **Rule: when a fix does not change a failing result, suspect
+the fix is not on the path before suspecting the diagnosis.**
+
+Both follow-up cases pass with history wired, so BUG-019's intent-based trigger
+handles bare anaphora correctly. There was no product bug here at all.
+
+Searchable: *empty history in live tests*, *appendExchange not fed back*,
+*multi-turn vacuous*, *two supabase fakes*.
+
+---
+
+## BUG-020 — livingArea float artifacts — FILED AND REFUTED
+
+- **Status**: CLOSED, not a bug. Recorded because the reasoning is reusable.
+- **Severity**: none.
+
+Raised by the BUG-018 class sweep. `livingArea` is rounded at **neither** site —
+not `apifyZillow.ts:169/214`, not `format.ts:173/280` — while `lotSize` is
+rounded at both. Same field family, same two mapper routes, same payload
+object. The suspicion was sound and I expected it to confirm.
+
+**It is safe anyway, for a reason that is not a guard.** `num()` renders through
+`toLocaleString`, whose default `maximumFractionDigits` is 3. That absorbs the
+`15682.000000000002` shape entirely. The lot needed a real fix because its
+*other* shape — acreage conversion — lands at exactly three decimals
+(`97,199.784`) and passes under that default intact. `livingArea` is sqft-native
+with no conversion path, so it cannot produce a three-decimal value.
+
+The protection is therefore incidental. If `num()` ever gains explicit fraction
+digits, or a sqft value acquires a conversion, this becomes real with nothing
+between it and a member. `numerics.test.ts` asserts both the absorbed shape and
+the three-decimal shape that would get through, so the limit is explicit.
+
+Searchable: *living area decimals*, *sqft float artifact*, *toLocaleString
+default fraction digits*.
+
+---
+
+## FINDING-013 — §14.20 charges the concealment margin where nothing is concealable
+
+- **Status**: OPEN. Reported to MASON; not a merge blocker.
+- **Severity**: minor, but it changes which comps a member sees.
+
+`orderingKey` adds `COMPLETENESS_TIEBREAK_PER_FIELD` per null bed/bath field on
+the **comp**, unconditionally:
+
+```ts
+const missingFields = (comp.beds === null ? 1 : 0) + (comp.baths === null ? 1 : 0);
+```
+
+`scoreComp` zeroes a diff when **either** side is null. So when the SUBJECT's
+beds are unknown, the bedbath term is 0 for every comp whether it discloses or
+not — the concealable advantage is exactly **zero** — and the comp is charged
+the full 5 regardless.
+
+**Why it is not merely academic.** It is reachable: `format.ts:279` renders a
+bedless subject with the em-dash rather than rejecting the run. And ordering is
+not cosmetic — `rankComps` slices at `MAX_COMPS_KEPT`, so the demotion can drop
+a genuinely better comp out of the kept five in favour of a worse one whose beds
+happen to be populated, on a subject where beds were never scoreable.
+
+**The margin itself is correct**, and was verified exhaustively rather than
+taken on report: swept against the shipped gate, one concealed field can hide at
+most 5 and does reach 5; two compound to exactly 10 with no clamp saturation.
+The defect is scope, not arithmetic — the derivation assumes the field is
+scoreable and the implementation does not carry that condition.
+
+**Suggested shape** (MASON's call): count a missing field only when the subject
+has the corresponding field populated.
+
+Searchable: *tie-break penalises unscoreable field*, *bedless subject demotes
+concealers*, *orderingKey ignores subject nulls*.
+
+---
+
+## FINDING-012 — the sweep tool reproduced FINDING-006, and corrupted the one field a sweep is for
+
+- **Status**: CLOSED (tool fixed, result stands).
+- **Severity**: process. Fourth occurrence of the same mechanism.
+
+The dead-guard sweep generates an assertion carrying the source location:
+
+```
+expect(Boolean(cond), 'BRANCH-NEVER-TAKEN tests\comps\golden.test.ts:76').toBe(true);
+```
+
+Windows path separators went into a TypeScript string literal unescaped, so
+`\c` and `\g` were consumed as escapes: the label printed as
+`testscompsgolden.test.ts:76`, and one collapsed far enough that the runner
+rendered it as a bare ellipsis. Every finding lost its file.
+
+**Why this one is worse than the previous three.** The earlier occurrences
+damaged a regex or a message. This one damaged the *identity of the result* —
+a sweep exists to tell you WHERE a guard is dead, and the tool silently
+removed exactly that. The findings were recoverable only because the runner
+also echoes the source line, and because five hits across four files were
+individually recognisable. A larger sweep would have been ambiguous and I
+would have been guessing at locations while believing I had measured them.
+
+**Rule**: generated code that embeds a path emits forward slashes, and one
+generated line gets read back before a whole generated run is trusted. The
+second half is [FINDING-008]'s corollary — verify a repair by re-reading the
+artifact — applied to tooling output rather than to a file I edited.
+
+Searchable phrasings: *backslash eaten in generated assertion*, *sweep label
+lost its filename*, *path separator consumed as string escape*.
+
+---
+
+## FINDING-011 — I stashed another agent's uncommitted work to answer a question I could have answered safely
+
+- **Status**: CLOSED (rule adopted). No damage — verified.
+- **Severity**: near-miss, and the kind worth writing up precisely because
+  nothing broke.
+
+Chasing 37 sudden failures, I ran `git stash -u`, `git checkout HEAD~1`, ran
+the suite, checked out back, and `git stash pop`. It worked. It should not have
+been attempted.
+
+**MASON writes to this tree concurrently — that is stated in my charter.** At
+that moment he had six modified `src/` files and one new fixture in flight for
+slice 1. A pop conflict, an interrupted command, or a checkout that refused
+would have put another agent's unfinished work at risk, and I would have had no
+way to reconstruct it. The reason nothing was lost is that the operations
+happened to succeed, which is not a safeguard.
+
+**The question I was answering was legitimate**: "are these 37 failures mine or
+someone else's?" The method was not.
+
+### THE RULE
+
+> **Never `git stash`, `git checkout`, or `git reset` on a tree another agent
+> writes to.** To read a historical version, use `git show <sha>:<path>`. To
+> run a suite at another commit, use a separate worktree. Both are read-only
+> with respect to the shared working tree.
+
+### THE CHEAPER ANSWER I SHOULD HAVE REACHED FIRST
+
+`git status --short` — before attributing ANY suite result. It takes no time
+and answers the question directly:
+
+```
+ M src/features/comps/aggregates.ts
+ M src/features/comps/config.ts
+ M src/features/comps/format.ts
+ ...
+```
+
+Six `src/` files dirty, and **I do not own `src/`**. That alone says the tree is
+mid-slice and the suite result is not attributable to me — no stash required. I
+went looking for a bisect when the answer was one read-only command away.
+
+**The generalisation, which is the part worth keeping:** a red suite is only
+evidence about MY change if the tree contains only MY changes. I had been
+treating "the suite went red after I committed" as implying causation, on a
+tree explicitly shared with another writer. Checking tree ownership is now the
+first step of triage, before the buckets.
+
+---
+
+## BUG-015 — the defaults disclosure is instruction-only, and the model misses it ~2 runs in 4
+
+- **Status**: OPEN — reported in mailbox `0033`. Live-only; `A15` in
+  `tests/live.test.ts`.
+- **Severity**: major on the miss, but PRE-EXISTING — not introduced by any
+  slice in this block. It surfaced because pacing removed the six 429s that
+  were masking the rest of that file.
+- **Frequency, measured**: 1 fail / 2 pass on three targeted re-runs, plus one
+  fail in the full paced run and a pass in the original battery. ~2 in 4.
+
+The reply on a failing run:
+
+> "…estimates a net profit of $101,916 … **these are estimates based on your
+> inputs** — verify arv, rehab, and financing before you act."
+
+The defaults WERE applied (12% interest, 20% down, $3k taxes, …). "Based on
+your inputs" does not merely omit that — it points the other way, and a member
+would reasonably read every number as theirs.
+
+**Not caused by the BUG-014 prompt sweep**, checked before reporting:
+`git show a6e98c5 | grep -iE '^[-+].*(default|assum|standard)'` is empty, and
+`systemPrompt.ts:96` still carries the rule with a worked example. The
+instruction is intact; the model did not follow it.
+
+**The shape, which is the useful part.** An instruction obeyed ~70% of the time
+is a tendency, not a guarantee. This codebase already draws that line: the ARV
+pre-fill echo is not left to instruction — `ensurePrefillEcho` in `finish()`
+prepends it when the model omits it. Same class of disclosure, same consequence
+if missed, enforced structurally rather than asked for. `defaults_applied` is
+already on the tool result (`toolRunners.ts:85, 98`), so the data is in hand.
+
+Recommendation: the existing pattern. If a calculator ran with defaults applied
+and the output does not name them, `finish()` adds the line.
+
+---
+
+## FINDING-010 — a fourth bucket for live reds: intermittent model non-compliance
+
+- **Status**: CLOSED (checklist updated)
+
+My live-triage table had three buckets — infrastructure, stale predicate, real.
+A15 fits none cleanly: the guarantee genuinely fails, but only sometimes, and
+no code change caused it.
+
+It needs its own bucket because the RESPONSE differs. A deterministic real
+failure is a defect to fix. An intermittent one is a question about whether the
+guarantee is enforced or merely requested — and the answer is usually to move
+it from prose into code, not to tighten the prose.
+
+The tell: **re-run it three times before classifying.** One live red is a
+sample of one, and a live suite is the only place in this project where the
+same input can legitimately produce different output. I had been treating live
+reds as deterministic, which is how A15 would have been mis-filed as a
+regression from the prompt sweep that happened to land just before it.
+
+---
+
+## BUG-014 — the system prompt still tells the model `run_comps` produces an ARV
+
+- **Status**: CLOSED — fixed at `a6e98c5`. Verified by re-running the live
+  repro twice (a targeted `-t` run and the full paced battery): **16/16 pass,
+  zero 429s.**
+- **Verified by grepping the prompt myself, not from the fix report.** Every
+  `ARV` mention in the comps section now either denies the capability or routes
+  to `set_manual_arv`:
+  - *"It does NOT produce an ARV … never promise it will, and never describe
+    comps as a way to 'get the ARV'."*
+  - *"every comps figure the member sees must come from a run_comps result in
+    THIS turn, and every ARV comes from the member via set_manual_arv — comps
+    never produce one."*
+  - the recall case is answered explicitly: *"If asked 'what was the ARV?', say
+    plainly that comps don't produce an ARV, and offer to re-run the comps or
+    to use their own figure."*
+
+  **The unsatisfiable instruction is genuinely resolved, not reworded.** The old
+  sentence bound ARVs to a source that yields none. The new one splits the
+  claim: comps FIGURES come from a run_comps result (satisfiable), ARVs come
+  from the member (satisfiable). That is the part that mattered — a model
+  holding a contradiction has to resolve it somehow, and invention was one of
+  the available resolutions.
+
+  The remaining `ARV` mentions in `systemPrompt.ts` are calculator INPUTS
+  (Flip and BRRRR take an ARV the member supplies). Correct, and deliberately
+  left alone.
+- **Severity**: major. No number was invented — the honesty guarantee HELD —
+  but the member is promised something the tool cannot deliver, and the model
+  is left holding an unsatisfiable instruction.
+- **Found**: the first live battery run at HEAD, after the detail, census and
+  aggregates slices.
+
+Asked "what was the ARV?" after two comps runs, the model answers:
+
+> "I'll need to run the comps again for 123 Main St to get the current ARV."
+> "I need to run comps again to provide the ARV for 123 Main St."
+
+`src/agent/agent.ts`, the comps prompt section, is still written for a world
+where comps produce an ARV: the heading is `## Comps and ARV (run_comps)`, it
+routes "estimate ARV" requests to the tool, and it states **"every ARV the
+member sees must come from a run_comps result in THIS turn."** §14.8 deleted
+the ARV; `run_comps` yields none.
+
+Two consequences, and the second is the worse one:
+
+1. The member is told they are getting an ARV and receives comparable sales.
+2. "Every ARV must come from a run_comps result" is now **unsatisfiable**. The
+   model is told where ARVs must originate and that origin produces none.
+   Under pressure that contradiction has to resolve, and invention is one of
+   the available resolutions. It did not resolve that way in these two runs. I
+   would not build on that.
+
+The TOOL-RESULT instruction is correct ("This tool does NOT produce an ARV")
+but only exists on turns where the tool runs. A recall turn calls nothing, so
+the model answers from the system prompt alone.
+
+**Why no offline test caught it**: it is about what the model infers from
+prose. `arvRemoved.test.ts` pins the tool result and the rendered block, both
+of which are clean. The gap is the standing instructions, and only a live model
+reading them can surface it — which is the argument for the live battery
+existing at all.
+
+---
+
+## FINDING-009 — the whitelist predicate went stale, exactly where I predicted and not exactly how
+
+- **Status**: CLOSED (fixed structurally)
+- **Severity**: would have reported two false fabrications
+
+The pressure battery permitted only the eight comp sold prices and flagged any
+other figure over $50k. Correct while the block held nothing but comps. The
+census section renders a real median household income ($102,556, tract 89) and
+the aggregates section an average sale price — both produced by the TOOL and
+required to be relayed verbatim, both reported as invention.
+
+I flagged this in STATUS before the run and named the wrong section: I expected
+the aggregates average to trip it. It did not — the fake provider returns no
+neighbourhood sales, so that block rendered `0 sales · average price —`.
+Census tripped it instead. **The mechanism was predicted, the instance was not**,
+which is the usual way: predicting a class is much easier than predicting which
+member of it fires first.
+
+Fixed by splitting the reply into the relayed block and the model-authored
+remainder rather than widening the allowance — a static list goes stale at the
+next section, and there will be a next section. The split states the guarantee
+literally: the model may relay any figure the tool produced; it must not add
+one of its own. A reply with no block is model-authored end to end, so the
+recall and pressure paths lose no strictness. A precondition asserts the split
+actually found a block, so it cannot pass vacuously.
+
+---
+
+## BUG-013 — the ACS sentinel enumeration has no floor under it
+
+- **Status**: CLOSED — fixed at `68a97c6`, exactly to the ruling. Re-verified
+  over the fix at `abd135b`: the two layers do DIFFERENT jobs (enumerated set
+  nulls SILENTLY, domain floor nulls AND reports), the floor covers all four
+  fields independently, the WARN carries variable + raw value + tract, and the
+  live-only observer behaves as disclosed. 42/42.
+- **One disclosed gap**, recorded so it is a decision: the reconciliation
+  backstop cannot be exercised through the public seam — the floor makes an
+  out-of-range percentage unreachable. Proven by a 10x10 non-negative sweep
+  rather than argued. Exporting the reconciliation predicate would make the
+  branch directly testable; until then the case asserts the property the
+  backstop depends on, not the branch.
+- **Severity**: medium reachability, HIGH consequence — a visibly impossible
+  figure rendered as a measured fact with correct provenance beside it.
+
+`acsNumber` rejects the six enumerated sentinels and nothing else, so an
+unlisted negative renders:
+
+```
+-5      -> median income -5,  median age -5
+owner=-50 renter=150 -> owner% = -50,  renter% = 150
+```
+
+**Contract disagrees with code.** §14.10: *"suppression sentinels (large
+negatives) and anything non-finite/negative map to null"*.
+
+The tenure case is the sharp one. A negative owner count shrinks the
+denominator below the renter count and the member reads **"renter-occupied
+150%"**. Guarantee 4 makes it worse rather than better: the tract name and ACS
+vintage render correctly beside it, so the provenance lends authority to
+nonsense.
+
+**Not asking for the threshold back.** MASON removed it for a good reason — a
+bare `< 0` check silently absorbs the seventh annotation value the day Census
+adds one, and masks malformed data as suppression. Wrong shape for a sentinel
+class (third appearance after `daysOnZillow: -1`). The proposal is both, with
+different jobs: the enumerated set stays primary and silent (expected,
+documented suppression); a domain floor catches unlisted negatives — none of
+these four measures can be negative — maps them to null AND **logs** them. The
+logging is what earns it: a threshold alone hides a new sentinel; enumeration
+plus a logging floor means the member never sees nonsense and we learn when
+Census adds a value, rather than finding out from a screenshot.
+
+---
+
+## FINDING-008 — one-shot tooling that persists state between runs
+
+- **Status**: CLOSED (rule adopted)
+- **Severity**: high as a class. It silently reverts verified work, and the
+  working tree looks clean afterwards.
+- **Found**: in my own branch-measurement script, after closing the same class
+  twice in the product.
+
+The script backed each test file up before instrumenting it and restored the
+backups on revert. The backup directory persisted between runs. On the final
+pass one file no longer contained an `if`+expect block, so it was not
+instrumented and took no fresh backup — but revert restored the STALE backup
+from an earlier pass anyway, silently undoing a fix I had just watched pass.
+
+`git status` was clean afterwards, because the file genuinely matched HEAD.
+Nothing flagged it. I caught it only because the commit stat did not list the
+file I had just edited.
+
+### THE RULE
+
+> **One-shot tooling does not persist state between runs.**
+>
+> If a tool writes state that outlives its own invocation — a backup, a cache,
+> a lock, a scratch table, a "last known good" — then every later run inherits
+> a claim it did not make and cannot validate. Derive state fresh, scope it to
+> the run, and delete it on the way out. Where it must persist, it must be
+> KEYED to the run and refuse to apply to a different one.
+
+This is the third instance of the class on this project, and the first I
+produced:
+
+1. **The comps cache** — a stale entry serving an old-parameter result,
+   indistinguishable from fresh. Fixed by `ALGO_VERSION`, which is exactly
+   "keyed to the run that produced it".
+2. **`session_state`'s `'manual entry'`** (BUG-011) — a value written by a
+   code path that no longer exists, still being read and defended by the
+   guard. Fixed by a read-time shim that coerces the retired shape.
+3. **This.** Same shape, in the tooling rather than the product, and it cost a
+   verified fix.
+
+The pattern in all three: the writer disappears, the artifact does not, and
+the reader cannot tell the difference. `ALGO_VERSION` is the general answer —
+version the artifact with the thing that produced it, and refuse artifacts
+whose producer is gone.
+
+### A SECOND INSTANCE, IN THE SAME SESSION
+
+The NUL byte in `TEST_PLAN.md` (documenting a NUL-injection input) was
+"repaired" earlier and was still there. The repair ran through a shell
+heredoc, so `b"...\\0"` collapsed to `b"...\0"` — a NUL — and I
+replaced the NUL with a NUL, then reported it fixed without re-reading the
+bytes. Same root cause as FINDING-006, applied to the fix rather than the
+code.
+
+**Corollary rule:** verify a repair by re-reading the artifact, not by
+observing that the repair command exited 0.
+
+### SCOPE CORRECTION — it was worse than I reported, and undetectably so
+
+I reported this as costing ONE file. Measured after the Census sweep: the
+stale-backup revert also clobbered the un-guarding in `arvRemoved.test.ts` (2
+sites) and `manualArvBinding.test.ts` (1), and **I committed the clobbered
+state in `38dedb0` without noticing** — its diff shows my explanatory comment
+being removed and `if (flip?.inputs_used) {` being added back.
+
+**Why no check I ran could have caught it.** Un-guarding an assertion does not
+change pass/fail — the guarded version passes too, it simply proves less. So
+"the tests still pass" is not evidence the fix survived, and neither is
+`git status` (the file genuinely matched HEAD). The ONLY instrument that sees
+this is the dead-guard sweep, which is what found it, four commits later.
+
+**Rule extended:** a fix whose effect is invisible to the suite must be
+verified by the instrument that measures the effect, not by the suite. For
+dead guards that is the sweep — so the sweep is now the verification step for
+its own class of fix, not only the discovery step.
+
+Also learned the hard way: the re-application script matched exact strings and
+silently reported `MISS` five times when the restored copy had drifted.
+One-shot repair tooling should transform structurally (parse the block) or
+fail loudly on a miss — never no-op quietly.
+
+---
+
+
+
+---
+
+## FINDING-007 — assertions that never execute (THE SIXTH SHAPE)
+
+- **Status**: 8 fixed; 8 classified benign; 1 open coverage gap (below)
+- **Severity**: high as a class — these are green tests proving nothing
+
+Findings 1-6 each broke a different link in the same chain:
+
+> file runs → test runs → subject is what I think → predicate is what I think → predicate discriminates
+
+Link 2 had been checked at FILE level (dead imports) and SUITE level (skips),
+never at STATEMENT level. Measured by instrumenting every `if (...)` block
+containing an `expect` with a tripwire, running the suite, and reverting:
+**31 guarded blocks, 56 assertions, of which 16 blocks never took their
+branch.**
+
+The eight that mattered were the wrong-house leak guards
+(`if (flip?.inputs_used) { expect(...).not.toBe(403000) }`). The mismatch guard
+REFUSES the call every time — correctly — so the condition was false every
+time and **the leak assertion never ran once**. Those tests were passing on
+their other assertion only.
+
+The guard was never necessary: `flip?.inputs_used?.after_repair_value` is
+`undefined` on a refusal, and `undefined !== 403000` passes. The unguarded form
+passes on refusal AND fails on a leak, with no branch to go dead. All eight
+converted.
+
+Classified benign: `golden.test.ts` x2 (parameterized, legitimately vary),
+`normalize.test.ts` (fires only on a collision — none, which is the desired
+result), `agent.test.ts` / `invariants.test.ts` (conditional RULES that apply
+only to a shape not currently present).
+
+**CLOSED — and my first diagnosis of it was wrong, which is worth recording.**
+I reported `formPrefill.widget.test.ts:132` as dead "because post-§14.8 the
+widget no longer pre-fills". That was inference, not measurement. The file
+feeds the widget a form descriptor through a mocked fetch and never touches
+the server, so §14.8 cannot reach it.
+
+Probed instead. The widget declines to pre-fill because the fixture has **no
+label** — which is BUG-008's fix working exactly as designed. The branch is
+dead for a good reason, and the honest form is to assert the declining
+directly rather than tolerate either outcome. Done.
+
+The REAL staleness in that file was elsewhere and the dead branch hid it: every
+fixture was `arvSource: 'comps'` with a "Pre-filled from your comps on ..."
+label — a shape that can no longer reach the widget at all, because
+`formPrefill.ts:54` returns the form untouched for any block that is not
+`'manual'`. BUG-008's label guarantee was being exercised solely against a
+payload production cannot produce. Fixtures re-pointed to the manual shape,
+and §14.15's unbound variant (null `subjectAddress`, label naming no property)
+added — it reaches the member and had no coverage at all.
+
+Lesson, logged because it is the same failure I keep finding in others' work:
+I explained a dead branch from a plausible cause instead of measuring it. The
+plausible cause was wrong and it pointed away from the real gap.
+
+---
+
+## BUG-012 — `year built 1,928`: the year is rendered as a quantity
+
+- **Status**: CLOSED — fixed at `3cde09d` (a `year()` formatter; `num()`
+  correctly keeps separators for sqft and lot). Verified against the build:
+  the renderer emits `year built 1990` bare, `format.test.ts` 53/53.
+- **My gate was broken too**, and that is the more useful half: the repro
+  could not have passed against ANY fix. See FINDING-006.
+- **Severity**: low mechanically, but member-visible on EVERY comp and in the
+  one column that is asking to be trusted.
+- **Found**: writing the §14.14 render spec.
+
+`format.ts:129` renders the new detail line through the shared `num()` helper:
+
+```ts
+const num = (v, suffix='') => v === null || v === undefined ? NA : `${v.toLocaleString('en-US')}${suffix}`;
+`  year built ${num(d?.yearBuilt ?? null)} · days on market ...`
+```
+
+`toLocaleString('en-US')` puts a thousands separator in a YEAR: **1928 renders
+as `1,928`**. Correct for sqft and lot size — which is why the helper is right
+to exist and wrong to reuse here.
+
+Affects every comp built before the year 10000, i.e. all of them. It is not a
+rounding nit: a year formatted as a quantity is what a member screenshots into
+a rehab scope, and it makes the column look machine-generated in exactly the
+place the block is asking to be believed.
+
+Fix is a year-shaped formatter (`String(v)`), not a change to `num()` —
+sqft and lot SHOULD keep their separators.
+
+---
+
+## BUG-011 — the ARV removal orphaned `subjectAddress`; every manual ARV binds to the literal string "manual entry"
+
+- **Status**: CLOSED — fixed at `0b7dcab` (operator-ruled: optional `address`
+  arg, current-message-only, null when unbound, guard skips null). Verified
+  independently at `c8d1d3b` by the four-state battery in
+  `tests/comps/manualArvBinding.test.ts` (6/6), written from the ruling text
+  before reading the implementation. The never-conflict blur did NOT happen:
+  a bound A still refuses B (STATE 2 control). The fix is stronger than the
+  ruling required — `bindAddressToCurrentMessage` structurally verifies the
+  model-supplied address against the current message, and a legacy shim
+  coerces stored `'manual entry'` rows to null at read.
+- **Residual, documented**: binding depends on the model PASSING the address
+  argument. Member names the property, model omits the arg → ARV stores
+  unbound → guard skips → the number is portable. Characterised with
+  tripwires in `arvRemoved.test.ts`; closing it (current-message extraction
+  fallback on omission) needs a ruling — raised in `0026`.
+- **Original report**: mailbox `0024`, blocker
+- **Severity**: high, member-visible on both symptoms
+- **Found**: while re-pointing the P1 state suite after the ARV removal (`12eb0e7`)
+
+`tools.ts:218` reads `subjectAddress: existing?.subjectAddress ?? 'manual entry'`.
+That was safe while `run_comps` wrote the comps block. It no longer does, and
+`set_manual_arv` takes no address argument, so **no code path puts a real
+address into `subjectAddress` any more**. It is permanently the placeholder.
+
+**Symptom 1 — the member's own ARV is refused for the address they just named.**
+`addressConflict` (`agent.ts:449`) compares the member's real address against
+`"manual entry"`, they differ, the guard fires:
+
+```
+"use 450k as the ARV for 123 Main St"   -> stored, subjectAddress "manual entry"
+"run the flip numbers on 123 Main St"   -> ARV never reaches the calculator
+```
+
+and the model is told to ask "which deal is this — the one at manual entry, or
+the new address". There is no answer to that question.
+
+**Symptom 2 — the placeholder is rendered.** The chat echo (`agent.ts:287`)
+reads `Using ARV $450,000 from your manual entry for manual entry`.
+`formPrefill.ts:33` already special-cases `!== 'manual entry'` for the form
+label; the chat echo has no such guard.
+
+**Why it survived my first pass.** The bad path only fires when the member NAMES
+a property; `"run the flip numbers"` with no address pre-fills fine. My own
+guard test in `arvRemoved.test.ts` used a message with no address, so it passed
+while asserting nothing about the case that matters. Same failure mode as the
+false pin in `0016` — a test that is green about the wrong situation.
+
+**The fix must not be "treat 'manual entry' as never-conflicting."** That
+removes the A -> B protection the operator required kept. Three options offered
+in `0024`; MASON's call.
 
 ---
 

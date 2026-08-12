@@ -3,7 +3,7 @@
  * interface; everything above it is pure and offline-testable. Tests inject a
  * fake through AppDeps.propertyProvider — never env vars, never module mocks.
  */
-import type { RawComp, SubjectProperty } from '../types.js';
+import type { CompDetail, RawComp, SubjectProperty } from '../types.js';
 
 /**
  * Zillow resolved a DIFFERENT property than the one named (wrong unit,
@@ -16,6 +16,23 @@ export interface SubjectResolutionMismatch {
   guard: 'hasBadGeocode' | 'street_prefix';
 }
 
+/**
+ * One item of a batched detail run (CONTRACT §14.14). The batch returns items
+ * OUT of input order (recorded: 1,2,3,4,5 came back 1,4,5,2,3), so
+ * `addressOrUrlFromInput` — the actor's verbatim echo of the input address —
+ * IS THE JOIN KEY. Matching by position is a bug regardless of passing tests
+ * (§14.14 rule 1).
+ */
+export interface DetailBatchItem {
+  /** Verbatim echo of the input address — the ONLY legal join key. */
+  addressOrUrlFromInput: string;
+  /** False = the actor's own `{isValid:false, invalidReason}` per-item failure shape. */
+  ok: boolean;
+  zpid: string | null;
+  /** Null exactly when ok is false. */
+  detail: CompDetail | null;
+}
+
 export interface PropertyDataProvider {
   readonly name: string; // 'apify-zillow' | 'stub'
   /**
@@ -25,8 +42,36 @@ export interface PropertyDataProvider {
    * stubs) remain conformant — the mismatch member is optional behaviour.
    */
   lookupSubject(rawAddress: string): Promise<SubjectProperty | SubjectResolutionMismatch | null>;
-  /** Sold comps around the subject. May include garbage; the hard filters own rejection. */
-  fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]>;
+  /**
+   * Sold comps around the subject. May include garbage; the hard filters
+   * own rejection. `windowMonths` (§14.17) pushes the recency window
+   * SERVER-SIDE — the window is the SERVICE's policy, passed at the seam
+   * that spends money, so a test can assert what was asked for. Omitted ⇒
+   * unwindowed (the pre-§14.17 behaviour, kept for back-compat of fakes).
+   */
+  fetchSoldComps(subject: SubjectProperty, radiusMi: number, windowMonths?: number): Promise<RawComp[]>;
+  /**
+   * ONE batched detail run for the FINAL kept comps (§14.14). OPTIONAL:
+   * providers/fakes without it degrade to comps-without-detail — enrichment
+   * is decoration, never a dependency. `timeoutMs` is the REMAINING slice of
+   * the whole-pipeline ceiling, set by the service; implementations must
+   * honour it over their own default.
+   */
+  fetchDetailBatch?(addresses: string[], opts?: { timeoutMs?: number }): Promise<DetailBatchItem[]>;
+  /**
+   * The dedicated neighbourhood-sales fetch (§14.16.1): radius-bounded,
+   * window pushed SERVER-SIDE (Zillow doz) — never the candidate pool,
+   * whose results cap makes its "12 months" weeks deep. OPTIONAL, same
+   * degradation rule as fetchDetailBatch: absent ⇒ no neighbourhood
+   * section. Returns search-shaped RawComps; the pure aggregate pipeline
+   * (circle cut → dedupe → averages) owns everything after the wire.
+   */
+  fetchNeighborhoodSales?(
+    subject: SubjectProperty,
+    radiusMi: number,
+    windowMonths: number,
+    opts?: { timeoutMs?: number },
+  ): Promise<RawComp[]>;
 }
 
 /** Provider exceeded PROVIDER_TIMEOUT_MS. Retried once, then PROVIDER_TIMEOUT. */

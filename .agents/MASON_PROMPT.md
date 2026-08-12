@@ -224,6 +224,17 @@ Body: what changed, which files, what to test, anything you deliberately left ou
 
 Rules:
 1. **Read your entire inbox before starting any new unit of work**, and again after finishing one. Archive what you've handled.
+   **1a. (Protocol change, operator-approved from INSPECTOR 0031.) Re-read
+   the inbox IMMEDIATELY before starting any slice — not just at cycle
+   boundaries.** The mailbox is a shared directory written concurrently: a
+   message committed between your last read and your first line of code is
+   a read-before-write race, and from your side it is indistinguishable
+   from a lost message. (It happened: 0030 landed on the agreed path seven
+   minutes before aggregates.ts was started, and was read only after the
+   build.)
+   **1b. Name the HIGHEST MESSAGE ID you have read in every handoff**, so
+   an unread message is a visible gap rather than a silence. Archiving on
+   read remains the per-message acknowledgement.
 2. Never edit a message after sending. Send a follow-up.
 3. A `BUG` at severity `blocker` preempts whatever you're doing.
 4. When you fix a bug, reply `FIXED` referencing the bug `id` and the commit sha. Don't just fix it silently — INSPECTOR is waiting to re-verify.

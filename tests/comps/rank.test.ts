@@ -7,10 +7,20 @@
  * the filters let through. There is no symptom. The only defence is asserting
  * which comps come back.
  *
- *   distance = min(distanceMi / 1.0, 1)                    * 40
- *   sqft     = min(|cSqft - sSqft| / sSqft / 0.25, 1)      * 30
- *   recency  = min(monthsAgo / 12, 1)                      * 20
- *   bedbath  = min((|dBeds| + |dBaths|) / 2, 1)            * 10
+ * v2 (CONTRACT §14.3). Lot is reinstated as a SOFT term, taking 10 points
+ * drawn 5 from distance and 5 from sqft, so the two dominant terms stay
+ * dominant. The sqft normaliser follows SQFT_TOLERANCE down from 0.25 to 0.20,
+ * which makes the term steeper, not just smaller — a 200 sqft difference on a
+ * 2,000 sqft subject went from 6.0 points to 12.5.
+ *
+ *   distance = min(distanceMi / 1.0, 1)                    * 35   (was 40)
+ *   sqft     = min(|cSqft - sSqft| / sSqft / 0.20, 1)      * 25   (was 30 / 0.25)
+ *   recency  = min(max(monthsAgo, 0) / 12, 1)              * 20   (unchanged)
+ *   bedbath  = min((|dBeds| + |dBaths|) / 2, 1)            * 10   (unchanged)
+ *   lot      = min(|cLot - sLot| / sLot / 1.0, 1)          * 10   (NEW)
+ *
+ * A null lot on either side scores 0, exactly as null beds/baths do: unknown
+ * is not a penalty.
  */
 import { describe, it, expect } from 'vitest';
 import { pendingSlice, sliceNote } from '../helpers/compsGate.js';
@@ -22,6 +32,9 @@ import {
   WEIGHT_SQFT,
   WEIGHT_RECENCY,
   WEIGHT_BEDBATH,
+  WEIGHT_LOT,
+  SQFT_TOLERANCE,
+  LOT_NORM_RATIO,
   DISTANCE_NORM_MI,
   RECENCY_NORM_MONTHS,
   MAX_COMPS_KEPT,
@@ -59,15 +72,34 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
     it('sum to exactly 100', () => {
       // A re-weighting that forgets one term makes every score smaller and
       // every comparison against a fixed threshold wrong.
-      expect(WEIGHT_DISTANCE + WEIGHT_SQFT + WEIGHT_RECENCY + WEIGHT_BEDBATH).toBe(100);
-      expect([WEIGHT_DISTANCE, WEIGHT_SQFT, WEIGHT_RECENCY, WEIGHT_BEDBATH])
-        .toEqual([40, 30, 20, 10]);
+      // Five terms now, not four. Summing the old four gives 90 — a re-weighting
+      // that forgets the new term makes every score smaller and every
+      // comparison against a fixed threshold wrong.
+      expect(WEIGHT_DISTANCE + WEIGHT_SQFT + WEIGHT_RECENCY + WEIGHT_BEDBATH + WEIGHT_LOT)
+        .toBe(100);
+      expect([WEIGHT_DISTANCE, WEIGHT_SQFT, WEIGHT_RECENCY, WEIGHT_BEDBATH, WEIGHT_LOT])
+        .toEqual([35, 25, 20, 10, 10]);
     });
 
-    it('distance is the heaviest and bedbath the lightest', () => {
+    it('lot was funded 5 from distance and 5 from sqft, not from the light terms', () => {
+      // §14.3 pins WHERE the 10 points came from. Taking them from recency or
+      // bedbath instead would still sum to 100 and still pass the case above,
+      // while quietly changing what the ranking optimises for.
+      expect(WEIGHT_DISTANCE, 'distance did not give up its 5').toBe(40 - 5);
+      expect(WEIGHT_SQFT, 'sqft did not give up its 5').toBe(30 - 5);
+      expect(WEIGHT_RECENCY, 'recency was raided').toBe(20);
+      expect(WEIGHT_BEDBATH, 'bedbath was raided').toBe(10);
+    });
+
+    it('distance is still the heaviest and the two dominant terms stay dominant', () => {
       expect(WEIGHT_DISTANCE).toBeGreaterThan(WEIGHT_SQFT);
       expect(WEIGHT_SQFT).toBeGreaterThan(WEIGHT_RECENCY);
       expect(WEIGHT_RECENCY).toBeGreaterThan(WEIGHT_BEDBATH);
+      expect(WEIGHT_BEDBATH, 'lot and bedbath are deliberately equal').toBe(WEIGHT_LOT);
+      expect(
+        WEIGHT_DISTANCE + WEIGHT_SQFT,
+        'distance + sqft no longer carry the majority of the score',
+      ).toBeGreaterThan(50);
     });
   });
 
@@ -76,7 +108,7 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
     it('an identical comp next door sold today scores 0', () => {
       const s = scoreComp(SUBJECT, comp(), NOW);
       expect(s.score).toBeCloseTo(0, 9);
-      expect(s.parts).toEqual({ distance: 0, sqft: 0, recency: 0, bedbath: 0 });
+      expect(s.parts).toEqual({ distance: 0, sqft: 0, recency: 0, bedbath: 0, lot: 0 });
       expect(s.distanceMi).toBe(0);
       expect(s.monthsAgo).toBeCloseTo(0, 9);
     });
@@ -84,16 +116,22 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
     it('a maximally bad comp scores exactly 100, not more', () => {
       // Every term saturates. Without the min() clamps this comp scores far
       // past 100 and one dimension dominates the whole ranking.
+      // lotSize must saturate too, or this comp tops out at 90 and the case
+      // silently stops testing the clamp it is named for.
       const s = scoreComp(
         SUBJECT,
-        comp({ lat: latAt(5), livingArea: 5000, soldDate: daysAgo(3650), beds: 9, baths: 9 }),
+        comp({
+          lat: latAt(5), livingArea: 5000, soldDate: daysAgo(3650),
+          beds: 9, baths: 9, lotSize: 24000,
+        }),
         NOW,
       );
       expect(s.score).toBeCloseTo(100, 9);
-      expect(s.parts.distance).toBeCloseTo(40, 9);
-      expect(s.parts.sqft).toBeCloseTo(30, 9);
+      expect(s.parts.distance).toBeCloseTo(35, 9);
+      expect(s.parts.sqft).toBeCloseTo(25, 9);
       expect(s.parts.recency).toBeCloseTo(20, 9);
       expect(s.parts.bedbath).toBeCloseTo(10, 9);
+      expect(s.parts.lot).toBeCloseTo(10, 9);
     });
 
     it('parts always sum to score', () => {
@@ -118,31 +156,65 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
   describe.skipIf(pendingSlice(...MODS))('scoreComp — each clamp holds independently', () => {
     it('distance clamps at DISTANCE_NORM_MI (1.0 mi)', () => {
       expect(scoreComp(SUBJECT, comp({ lat: latAt(0.5) }), NOW).parts.distance)
-        .toBeCloseTo(20, 8); // 0.5/1.0 × 40
+        .toBeCloseTo(17.5, 8); // 0.5/1.0 × 35
       expect(scoreComp(SUBJECT, comp({ lat: latAt(1.0) }), NOW).parts.distance)
-        .toBeCloseTo(40, 8);
-      // 5 miles is not 200 points.
+        .toBeCloseTo(35, 8);
+      // 5 miles is not 175 points.
       const far = scoreComp(SUBJECT, comp({ lat: latAt(5) }), NOW);
-      expect(far.parts.distance).toBeCloseTo(40, 9);
-      expect(far.parts.distance, 'distance clamp missing').not.toBeGreaterThan(40.000001);
+      expect(far.parts.distance).toBeCloseTo(35, 9);
+      expect(far.parts.distance, 'distance clamp missing').not.toBeGreaterThan(35.000001);
       expect(DISTANCE_NORM_MI).toBe(1.0);
     });
 
-    it('sqft clamps at the ±25% band edge', () => {
-      // |Δ| / sSqft / 0.25. At Δ = 500 on 2,000 that is 0.25/0.25 = 1 -> 30.
-      expect(scoreComp(SUBJECT, comp({ livingArea: 2500 }), NOW).parts.sqft).toBeCloseTo(30, 9);
-      expect(scoreComp(SUBJECT, comp({ livingArea: 1500 }), NOW).parts.sqft).toBeCloseTo(30, 9);
-      // Δ = 250 -> 0.125/0.25 = 0.5 -> 15.
-      expect(scoreComp(SUBJECT, comp({ livingArea: 2250 }), NOW).parts.sqft).toBeCloseTo(15, 9);
-      expect(scoreComp(SUBJECT, comp({ livingArea: 1750 }), NOW).parts.sqft).toBeCloseTo(15, 9);
+    it('sqft clamps at the ±20% band edge, and the normaliser followed the gate', () => {
+      // |Δ| / sSqft / 0.20. At Δ = 400 on 2,000 that is 0.20/0.20 = 1 -> 25.
+      expect(SQFT_TOLERANCE, 'the scoring normaliser must track the hard gate').toBe(0.2);
+      expect(scoreComp(SUBJECT, comp({ livingArea: 2400 }), NOW).parts.sqft).toBeCloseTo(25, 9);
+      expect(scoreComp(SUBJECT, comp({ livingArea: 1600 }), NOW).parts.sqft).toBeCloseTo(25, 9);
+      // Δ = 200 -> 0.10/0.20 = 0.5 -> 12.5.
+      expect(scoreComp(SUBJECT, comp({ livingArea: 2200 }), NOW).parts.sqft).toBeCloseTo(12.5, 9);
+      expect(scoreComp(SUBJECT, comp({ livingArea: 1800 }), NOW).parts.sqft).toBeCloseTo(12.5, 9);
       // Beyond the band (only reachable by calling scoreComp directly) clamps.
-      expect(scoreComp(SUBJECT, comp({ livingArea: 6000 }), NOW).parts.sqft).toBeCloseTo(30, 9);
+      expect(scoreComp(SUBJECT, comp({ livingArea: 6000 }), NOW).parts.sqft).toBeCloseTo(25, 9);
+
+      // THE STEEPNESS CHANGE, pinned. If the weight dropped to 25 but the
+      // normaliser stayed at 0.25, this comp would score 200/2000/0.25 × 25 =
+      // 10 rather than 12.5 — a plausible half-migration that every other
+      // assertion in this block would still pass.
+      expect(
+        scoreComp(SUBJECT, comp({ livingArea: 2200 }), NOW).parts.sqft,
+        'the sqft normaliser is still 0.25 while the weight moved to 25',
+      ).not.toBeCloseTo(10, 6);
     });
 
-    it('sqft is symmetric — a comp 250 sqft over scores like one 250 under', () => {
-      const over = scoreComp(SUBJECT, comp({ livingArea: 2250 }), NOW).parts.sqft;
-      const under = scoreComp(SUBJECT, comp({ livingArea: 1750 }), NOW).parts.sqft;
+    it('sqft is symmetric — a comp 200 sqft over scores like one 200 under', () => {
+      const over = scoreComp(SUBJECT, comp({ livingArea: 2200 }), NOW).parts.sqft;
+      const under = scoreComp(SUBJECT, comp({ livingArea: 1800 }), NOW).parts.sqft;
       expect(over).toBeCloseTo(under, 12);
+    });
+
+    it('NEW — lot clamps at a 100% difference and is symmetric', () => {
+      // |Δlot| / sLot / LOT_NORM_RATIO, clamped at 1, × 10. Subject lot 6,000.
+      expect(LOT_NORM_RATIO).toBe(1.0);
+      expect(scoreComp(SUBJECT, comp({ lotSize: 6000 }), NOW).parts.lot).toBeCloseTo(0, 9);
+      expect(scoreComp(SUBJECT, comp({ lotSize: 9000 }), NOW).parts.lot).toBeCloseTo(5, 9);
+      expect(scoreComp(SUBJECT, comp({ lotSize: 3000 }), NOW).parts.lot).toBeCloseTo(5, 9);
+      expect(scoreComp(SUBJECT, comp({ lotSize: 12000 }), NOW).parts.lot).toBeCloseTo(10, 9);
+      // The v1 hard gate rejected anything past 5x. Scoring must CLAMP there,
+      // not keep climbing — a 30,000 sqft lot is 4x over and would otherwise
+      // contribute 40 points on its own and dominate the whole ranking.
+      expect(scoreComp(SUBJECT, comp({ lotSize: 30000 }), NOW).parts.lot).toBeCloseTo(10, 9);
+      expect(scoreComp(SUBJECT, comp({ lotSize: 9_000_000 }), NOW).parts.lot).toBeCloseTo(10, 9);
+    });
+
+    it('NEW — a null lot on either side contributes 0, not a penalty', () => {
+      // §14.3, matching the null beds/baths rule: unknown is not different.
+      // Lot is the field Zillow omits most often; penalising its absence would
+      // push every incompletely-reported comp out of a set of five.
+      expect(scoreComp(SUBJECT, comp({ lotSize: null }), NOW).parts.lot).toBe(0);
+      const noLot = { ...SUBJECT, lotSize: null };
+      expect(scoreComp(noLot, comp({ lotSize: 9_000_000 }), NOW).parts.lot).toBe(0);
+      expect(scoreComp(noLot, comp({ lotSize: null }), NOW).parts.lot).toBe(0);
     });
 
     it('recency clamps at RECENCY_NORM_MONTHS (12)', () => {
@@ -178,24 +250,36 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('scoreComp — a hand-computed composite', () => {
-    it('scores a realistic comp at 31.9824792', () => {
-      // distance 0.25 mi, 2,200 sqft, sold 91 days ago, 4 beds, 2 baths:
-      //   distance = min(0.25 / 1.0, 1)            × 40 = 0.25  × 40 = 10
-      //   sqft     = min(200/2000/0.25, 1)         × 30 = 0.4   × 30 = 12
+    it('scores a realistic comp at 33.7324792', () => {
+      // Recomputed by hand for v2. distance 0.25 mi, 2,200 sqft, 7,500 sqft
+      // lot, sold 91 days ago, 4 beds, 2 baths:
+      //   distance = min(0.25 / 1.0, 1)            × 35 = 0.25  × 35 =  8.75
+      //   sqft     = min(200/2000/0.20, 1)         × 25 = 0.5   × 25 = 12.5
       //   recency  = min((91/30.44)/12, 1)         × 20
       //            = (2.98948752/12) × 20 = 0.24912396 × 20     =  4.9824792
       //   bedbath  = min((1 + 0)/2, 1)             × 10 = 0.5   × 10 =  5
-      //   score    = 10 + 12 + 4.9824792 + 5                    = 31.9824792
+      //   lot      = min(1500/6000/1.0, 1)         × 10 = 0.25  × 10 =  2.5
+      //   score    = 8.75 + 12.5 + 4.9824792 + 5 + 2.5       = 33.7324792
+      //
+      // Under v1 the same comp scored 31.9824792. Note the sqft term went UP
+      // (12 -> 12.5) even though its weight went DOWN, because the normaliser
+      // tightened with the gate. That is the sort of interaction a
+      // proportional "scale the old answer" migration gets wrong.
       const s = scoreComp(
         SUBJECT,
-        comp({ lat: latAt(0.25), livingArea: 2200, soldDate: daysAgo(91), beds: 4, baths: 2 }),
+        comp({
+          lat: latAt(0.25), livingArea: 2200, soldDate: daysAgo(91),
+          beds: 4, baths: 2, lotSize: 7500,
+        }),
         NOW,
       );
-      expect(s.parts.distance).toBeCloseTo(10, 8);
-      expect(s.parts.sqft).toBeCloseTo(12, 9);
+      expect(s.parts.distance).toBeCloseTo(8.75, 8);
+      expect(s.parts.sqft).toBeCloseTo(12.5, 9);
       expect(s.parts.recency).toBeCloseTo(4.9824792, 6);
       expect(s.parts.bedbath).toBeCloseTo(5, 9);
-      expect(s.score).toBeCloseTo(31.9824792, 6);
+      expect(s.parts.lot).toBeCloseTo(2.5, 9);
+      expect(s.score).toBeCloseTo(33.7324792, 6);
+      expect(s.score, 'this is still the v1 answer').not.toBeCloseTo(31.9824792, 6);
       expect(s.monthsAgo).toBeCloseTo(91 / DAYS_PER_MONTH, 9);
       expect(s.distanceMi).toBeCloseTo(0.25, 8);
     });
@@ -223,34 +307,40 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
     });
 
     it('REGRESSION: an inverted sort would return the WORST comps and still look fine', () => {
-      // 12 comps at increasing distance. The cap keeps 8. Ascending keeps the
-      // eight nearest; descending keeps the eight farthest — same count, same
-      // shape, completely different ARV, and nothing in the output differs.
+      // 12 comps at increasing distance. The cap keeps 5 (§14.1, down from 8).
+      // Ascending keeps the five nearest; descending keeps the five farthest —
+      // same count, same shape, completely different ARV, and nothing in the
+      // output differs. The cap getting smaller makes this WORSE, not better:
+      // each wrong comp is now 20% of the answer.
       const comps = Array.from({ length: 12 }, (_, i) =>
         comp({ zpid: `D${String(i).padStart(2, '0')}`, lat: latAt(0.05 * (i + 1)) }),
       );
       const ranked = rankComps(SUBJECT, comps, NOW);
       expect(ranked).toHaveLength(MAX_COMPS_KEPT);
       expect(ranked.map((r) => r.comp.zpid)).toEqual([
-        'D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07',
+        'D00', 'D01', 'D02', 'D03', 'D04',
       ]);
-      // The four dropped are the four worst, not the four best.
+      // The seven dropped are the seven worst, not the seven best.
       const keptIds = new Set(ranked.map((r) => r.comp.zpid));
       expect(keptIds.has('D11'), 'the farthest comp survived the cap').toBe(false);
       expect(keptIds.has('D00'), 'the nearest comp was dropped').toBe(true);
     });
 
     it('the cap keeps the best MAX_COMPS_KEPT, not the first ones in the array', () => {
-      // Input order deliberately puts the worst comps first. A `slice(0, 8)`
-      // applied before sorting keeps exactly the wrong eight.
+      // Input order deliberately puts the worst comps first. A `slice(0, 5)`
+      // applied before sorting keeps exactly the wrong five.
       const comps = [
         ...Array.from({ length: 6 }, (_, i) => comp({ zpid: `BAD${i}`, lat: latAt(0.9) })),
-        ...Array.from({ length: 6 }, (_, i) => comp({ zpid: `GOOD${i}`, lat: latAt(0.05) })),
+        ...Array.from({ length: 5 }, (_, i) => comp({ zpid: `GOOD${i}`, lat: latAt(0.05) })),
       ];
       const ranked = rankComps(SUBJECT, comps, NOW);
-      expect(ranked).toHaveLength(8);
+      expect(ranked).toHaveLength(MAX_COMPS_KEPT);
       const good = ranked.filter((r) => r.comp.zpid.startsWith('GOOD'));
-      expect(good, 'the six good comps must all survive the cap').toHaveLength(6);
+      expect(good, 'the five good comps must all survive the cap').toHaveLength(5);
+      expect(
+        ranked.map((r) => r.comp.zpid).filter((z) => z.startsWith('BAD')),
+        'a worse comp took a slot from a better one',
+      ).toHaveLength(0);
     });
 
     it('returns everything when there are fewer than MAX_COMPS_KEPT', () => {
@@ -259,8 +349,10 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
       expect(rankComps(SUBJECT, [], NOW)).toHaveLength(0);
     });
 
-    it('MAX_COMPS_KEPT is 8', () => {
-      expect(MAX_COMPS_KEPT).toBe(8);
+    it('MAX_COMPS_KEPT is 5 — display AND compute, no split', () => {
+      // §14.1: down from 8. The ARV is computed from the same five the member
+      // sees, so this constant is the whole sample size, not a display limit.
+      expect(MAX_COMPS_KEPT).toBe(5);
     });
   });
 
@@ -425,6 +517,92 @@ describe(`comp scoring and ranking${sliceNote(...MODS)}`, () => {
           expect(v, `parts.${k} is ${v}`).toBeGreaterThanOrEqual(0);
         }
       }
+    });
+  });
+  // =========================================================================
+  // BUG-002, RE-POINTED. `arv.ts` is deleted, so the `trimmedMean` half of the
+  // guard retires with its function — deleted code cannot regress. But
+  // `pricePerSqft` was not deleted, it MOVED: it is now computed inline in
+  // `scoreComp` (rank.ts:35), and every division in this function is a place
+  // NaN or Infinity can re-enter. An unguarded division is one bad payload
+  // away from being live, and `scoreComp` is exported standalone.
+  //
+  // Note the guard changed SHAPE as well as address. The old helpers threw;
+  // the inline version degrades to 0 (price) or saturates the term (sqft).
+  // Both are defensible, so these cases assert the GUARANTEE — always finite,
+  // always inside 0-100 — rather than the mechanism, which is MASON's to pick.
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))('BUG-002 — degenerate inputs never produce NaN or Infinity', () => {
+    const DEGENERATE: Array<[string, Partial<RawComp>]> = [
+      ['null price', { soldPrice: null }],
+      ['zero price', { soldPrice: 0 }],
+      ['negative price', { soldPrice: -1 }],
+      ['null sqft', { livingArea: null }],
+      ['zero sqft', { livingArea: 0 }],
+      ['negative sqft', { livingArea: -100 }],
+      ['zero price AND zero sqft', { soldPrice: 0, livingArea: 0 }],
+      ['null lot', { lotSize: null }],
+      ['zero lot', { lotSize: 0 }],
+      ['absurd sqft', { livingArea: 1e9 }],
+      ['absurd price', { soldPrice: 1e15 }],
+    ];
+
+    it.each(DEGENERATE)('comp side: %s stays finite and in range', (_name, over) => {
+      const s = scoreComp(SUBJECT, comp(over), NOW);
+      expect(Number.isFinite(s.pricePerSqft), 'pricePerSqft is NaN or Infinity').toBe(true);
+      expect(Number.isFinite(s.score), 'score is NaN or Infinity').toBe(true);
+      expect(s.score).toBeGreaterThanOrEqual(0);
+      expect(s.score).toBeLessThanOrEqual(100);
+      for (const [k, v] of Object.entries(s.parts)) {
+        expect(Number.isFinite(v), `parts.${k} is NaN or Infinity`).toBe(true);
+        expect(v, `parts.${k} is negative`).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('subject side: a zero or null subject sqft divides by zero if unguarded', () => {
+      // The division that is easiest to miss, because every realistic subject
+      // has a sqft: |cSqft - sSqft| / sSqft. With sSqft = 0 that is x/0.
+      for (const livingArea of [0, null, -100]) {
+        const s = scoreComp({ ...SUBJECT, livingArea }, comp(), NOW);
+        expect(Number.isFinite(s.score), `subject sqft ${livingArea} produced ${s.score}`).toBe(true);
+        expect(s.parts.sqft, 'unknown subject sqft must SATURATE, not vanish')
+          .toBeCloseTo(WEIGHT_SQFT, 9);
+      }
+    });
+
+    it('subject side: a zero or null subject lot divides by zero if unguarded', () => {
+      for (const lotSize of [0, null, -100]) {
+        const s = scoreComp({ ...SUBJECT, lotSize }, comp({ lotSize: 50000 }), NOW);
+        expect(Number.isFinite(s.score), `subject lot ${lotSize} produced ${s.score}`).toBe(true);
+        // Unlike sqft, an unknown LOT scores 0 — §14.3 says unknown is not a
+        // penalty. The two divisions resolve their unknowns in OPPOSITE
+        // directions, which is exactly the kind of asymmetry that gets
+        // "tidied up" into consistency by a later reader.
+        expect(s.parts.lot, 'an unknown lot became a penalty').toBe(0);
+      }
+    });
+
+    it('BUG-003 — a future-dated comp scores a NON-NEGATIVE recency term', () => {
+      // The defensive half. min() alone capped only the top of the range, so a
+      // future date scored negative and sorted AHEAD of flawless comps: bad
+      // data promoted, not merely tolerated. Rule 12 rejects these at the
+      // filter, but scoreComp is exported and must hold on its own.
+      const future = scoreComp(SUBJECT, comp({ soldDate: daysAgo(-400) }), NOW);
+      expect(future.monthsAgo, 'precondition: this comp is not actually future-dated')
+        .toBeLessThan(0);
+      expect(future.parts.recency, 'a future sale earned a NEGATIVE recency score').toBe(0);
+      expect(future.score).toBeGreaterThanOrEqual(0);
+
+      // ...and it must not outrank a perfect comp.
+      const perfect = scoreComp(SUBJECT, comp(), NOW);
+      expect(
+        future.score,
+        'a future-dated comp scores better than an identical one sold today',
+      ).toBeGreaterThanOrEqual(perfect.score);
+    });
+
+    it('an empty comp list ranks to an empty array, not a crash', () => {
+      expect(rankComps(SUBJECT, [], NOW)).toEqual([]);
     });
   });
 });

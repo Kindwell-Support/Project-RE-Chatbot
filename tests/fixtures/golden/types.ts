@@ -96,6 +96,8 @@ export interface GoldenExpectation {
   /** Per CONTRACT §5.3: final-tier rejections only. */
   rejected?: Array<{ zpid: string; reason: RejectReason }>;
   radiusTierMi?: number;
+  /** §14.2 — the recency rung the ladder stopped on. */
+  recencyTierMonths?: number;
 
   /** `n >= 5 ? max(1, floor(n * 0.15)) : 0` — per end. */
   trimCount?: number;

@@ -18,6 +18,8 @@ interface CompsCacheRow {
   normalized_address: string;
   raw_subject: CachedComps['rawSubject'];
   raw_comps: CachedComps['rawComps'];
+  /** Nullable; absent on rows predating sql/add_comps_cache_neighborhood.sql. */
+  raw_neighborhood: CachedComps['rawNeighborhood'];
   result: CachedComps['result'];
   algo_version: number;
   provider: string;
@@ -29,7 +31,9 @@ export function createCompsCache(supabase: SupabaseClient): CompsCacheLike {
     async get(key: string): Promise<CachedComps | null> {
       const { data, error } = await supabase
         .from('comps_cache')
-        .select('cache_key, normalized_address, raw_subject, raw_comps, result, algo_version, provider, expires_at')
+        .select(
+          'cache_key, normalized_address, raw_subject, raw_comps, raw_neighborhood, result, algo_version, provider, expires_at',
+        )
         .eq('cache_key', key)
         .maybeSingle();
       if (error) throw error; // service catches, warns with cacheKey, runs live
@@ -40,6 +44,7 @@ export function createCompsCache(supabase: SupabaseClient): CompsCacheLike {
         normalizedAddress: row.normalized_address,
         rawSubject: row.raw_subject,
         rawComps: row.raw_comps ?? [],
+        rawNeighborhood: row.raw_neighborhood ?? null,
         result: row.result,
         algoVersion: row.algo_version,
         provider: row.provider,
@@ -53,6 +58,7 @@ export function createCompsCache(supabase: SupabaseClient): CompsCacheLike {
         normalized_address: entry.normalizedAddress,
         raw_subject: entry.rawSubject,
         raw_comps: entry.rawComps,
+        raw_neighborhood: entry.rawNeighborhood ?? null,
         result: entry.result,
         algo_version: entry.algoVersion,
         provider: entry.provider,

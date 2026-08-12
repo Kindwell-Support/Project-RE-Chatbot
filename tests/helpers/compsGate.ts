@@ -17,7 +17,7 @@
  * module fails there too, which a plain `describe.skipIf` would silently
  * swallow forever.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -31,7 +31,17 @@ export type CompsModule =
   | 'types' | 'config' | 'normalize' | 'filter' | 'rank' | 'arv'
   | 'format' | 'service' | 'tools'
   | 'providers/types' | 'providers/apifyZillow' | 'providers/geocode' | 'providers/stub'
-  | 'cache/compsCache';
+  | 'cache/compsCache'
+  // §14.14 detail enrichment — specs written pre-build, from the contract and
+  // the recorded spike fixtures.
+  | 'detail' | 'cache/detailCache'
+  // §14.10 Census demographics — spec written pre-build from the operator's
+  // four guarantees. Skips until the module lands; fails under COMPS_STRICT.
+  | 'providers/census'
+  // §14.16 neighbourhood aggregates — spec written pre-build. PATH ASSUMED;
+  // confirm it resolves at handoff (a gate that never resolves skips forever
+  // while reporting 'pending', which already happened once with census).
+  | 'aggregates';
 
 export function hasModule(...mods: CompsModule[]): boolean {
   return mods.every((m) => existsSync(resolve(SRC, `${m}.ts`)));
@@ -45,6 +55,34 @@ export function hasModule(...mods: CompsModule[]): boolean {
 export function pendingSlice(...mods: CompsModule[]): boolean {
   if (COMPS_STRICT) return false;
   return !hasModule(...mods);
+}
+
+/**
+ * CAPABILITY gate for the pool-depth slice (§14.17 truncation fix).
+ *
+ * The modules all exist, so `hasModule` cannot express "the fix has not landed
+ * yet". The observable difference is the fetch SIGNATURE: a windowed
+ * `fetchSoldComps` takes the window as a third parameter.
+ *
+ * PROBED BY READING THE SOURCE TEXT, and the first version of this is why.
+ * It called `require()` on a `.ts` path — which does not exist under ESM, so
+ * it threw, the catch returned "pending", and the gate could NEVER resolve.
+ * Nine cases would have sat green-by-skipping forever while the note read
+ * "pending MASON". That is precisely the census-gate failure I had added a
+ * checklist item to prevent, committed one commit after adding it.
+ *
+ * A text probe is crude, but it is objective, needs no runtime import of the
+ * thing under test, and flips exactly once. The handoff step still applies:
+ * confirm this resolves rather than assuming it did.
+ */
+export function poolDepthPending(): boolean {
+  if (COMPS_STRICT) return false;
+  try {
+    const src = readFileSync(resolve(SRC, 'providers', 'apifyZillow.ts'), 'utf8');
+    return !/fetchSoldComps\([^)]*radiusMi:\s*number,\s*windowMonths/.test(src);
+  } catch {
+    return true;
+  }
 }
 
 /** Human-readable reason, for the skipped-suite name. */

@@ -35,8 +35,10 @@ function isCompsStateBlock(value: unknown): value is CompsStateBlock {
     typeof block.arv === 'number' &&
     Number.isFinite(block.arv) &&
     block.arv > 0 &&
-    typeof block.subjectAddress === 'string' &&
-    block.subjectAddress.length > 0 &&
+    // BUG-011: null is a legitimate binding state — an ARV the member stated
+    // without naming a property. A string must still be non-empty.
+    (block.subjectAddress === null ||
+      (typeof block.subjectAddress === 'string' && block.subjectAddress.length > 0)) &&
     (block.arvSource === 'comps' || block.arvSource === 'manual')
   );
 }
@@ -72,7 +74,13 @@ export function createSessionStateStore(
         // Malformed blocks (partial writes from a future bug, hand-edited
         // rows) read as absent rather than half-trusted: a pre-fill from a
         // corrupt block is a silently wrong deal analysis.
-        return isCompsStateBlock(state.comps) ? state.comps : null;
+        if (!isCompsStateBlock(state.comps)) return null;
+        const block = state.comps;
+        // BUG-011 legacy shim: rows written before the fix carry the literal
+        // 'manual entry' as an address. Coerced to null HERE so the
+        // placeholder class cannot re-enter — no consumer ever sees it, the
+        // guard never "defends" it, and no copy ever renders it.
+        return block.subjectAddress === 'manual entry' ? { ...block, subjectAddress: null } : block;
       } catch (err) {
         logger.warn({ err, sessionId }, 'session_state read failed — continuing WITHOUT ARV pre-fill');
         return null;

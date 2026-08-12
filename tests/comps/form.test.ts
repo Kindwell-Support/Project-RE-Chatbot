@@ -124,17 +124,29 @@ const flipResult = (calls: Array<Record<string, unknown>>) =>
     | undefined;
 
 /** Bind a comps block for `session`, then return an app to keep using. */
+/**
+ * RE-POINTED post-removal. This used to bind via run_comps; nothing binds
+ * from comps any more, so the bound block is the member's own manual ARV,
+ * tied to 123 Main by the current message (BUG-011). The number is kept at
+ * 403,000 so every downstream assertion in this file reads unchanged.
+ */
 async function bindComps(session: string, supabase: ReturnType<typeof makeCompsSupabase>) {
   const { app } = build({
-    script: [runComps('123 Main St'), say('Comps done — ARV $403,000.')],
-    provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+    script: [
+      { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 403000, address: '123 Main St' } }] },
+      say('Stored — $403,000 for 123 Main St.'),
+    ],
     supabase,
   });
-  await chat(app, 'run comps on 123 Main St', session);
+  await chat(app, 'use 403k as the ARV for 123 Main St', session);
   expect(
     supabase.compsBlockFor(session)?.arv,
-    'PRECONDITION: no comps block was bound, so nothing below proves anything',
+    'PRECONDITION: no ARV block was bound, so nothing below proves anything',
   ).toBe(403000);
+  expect(
+    supabase.compsBlockFor(session)?.subjectAddress ?? '',
+    'PRECONDITION: the ARV did not bind to the address',
+  ).toContain('123 Main');
 }
 
 describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () => {
@@ -209,7 +221,7 @@ describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () 
       // The genuine, session-derived prefill is what survives.
       const arv = fieldNamed(form!, 'after_repair_value')!;
       expect(arv.prefill?.value, 'the real comps prefill was displaced').toBe(403000);
-      expect(arv.prefill!.subjectAddress).toContain('123 MAIN');
+      expect(arv.prefill!.subjectAddress.toUpperCase()).toContain('123 MAIN');
     });
 
     it('the form the model receives carries labels but no values', () => {
@@ -365,7 +377,7 @@ describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () 
       expect(arvField.prefill, 'the form did not pre-fill from the bound comps block')
         .toBeDefined();
       expect(arvField.prefill!.value).toBe(403000);
-      expect(arvField.prefill!.subjectAddress).toContain('123 MAIN');
+      expect(arvField.prefill!.subjectAddress.toUpperCase()).toContain('123 MAIN');
 
       // THE RENDERED LABEL, not the value.
       const label = arvField.prefill!.label;
@@ -384,16 +396,19 @@ describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () 
       expect(arvField.default, 'a required field acquired a default').toBeUndefined();
     });
 
-    it('CLEAR-BEFORE-PROVIDER: a FAILED comps run leaves no form pre-fill', async () => {
-      // The wrong-house bug, ported. A succeeds and binds $403,000; B fails. If
-      // the block were not cleared at the START of B's run, the form would
-      // arrive pre-filled with A's number and labelled with A's address.
+    it('INVERTED: a FAILED comps run PRESERVES the form pre-fill — and the mismatch guard holds', async () => {
+      // THE P1 INVERSION, on the form surface. The old case proved a failed
+      // run on B cleared A's pre-fill; §14.8 removed the clear because the
+      // only thing left for it to destroy is a number the MEMBER typed. So:
+      // the failed run must leave the pre-fill intact, and the protection
+      // against the wrong-house bug is now carried entirely by the MISMATCH
+      // case below — a form requested FOR 456 Oak still arrives empty.
       const supabase = makeCompsSupabase({});
       await bindComps('form-clear', supabase);
 
-      // Prove the pre-fill EXISTS first, so its later absence means something.
+      // Prove the pre-fill EXISTS first, so "still there" means something.
       const before = await renderFlipForm('form-clear', supabase);
-      expect(before.arvField.prefill?.value, 'precondition: nothing was bound to clear')
+      expect(before.arvField.prefill?.value, 'precondition: nothing was bound to preserve')
         .toBe(403000);
 
       const failing = build({
@@ -403,15 +418,25 @@ describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () 
       });
       await chat(failing.app, 'run comps on 456 Oak Ave', 'form-clear');
       expect(
-        supabase.compsBlockFor('form-clear'),
-        'precondition: the failed run did not clear the block',
-      ).toBeUndefined();
+        supabase.compsBlockFor('form-clear')?.arv,
+        "the failed comps run DESTROYED the member's own ARV — the removed clear is back",
+      ).toBe(403000);
 
+      // Neutral request: the member's ARV still pre-fills.
       const after = await renderFlipForm('form-clear', supabase);
       expect(
-        after.arvField.prefill,
-        "the form still pre-fills 123 Main's ARV after the run on 456 Oak FAILED — " +
-          'the wrong-house bug, reopened on the form surface',
+        after.arvField.prefill?.value,
+        "a failed comps run on another address cost the member their pre-fill",
+      ).toBe(403000);
+
+      // And the wrong-house protection moved, not vanished: ask for the form
+      // FOR 456 Oak and the bound-to-123-Main ARV must stay out of it.
+      const mismatch = await renderFlipForm(
+        'form-clear', supabase, 'I want to run a flip on 456 Oak Ave',
+      );
+      expect(
+        mismatch.arvField.prefill,
+        "123 Main's ARV pre-filled a form requested for 456 Oak — the guard did not take the clear's weight",
       ).toBeUndefined();
     });
 

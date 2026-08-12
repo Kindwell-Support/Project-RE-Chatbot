@@ -47,20 +47,21 @@ export const GOLDEN_FAILURE_CASES: GoldenCase[] = GOLDEN_CASES.filter((c) => !c.
  *
  * | case | n kept | trimCount | ARV      | low / high        | conf   | tier |
  * |------|--------|-----------|----------|-------------------|--------|------|
- * | 01   | 8      | 1         | 403,000  | 394,000 / 412,000 | high   | 0.5  |
- * | 02   | 6      | 1         | 405,000  | 392,000 / 418,000 | medium | 0.5  |
- * | 03   | 3      | 0         | 420,000  | 367,000 / 473,000 | low    | 2.0  |
- * | 04   | 5      | 1         | 400,000  | 380,000 / 420,000 | medium | 0.5  |
- * | 05   | 2      | —         | none     | —                 | —      | 2.0  |
- * | 05b  | 0      | —         | none     | —                 | —      | 2.0  |
- * | 06   | 3      | 0         | 400,000  | 380,000 / 420,000 | low    | 2.0  |
+ * v2 (§14). Tier column is radius mi / recency months.
+ * | 01   | 5      | 1         | 405,000  | 392,000 / 418,000 | high   | 1.0/3  |
+ * | 02   | 5      | 1         | 430,000  | 410,000 / 450,000 | high   | 1.0/3  |
+ * | 03   | 3      | 0         | 420,000  | 367,000 / 473,000 | low    | 3.0/12 |
+ * | 04   | 5      | 1         | 400,000  | 380,000 / 420,000 | high   | 1.0/6  |
+ * | 05   | 2      | —         | none     | —                 | —      | 3.0/12 |
+ * | 05b  | 0      | —         | none     | —                 | —      | 3.0/12 |
+ * | 06   | 3      | 0         | 380,000  | 350,000 / 410,000 | low    | 3.0/12 |
  */
 export const GOLDEN_SUMMARY = [
-  { id: 'golden-01-clean-8', kept: 8, trimCount: 1, arv: 403000, tier: 0.5 },
-  { id: 'golden-02-outlier-6', kept: 6, trimCount: 1, arv: 405000, tier: 0.5 },
-  { id: 'golden-03-thin-3', kept: 3, trimCount: 0, arv: 420000, tier: 2.0 },
-  { id: 'golden-04-boundary-5', kept: 5, trimCount: 1, arv: 400000, tier: 0.5 },
-  { id: 'golden-05-too-few-2', kept: 2, trimCount: null, arv: null, tier: 2.0 },
-  { id: 'golden-05b-empty', kept: 0, trimCount: null, arv: null, tier: 2.0 },
-  { id: 'golden-06-non-arms-length-order', kept: 3, trimCount: 0, arv: 400000, tier: 2.0 },
+  { id: 'golden-01-clean-8', kept: 5, trimCount: 1, arv: 405000, tier: 1.0 },
+  { id: 'golden-02-outlier-6', kept: 5, trimCount: 1, arv: 430000, tier: 1.0 },
+  { id: 'golden-03-thin-3', kept: 3, trimCount: 0, arv: 420000, tier: 3.0 },
+  { id: 'golden-04-boundary-5', kept: 5, trimCount: 1, arv: 400000, tier: 1.0 },
+  { id: 'golden-05-too-few-2', kept: 2, trimCount: null, arv: null, tier: 3.0 },
+  { id: 'golden-05b-empty', kept: 0, trimCount: null, arv: null, tier: 3.0 },
+  { id: 'golden-06-non-arms-length-order', kept: 3, trimCount: 0, arv: 380000, tier: 3.0 },
 ] as const;

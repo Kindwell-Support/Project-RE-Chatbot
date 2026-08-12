@@ -30,7 +30,9 @@ export function prefillLabel(block: CompsStateBlock): string {
   if (block.arvSource === 'comps') {
     return `Pre-filled from your comps on ${block.subjectAddress} — edit to override.`;
   }
-  return block.subjectAddress && block.subjectAddress !== 'manual entry'
+  // BUG-011: null = unbound; the old 'manual entry' literal is coerced to
+  // null on read (sessionState.ts), so no placeholder can reach a label.
+  return block.subjectAddress
     ? `Pre-filled from the ARV you set for ${block.subjectAddress} — edit to override.`
     : 'Pre-filled from the ARV you set earlier — edit to override.';
 }
@@ -47,8 +49,19 @@ export function applyFormArvPrefill(
   userMessage: string,
 ): CalculatorForm {
   if (!ARV_CALCULATORS.includes(form.calculator)) return form;
-  if (!block || !(block.arv > 0) || !block.subjectAddress) return form;
-  if (findConflictingAddress(userMessage, block.subjectAddress, normalizeAddress)) return form;
+  // MANUAL ARVs ONLY (CONTRACT §14.8): the computed comps ARV is removed, so
+  // a leftover 'comps' block from a cached session must never pre-fill.
+  if (block && block.arvSource !== 'manual') return form;
+  if (!block || !(block.arv > 0)) return form;
+  // BUG-011: only a BOUND ARV can mismatch. A null binding pre-fills
+  // regardless of what the message names — nothing claims it belongs to any
+  // property, and the label says "you set earlier", not an address.
+  if (
+    block.subjectAddress !== null &&
+    findConflictingAddress(userMessage, block.subjectAddress, normalizeAddress)
+  ) {
+    return form;
+  }
 
   const decorate = (field: FormField): FormField =>
     field.name === ARV_FIELD

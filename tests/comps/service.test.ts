@@ -407,20 +407,48 @@ describe(`service: retry policy and the honesty contract${sliceNote(...MODS)}`, 
       expect(shown.length).toBeGreaterThan(0);
       const text = shown.join('\n');
 
-      // The rendered block is prose+table: it contains the ARV as formatted
-      // currency, not as a bare JSON field the model must format itself.
-      expect(text).toMatch(/\$\s?403,000/);
+      // Re-pointed for the ARV removal. There is no computed figure to look
+      // for any more, so the thing that proves "rendered, not raw" is the
+      // formatted COMP data: sold prices as currency and $/sqft, laid out as a
+      // table. A bag of numbers would carry `soldPrice: 405000`, never
+      // "$405,000" in a row with a pipe in it.
+      // `shown` is one entry per tool result — parse the run_comps one, do not
+      // join them first and hope the result is still JSON.
+      const block = shown
+        .map((t) => { try { return JSON.parse(t) as { rendered_block?: string }; } catch { return null; } })
+        .map((p) => (p && typeof p.rendered_block === 'string' ? p.rendered_block : ''))
+        .find((b) => b.length > 0) ?? '';
+      expect(block.length, 'no rendered block came back at all').toBeGreaterThan(200);
+      expect(block, 'sold prices are not rendered as currency').toMatch(/\$\d{3},\d{3}/);
+      // §14.18: comps are NUMBERED (goal 5, "best match first" made visible)
+      // and the price moved to its own line with the date and distance.
+      expect(block, 'no numbered per-comp heading').toMatch(/^\*\*1\. .+\*\*$/m);
+      expect(block, 'no sold price line').toMatch(/^Sold \$[\d,]+ · /m);
+      expect(block, 'no $/sqft rendered').toMatch(/\$\d+\/sqft/);
+      // ...and it is prose, not the raw field names behind it.
+      expect(block, 'raw field names leaked into member-facing copy')
+        .not.toMatch(/soldPrice|livingArea|pricePerSqft|zpid/);
 
-      let parsed: unknown;
-      try { parsed = JSON.parse(text); } catch { parsed = undefined; }
-      if (parsed && typeof parsed === 'object') {
-        // If it IS JSON, it must not be the raw ArvResult — a numeric `arv`
-        // field with no rendered text is the paraphrase hazard.
-        const keys = Object.keys(parsed as object);
+      // RE-POINTED, and un-guarded. This was wrapped in
+      // `if (parsed && typeof parsed === 'object')` over `JSON.parse(text)`,
+      // where `text` is the JOINED tool results — so the parse always threw,
+      // the branch never ran, and the assertion inside was dead. It was also
+      // checking for a raw `ArvResult`, a type §14.8 deleted outright.
+      //
+      // The guarantee it meant to encode is stronger stated positively: the
+      // model-facing payload is EXACTLY the rendered block plus its
+      // instruction. Anything else is a field it could paraphrase from.
+      const payloads = shown
+        .map((t) => { try { return JSON.parse(t) as Record<string, unknown>; } catch { return null; } })
+        .filter((v): v is Record<string, unknown> => v !== null && typeof v === 'object');
+      expect(payloads.length, 'no JSON tool payload reached the model at all')
+        .toBeGreaterThan(0);
+      for (const payload of payloads) {
         expect(
-          keys.includes('arv') && !keys.some((k) => /render|block|text|message|markdown/i.test(k)),
-          'the model was handed raw ARV fields instead of rendered copy',
-        ).toBe(false);
+          Object.keys(payload).sort(),
+          'the run_comps payload carries a field beyond the rendered block and its ' +
+            'instruction — every extra field is something the model can author from',
+        ).toEqual(['instruction', 'rendered_block']);
       }
     });
 

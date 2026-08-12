@@ -31,15 +31,20 @@ import {
   ProviderHttpError,
   ProviderNetworkError,
 } from '../../src/features/comps/providers/types.js';
+import { mapDetailBatchItems } from '../../src/features/comps/providers/apifyZillow.js';
 
 // ===========================================================================
 // Provider spy — CONTRACT §6
 // ===========================================================================
 
 export interface ProviderCall {
-  method: 'lookupSubject' | 'fetchSoldComps';
+  method: 'lookupSubject' | 'fetchSoldComps' | 'fetchDetailBatch' | 'fetchNeighborhoodSales';
   arg: string;
   radiusMi?: number;
+  /** fetchNeighborhoodSales only — the §14.16 window, asserted by CASE 1. */
+  windowMonths?: number;
+  /** fetchDetailBatch only — the addresses the batch was asked for. */
+  addresses?: string[];
 }
 
 export type ProviderFailure =
@@ -54,6 +59,21 @@ export interface ProviderSpyOptions {
   subject?: unknown | null;
   /** Returned by fetchSoldComps. */
   comps?: unknown[];
+  /**
+   * Model the REAL search actor's cap (§14.6 / the Sierra Vista pool).
+   *
+   * Zillow returns the NEWEST `resultsLimit` sales for the box. Without a
+   * server-side window that is "the newest N regardless of age" — which in a
+   * dense market is an eleven-day pool. WITH a window the server bounds the
+   * set first, so the cap bites on a set that already spans the window.
+   *
+   * A spy that ignores this returns whatever it was handed and cannot
+   * distinguish a windowed fetch from an unwindowed one — which would let the
+   * pool-depth cases pass against the unfixed build. Standing lesson from the
+   * provider-error fake: a double that diverges from the real semantics does
+   * not just miss bugs, it hides them.
+   */
+  truncateTo?: number;
   /** Throw on lookupSubject instead of returning. */
   failSubject?: ProviderFailure;
   /** Throw on fetchSoldComps instead of returning. */
@@ -62,6 +82,32 @@ export interface ProviderSpyOptions {
   failFirstNCalls?: number;
   /** Resolve after this many ms, to exercise concurrency. */
   delayMs?: number;
+
+  // --- §14.14 detail enrichment -------------------------------------------
+  /**
+   * Raw detail-scraper items, keyed by the address the batch will be asked
+   * for. The spy echoes `addressOrUrlFromInput` verbatim like the real actor
+   * and returns them SHUFFLED by default, because the recorded actor does
+   * (input 1,2,3,4,5 -> 1,4,5,2,3) and a spy that preserves order would let
+   * an index join pass every service-level test.
+   */
+  detailItems?: Record<string, Record<string, unknown>>;
+  /** Throw on fetchDetailBatch — the whole-run detail failure. */
+  failDetail?: ProviderFailure;
+  /** Return items in input order instead of shuffled. Only for order-agnostic cases. */
+  detailInOrder?: boolean;
+  /** Resolve fetchDetailBatch after this many ms — for the 90s ceiling. */
+  detailDelayMs?: number;
+  /** Omit `fetchDetailBatch` entirely, as a provider that predates the slice. */
+  noDetailSupport?: boolean;
+
+  // --- §14.16 neighbourhood aggregates -------------------------------------
+  /** Returned by fetchNeighborhoodSales — the DEDICATED 1mi/12mo fetch. */
+  neighborhoodSales?: unknown[];
+  /** Throw on fetchNeighborhoodSales — the aggregate-only failure. */
+  failNeighborhood?: ProviderFailure;
+  /** Omit `fetchNeighborhoodSales`, as a provider predating the slice. */
+  noNeighborhoodSupport?: boolean;
 }
 
 export interface ProviderSpy {
@@ -71,6 +117,8 @@ export interface ProviderSpy {
   /** lookupSubject + fetchSoldComps combined — "did we hit the provider at all". */
   readonly callCount: number;
   readonly subjectCalls: number;
+  /** §14.14 rule 6: must be exactly 1 per lookup, never one-per-comp. */
+  readonly detailCalls: number;
   readonly compsCalls: number;
   reset(): void;
 }
@@ -113,8 +161,50 @@ export function makeProviderSpy(options: ProviderSpyOptions = {}): ProviderSpy {
     if (options.delayMs) await new Promise((r) => setTimeout(r, options.delayMs));
   };
 
+  const detailProvider = options.noDetailSupport
+    ? {}
+    : {
+        async fetchDetailBatch(addresses: string[]) {
+          calls.push({ method: 'fetchDetailBatch', arg: addresses.join('|'), addresses: [...addresses] });
+          if (options.detailDelayMs) await new Promise((r) => setTimeout(r, options.detailDelayMs));
+          if (options.failDetail && failuresRemaining > 0) {
+            failuresRemaining--;
+            throw providerError(options.failDetail);
+          }
+          const bank = options.detailItems ?? {};
+          const items = addresses
+            .filter((a) => bank[a] !== undefined)
+            .map((a) => ({ ...bank[a], addressOrUrlFromInput: a }));
+          // OUT OF ORDER by default — see the note on `detailItems`.
+          if (options.detailInOrder || items.length < 3) return mapDetailBatchItems(items);
+          const shuffled = [items[0], ...items.slice(3), ...items.slice(1, 3)];
+          return mapDetailBatchItems(shuffled);
+        },
+      };
+
+  const neighborhoodProvider = options.noNeighborhoodSupport
+    ? {}
+    : {
+        async fetchNeighborhoodSales(
+          subject: { address?: string },
+          radiusMi: number,
+          windowMonths: number,
+        ) {
+          calls.push({
+            method: 'fetchNeighborhoodSales', arg: subject?.address ?? '', radiusMi, windowMonths,
+          });
+          if (options.failNeighborhood && failuresRemaining > 0) {
+            failuresRemaining--;
+            throw providerError(options.failNeighborhood);
+          }
+          return options.neighborhoodSales ?? [];
+        },
+      };
+
   const provider = {
     name: options.name ?? 'spy',
+    ...detailProvider,
+    ...neighborhoodProvider,
 
     async lookupSubject(normalizedAddress: string) {
       calls.push({ method: 'lookupSubject', arg: normalizedAddress });
@@ -126,14 +216,33 @@ export function makeProviderSpy(options: ProviderSpyOptions = {}): ProviderSpy {
       return options.subject === undefined ? null : options.subject;
     },
 
-    async fetchSoldComps(subject: { address?: string }, radiusMi: number) {
-      calls.push({ method: 'fetchSoldComps', arg: subject?.address ?? '', radiusMi });
+    async fetchSoldComps(subject: { address?: string }, radiusMi: number, windowMonths?: number) {
+      // windowMonths is recorded even while the production signature lacks it:
+      // the truncation fix adds it, and a spy that drops the argument cannot
+      // tell "the fetch is unwindowed" from "the fetch is windowed and I did
+      // not look".
+      calls.push({
+        method: 'fetchSoldComps', arg: subject?.address ?? '', radiusMi, windowMonths,
+      });
       await maybeDelay();
       if (options.failComps && failuresRemaining > 0) {
         failuresRemaining--;
         throw providerError(options.failComps);
       }
-      return options.comps ?? [];
+      const all = (options.comps ?? []) as Array<{ soldDate?: string | null }>;
+      if (options.truncateTo === undefined) return all;
+
+      // Newest-first, then cut — the actor's own behaviour.
+      const byNewest = [...all].sort(
+        (a, b) => Date.parse(b.soldDate ?? '') - Date.parse(a.soldDate ?? ''),
+      );
+      if (windowMonths === undefined) return byNewest.slice(0, options.truncateTo);
+
+      // A windowed query bounds the set server-side BEFORE the cap applies.
+      const cutoff = Date.now() - windowMonths * 30.44 * 86_400_000;
+      return byNewest
+        .filter((c) => Date.parse(c.soldDate ?? '') >= cutoff)
+        .slice(0, options.truncateTo);
     },
   };
 
@@ -145,6 +254,9 @@ export function makeProviderSpy(options: ProviderSpyOptions = {}): ProviderSpy {
     },
     get subjectCalls() {
       return calls.filter((c) => c.method === 'lookupSubject').length;
+    },
+    get detailCalls() {
+      return calls.filter((c) => c.method === 'fetchDetailBatch').length;
     },
     get compsCalls() {
       return calls.filter((c) => c.method === 'fetchSoldComps').length;
@@ -229,6 +341,16 @@ export function makeCompsSupabase(options: CompsSupabaseOptions = {}): CompsSupa
   const inserts: Array<{ table: string; payload: unknown }> = [];
   const counters = { stateReads: 0, cacheReads: 0, seq: 0 };
   const history = options.history ?? [];
+  /**
+   * FINDING-014, and this is the copy that MATTERS: the live battery builds on
+   * makeCompsSupabase, not on fakes.ts's makeFakeSupabase. Both carried the
+   * same defect — appendExchange's rows were recorded and discarded, so the
+   * second turn of any session read EMPTY history and the model was asked to
+   * remember a conversation it had never seen. Fixing only the other one is
+   * exactly the near-miss worth writing down: the fix was real and reached
+   * nothing the live cases exercise.
+   */
+  const appended: Record<string, Array<{ role: string; content: string }>> = {};
 
   /** Pull `session_id` / `cache_key` out of whatever .eq() chain was built. */
   interface Filters { [column: string]: unknown }
@@ -251,7 +373,15 @@ export function makeCompsSupabase(options: CompsSupabaseOptions = {}): CompsSupa
     let pendingRows: unknown[] | null = null;
 
     const rowsForTable = (): unknown[] => {
-      if (table === 'chat_messages') return [...history].reverse();
+      if (table === 'chat_messages') {
+        const id = filters.session_id as string | undefined;
+        const turns = id === undefined
+          ? Object.values(appended).flat()
+          : appended[id] ?? [];
+        // Scoped by session: flattening every conversation would leak one
+        // into another, which is a worse failure than the empty history.
+        return [...history, ...turns].reverse();
+      }
       if (table === 'session_state') {
         counters.stateReads++;
         if (options.failStateReads) throw new Error('session_state read failed');
@@ -319,6 +449,17 @@ export function makeCompsSupabase(options: CompsSupabaseOptions = {}): CompsSupa
         return Promise.resolve({ data: null, error: null });
       }
       inserts.push({ table, payload });
+      if (table === 'chat_messages') {
+        for (const row of (Array.isArray(payload) ? payload : [payload]) as Array<
+          Record<string, unknown>
+        >) {
+          const id = String(row?.session_id ?? '');
+          if (!id || (row?.role !== 'user' && row?.role !== 'assistant')) continue;
+          (appended[id] ??= []).push({
+            role: String(row.role), content: String(row.content ?? ''),
+          });
+        }
+      }
       return Promise.resolve({ data: null, error: null });
     };
 

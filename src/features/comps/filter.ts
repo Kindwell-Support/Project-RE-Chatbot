@@ -9,14 +9,14 @@
  */
 import {
   DAYS_PER_MONTH,
+  DUPLICATE_COORD_TOLERANCE_MI,
   EARTH_RADIUS_MI,
-  LOT_ANOMALY_MULTIPLE,
   MAX_BATH_DIFF,
   MAX_BED_DIFF,
-  MAX_COMP_AGE_MONTHS,
   MIN_COMPS_FOR_TIER,
   NON_ARMS_LENGTH_PPSF_FRACTION,
   RADIUS_TIERS_MI,
+  RECENCY_TIERS_MONTHS,
   SQFT_TOLERANCE,
 } from './config.js';
 import type { RawComp, RejectedComp, SubjectProperty } from './types.js';
@@ -69,7 +69,13 @@ export function median(values: number[]): number {
  * (CONTRACT §5.3.10).
  */
 function candidateMedianPpsf(comps: RawComp[]): number {
-  const ppsf = comps
+  // Deduped FIRST (BUG-010): the operator's rationale for the dedupe includes
+  // "can't skew the candidate-set median the non-arms-length rule depends on",
+  // and dropping duplicates after the gates cannot achieve that — this median
+  // is computed inside the gate pass. So the median gets its own deduped view
+  // while the REJECTION still happens after filtering, where the semantics are
+  // honest (only a comp that would otherwise be kept is called a duplicate).
+  const ppsf = dedupeSales(comps).kept
     .filter((c) => (c.soldPrice ?? 0) > 0 && (c.livingArea ?? 0) > 0)
     .map((c) => (c.soldPrice as number) / (c.livingArea as number));
   return median(ppsf);
@@ -83,6 +89,7 @@ export function applyHardFilters(
   subject: SubjectProperty,
   comps: RawComp[],
   radiusMi: number,
+  maxAgeMonths: number,
   now: Date,
 ): { kept: RawComp[]; rejected: RejectedComp[] } {
   const kept: RawComp[] = [];
@@ -105,7 +112,8 @@ export function applyHardFilters(
       rejected.push({ comp, reason: 'NOT_SOLD' });
       continue;
     }
-    if (monthsBetween(comp.soldDate, now) > MAX_COMP_AGE_MONTHS) {
+    // Against the ACTIVE recency rung (CONTRACT §14.1), not a flat constant.
+    if (monthsBetween(comp.soldDate, now) > maxAgeMonths) {
       rejected.push({ comp, reason: 'STALE_SALE' });
       continue;
     }
@@ -154,15 +162,10 @@ export function applyHardFilters(
       rejected.push({ comp, reason: 'NON_ARMS_LENGTH' });
       continue;
     }
-    if (
-      comp.lotSize !== null &&
-      subject.lotSize !== null &&
-      subject.lotSize > 0 &&
-      comp.lotSize > LOT_ANOMALY_MULTIPLE * subject.lotSize
-    ) {
-      rejected.push({ comp, reason: 'LOT_ANOMALY' });
-      continue;
-    }
+    // Rule 11 LOT_ANOMALY REMOVED in v2 (CONTRACT §14.1): a hard lot gate
+    // decimated thin markets. Lot is now a soft scoring term (rank.ts). The
+    // RejectReason member survives so cached v1 results still type, but it is
+    // never emitted from here again.
     // Rule 12 (BUG-003): a sale dated after `now` hasn't happened yet, so it
     // is not a comp. Without this, a future-dated row passed every filter and
     // its NEGATIVE recency score ranked it ahead of flawless comps — bad data
@@ -179,25 +182,143 @@ export function applyHardFilters(
   return { kept, rejected };
 }
 
+export interface TierSelection {
+  kept: RawComp[];
+  rejected: RejectedComp[];
+  radiusTierMi: number;
+  recencyTierMonths: number;
+}
+
 /**
- * Radius tiers (CONTRACT §5.3): rerun the FULL filter pass at each tier, stop
- * at the first yielding >= MIN_COMPS_FOR_TIER, else return the widest tier's
- * outcome. The reported rejected list is the final tier's only — one coherent
- * story, not three overlaid ones.
+ * Walk BOTH ladders as ONE ordered sequence (CONTRACT §14.2), rerunning the
+ * full filter pass at each rung and stopping at the first yielding
+ * >= MIN_COMPS_FOR_TIER:
+ *
+ *   1mi/3mo -> 1mi/6mo -> 1mi/12mo -> 3mi/3mo -> 3mi/6mo -> 3mi/12mo
+ *
+ * Recency is the INNER loop, so time widens before distance. Rationale worth
+ * keeping next to the code: location is a stronger determinant of value than
+ * recency inside a 12-month window, so a same-neighbourhood sale from eight
+ * months ago beats one three miles out from last month.
+ *
+ * If no rung reaches MIN_COMPS_FOR_TIER the LAST rung's outcome is returned —
+ * it may still satisfy MIN_COMPS_TO_COMPUTE. The reported rejected list is
+ * that final rung's only: one coherent story, not six overlaid ones.
+ *
+ * Renamed from selectRadiusTier — there are two ladders now, and a name saying
+ * "radius" would be a lie about what it walks.
  */
-export function selectRadiusTier(
+export function selectTiers(
   subject: SubjectProperty,
   comps: RawComp[],
   now: Date,
-): { kept: RawComp[]; rejected: RejectedComp[]; radiusTierMi: number } {
-  let last = {
-    ...applyHardFilters(subject, comps, RADIUS_TIERS_MI[0], now),
-    radiusTierMi: RADIUS_TIERS_MI[0],
+): TierSelection {
+  const widestRadius = RADIUS_TIERS_MI[RADIUS_TIERS_MI.length - 1];
+  const widestAge = RECENCY_TIERS_MONTHS[RECENCY_TIERS_MONTHS.length - 1];
+  const seed = applyHardFilters(subject, comps, widestRadius, widestAge, now);
+  const seedDeduped = dedupeSales(seed.kept);
+  let last: TierSelection = {
+    kept: seedDeduped.kept,
+    rejected: [...seed.rejected, ...seedDeduped.duplicates],
+    radiusTierMi: widestRadius,
+    recencyTierMonths: widestAge,
   };
-  for (const tier of RADIUS_TIERS_MI) {
-    const pass = applyHardFilters(subject, comps, tier, now);
-    last = { ...pass, radiusTierMi: tier };
-    if (pass.kept.length >= MIN_COMPS_FOR_TIER) break;
+  for (const radiusMi of RADIUS_TIERS_MI) {
+    for (const maxAgeMonths of RECENCY_TIERS_MONTHS) {
+      const pass = applyHardFilters(subject, comps, radiusMi, maxAgeMonths, now);
+      // BUG-010 dedupe sits HERE — after the gates, before ranking — so a
+      // duplicate can never consume one of the five slots, and only a comp
+      // that would otherwise have been KEPT is ever labelled DUPLICATE_SALE.
+      // The tier's sufficiency test runs on the DEDUPED count, otherwise a
+      // rung could "reach 5" on four real sales plus a copy.
+      const deduped = dedupeSales(pass.kept);
+      last = {
+        kept: deduped.kept,
+        rejected: [...pass.rejected, ...deduped.duplicates],
+        radiusTierMi: radiusMi,
+        recencyTierMonths: maxAgeMonths,
+      };
+      if (deduped.kept.length >= MIN_COMPS_FOR_TIER) return last;
+    }
   }
   return last;
+}
+
+/**
+ * BUG-010 — collapse duplicate SALES (not duplicate ids).
+ *
+ * Zillow carried one Wickenburg sale under two zpids with different address
+ * formatting ("830 America St" / "830 W AMERICA Street"), and it occupied TWO
+ * of five comp slots: it double-weighted that sale in a trimmed mean of three
+ * values, displaced a genuine comp, and — because duplicates shrink variance —
+ * pushed the confidence tier up. Identity is therefore the SALE, never the id.
+ *
+ * Match = same price, same living area, same sold date, and coordinates within
+ * DUPLICATE_COORD_TOLERANCE_MI. A distance threshold, not float equality: the
+ * recorded pair differed in the sixth decimal of latitude.
+ *
+ * Winner = the record carrying more real data (lot, beds, baths, link), so the
+ * survivor is the more complete row; ties break on the longer street address,
+ * which is the better-formatted of the two in the recorded case. Deterministic
+ * either way — INSPECTOR asserts on which survives.
+ */
+/**
+ * §14.19: union the comps-search pool with the neighbourhood-sales payload
+ * BEFORE the hard filters — the aggregate fetch is an exhausted 1-mile
+ * 12-month universe, and the truncated comps fetch loses exactly the near
+ * sales the ladder wants most. Unioned sales face EVERY gate identically;
+ * nothing here bypasses a filter.
+ *
+ * Same-ZPID records collapse at union time with the PRIMARY (comps-search)
+ * record winning — both payloads come from the same actor through the same
+ * mapper, so the records are near-identical and the choice is a
+ * deterministic tiebreak, not a data decision. Same-SALE-different-zpid
+ * overlap (BUG-010's shape, this slice's main risk) is deliberately LEFT to
+ * `dedupeSales`, which runs over the union inside selectTiers and inside
+ * candidateMedianPpsf and reports DUPLICATE_SALE visibly.
+ */
+export function unionCandidatePools(primary: RawComp[], secondary: RawComp[] | null): RawComp[] {
+  if (!secondary || secondary.length === 0) return primary;
+  const seen = new Set(primary.map((c) => c.zpid));
+  const merged = [...primary];
+  for (const comp of secondary) {
+    if (comp.zpid && seen.has(comp.zpid)) continue;
+    if (comp.zpid) seen.add(comp.zpid);
+    merged.push(comp);
+  }
+  return merged;
+}
+
+export function dedupeSales(comps: RawComp[]): { kept: RawComp[]; duplicates: RejectedComp[] } {
+  const completeness = (c: RawComp): number =>
+    [c.lotSize, c.beds, c.baths, c.detailUrl].filter((v) => v !== null && v !== undefined).length;
+
+  const kept: RawComp[] = [];
+  const duplicates: RejectedComp[] = [];
+
+  for (const comp of comps) {
+    const idx = kept.findIndex(
+      (k) =>
+        k.soldPrice === comp.soldPrice &&
+        k.livingArea === comp.livingArea &&
+        k.soldDate === comp.soldDate &&
+        haversineMiles(k.lat, k.lng, comp.lat, comp.lng) <= DUPLICATE_COORD_TOLERANCE_MI,
+    );
+    if (idx === -1) {
+      kept.push(comp);
+      continue;
+    }
+    const incumbent = kept[idx];
+    const challengerWins =
+      completeness(comp) > completeness(incumbent) ||
+      (completeness(comp) === completeness(incumbent) &&
+        comp.address.length > incumbent.address.length);
+    if (challengerWins) {
+      kept[idx] = comp;
+      duplicates.push({ comp: incumbent, reason: 'DUPLICATE_SALE' });
+    } else {
+      duplicates.push({ comp, reason: 'DUPLICATE_SALE' });
+    }
+  }
+  return { kept, duplicates };
 }

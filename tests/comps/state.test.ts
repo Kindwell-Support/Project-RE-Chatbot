@@ -117,6 +117,9 @@ const runFlip = (args: Record<string, unknown> = {}): FakeCompletion => ({
   }],
 });
 const say = (content: string): FakeCompletion => ({ content });
+const setArv = (arv: number, address?: string): FakeCompletion => ({
+  toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: address ? { arv, address } : { arv } }],
+});
 
 /**
  * golden01's comps are dated against its injected `now` (2025-07-15), but the
@@ -141,119 +144,119 @@ const SUBJECT_B = {
 
 describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
   // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('a successful run writes the §8 block', () => {
-    it('writes every key, with `arv` a NUMBER', () => {
-      // "412000" and "$412,000" both render identically in chat and both break
-      // the calculator, which type-rejects non-numbers (tests/agent.test.ts).
+  describe.skipIf(pendingSlice(...MODS))('a successful comps run writes NOTHING', () => {
+    // INVERTED (§14.8). This used to assert that a successful run wrote the
+    // whole §8 block with `arv` a number and `arvSource: 'comps'`. `run_comps`
+    // no longer touches session_state at all, so the guarantee is the opposite
+    // one — and it is the load-bearing half of the removal, because a comps
+    // run that still wrote a block would put a number back into the pre-fill
+    // path by the back door.
+    it('no state write happens on a successful run', async () => {
       const { app, supabase } = buildCompsApp({
         script: [runComps('123 Main St, Seattle WA'), say('Here are the comps.')],
         provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      return chat(app, 'run comps on 123 Main St, Seattle WA', 's1').then(() => {
-        const state = supabase.compsBlockFor('s1');
-        expect(state, 'no session_state row was written').toBeDefined();
-        for (const key of COMPS_STATE_KEYS) {
-          expect(state, `missing §8 key ${key}`).toHaveProperty(key);
-        }
+      const reply = await chat(app, 'run comps on 123 Main St, Seattle WA', 's1');
+
+      // POSITIVE PRECONDITION — "nothing was written" is trivially true of a
+      // run that never happened. The comps must actually have come back.
+      expect(reply.status, 'the turn failed outright').toBe(200);
+      expect(reply.output.length, 'no reply was rendered').toBeGreaterThan(0);
+
+      expect(
+        supabase.compsBlockFor('s1'),
+        'run_comps wrote a comps block — nothing may write one any more',
+      ).toBeUndefined();
+      for (const w of supabase.stateWrites) {
+        const block = compsBlockOf(w) ?? {};
+        expect(
+          block.arvSource,
+          `write #${w.seq} carries arvSource 'comps' — the source is retired`,
+        ).not.toBe('comps');
+      }
+    });
+
+    it('set_manual_arv still writes the whole §8 block, with `arv` a NUMBER', () => {
+      // The half that SURVIVES. "412000" and "$412,000" render identically in
+      // chat and both break the calculator, which type-rejects non-numbers
+      // (tests/agent.test.ts). Removing our ARV must not damage theirs.
+      const { app, supabase } = buildCompsApp({
+        script: [
+          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
+          say('Using your ARV of $450,000.'),
+        ],
+      });
+      return chat(app, 'use 450k as the ARV', 's-manual-write').then(() => {
+        const state = supabase.compsBlockFor('s-manual-write');
+        expect(state, 'no session_state row was written for a MANUAL ARV').toBeDefined();
         expect(typeof state!.arv, `arv is ${typeof state!.arv}, not number`).toBe('number');
-        expect(typeof state!.arvLow).toBe('number');
-        expect(typeof state!.arvHigh).toBe('number');
         expect(typeof state!.subjectSqft).toBe('number');
-        expect(typeof state!.subjectAddress).toBe('string');
-        expect(state!.arvSource).toBe('comps');
-        expect(state!.arv).toBe(403000); // golden 01, hand-computed
+        // BUG-011: 'use 450k as the ARV' names no property, so the binding is
+        // NULL — never a string placeholder. Address-bound writes are covered
+        // in manualArvBinding.test.ts.
+        expect(state!.subjectAddress, 'an unbound ARV must store a null binding').toBeNull();
+        expect(state!.arvSource).toBe('manual');
+        expect(state!.arv).toBe(450000);
       });
     });
   });
 
   // =========================================================================
-  // THE HIGHEST-VALUE TEST OF THE NIGHT
+  // THE INVERSION — the highest-risk change in the removal.
+  //
+  // It was: "a failed comps run leaves NO stale ARV." `run_comps` cleared the
+  // block before touching the provider, so a failure could not leave the
+  // previous house's number bound to the new question.
+  //
+  // It is now: "a comps run PRESERVES the member's manual ARV." The clear had
+  // exactly one thing left to destroy — a number the member typed themselves —
+  // so it was removed (§14.8). Running comps must never silently delete that.
+  //
+  // The protection did not disappear, it moved: the address-mismatch guard is
+  // now the whole of it, which is why it is tested harder below than the clear
+  // ever was.
+  //
+  // DISCIPLINE. Every case here leads with a POSITIVE PRECONDITION. "The ARV
+  // is still 450,000" passes trivially if nothing ever wrote it, and that is
+  // the exact shape of vacuous pass this file has produced before.
   // =========================================================================
-  describe.skipIf(pendingSlice(...MODS))('clear-on-failure: a failed run leaves NO ARV', () => {
-    it('a failed run on B does not leave A\'s ARV behind', async () => {
-      // The exact scenario. A succeeds, B fails, and the state must not still be
-      // carrying A's number under B's question.
-      const { app, supabase } = buildCompsApp({
-        script: [
-          runComps('123 Main St, Seattle WA'), say('Comps for 123 Main.'),
-          runComps('456 Oak Ave, Seattle WA'), say('That one did not work.'),
-        ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
-      });
+  describe.skipIf(pendingSlice(...MODS))("a comps run PRESERVES the member's manual ARV", () => {
+    /** Bind a manual ARV, then run comps against it with the given provider. */
+    async function manualThenComps(sessionId: string, provider: ProviderSpyOptions) {
+      const supabase = makeCompsSupabase({});
 
-      await chat(app, 'run comps on 123 Main St, Seattle WA', 's-clear');
-      expect(supabase.compsBlockFor('s-clear')!.arv).toBe(403000);
-
-      // Second app instance sharing the same store, with a provider that fails.
-      const failing = makeProviderSpy({ failSubject: { kind: 'timeout' } });
-      const openai2 = makeFakeOpenAI([
-        runComps('456 Oak Ave, Seattle WA'),
-        say('I could not pull comps for that address.'),
-      ]);
-      const app2 = buildApp(config, {
-        openai: openai2.client,
+      const a = buildApp(config, {
+        openai: makeFakeOpenAI([
+          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
+          say('Using your ARV of $450,000.'),
+        ]).client,
         supabase: supabase.client,
-        propertyProvider: failing.provider,
+        propertyProvider: makeProviderSpy({}).provider,
       } as never);
-      await chat(app2, 'now run comps on 456 Oak Ave, Seattle WA', 's-clear');
+      await chat(a, 'use 450k as the ARV', sessionId);
 
-      // §8: the block is written whole or not at all, so after a failed run it
-      // must be ABSENT — not merely blanked field-by-field.
-      const block = supabase.compsBlockFor('s-clear');
-      expect(
-        block,
-        "the comps block survived a FAILED run — 123 Main's ARV is still bound to 456 Oak",
-      ).toBeUndefined();
-      for (const key of ARV_BEARING_KEYS) {
-        expect((block ?? {})[key], `${key} survived a FAILED run`).toBeUndefined();
-      }
-      expect((block ?? {}).arv, "A's ARV is still in state after B failed").not.toBe(403000);
-    });
+      const before = supabase.compsBlockFor(sessionId);
+      expect(before?.arv, 'PRECONDITION: the manual ARV was never stored').toBe(450000);
+      expect(before?.arvSource, 'PRECONDITION: not recorded as manual').toBe('manual');
 
-    it('the clear happens BEFORE the provider is called, not after it succeeds', async () => {
-      // Clearing only on success is the subtle version of the same bug: a
-      // provider that times out mid-run leaves the previous block intact.
-      // Observed directly — the state is snapshotted at the moment the provider
-      // is first touched.
-      const supabase = makeCompsSupabase({
-        sessionState: {
-          's-order': {
-            comps: {
-              subjectAddress: '123 MAIN STREET', subjectSqft: 2000,
-              subjectBeds: 3, subjectBaths: 2,
-              arv: 403000, arvLow: 394000, arvHigh: 412000,
-              arvConfidence: 'high', arvSource: 'comps', compsRunId: 'run-a',
-              computedAt: '2025-07-15T00:00:00.000Z',
-            },
-          },
-        },
+      const spy = makeProviderSpy(provider);
+      const b = buildApp(config, {
+        openai: makeFakeOpenAI([runComps('456 Oak Ave'), say('Comps run.')]).client,
+        supabase: supabase.client,
+        propertyProvider: spy.provider,
+      } as never);
+      const reply = await chat(b, 'run comps on 456 Oak Ave', sessionId);
+
+      return { supabase, spy, reply, after: supabase.compsBlockFor(sessionId) };
+    }
+
+    it('SUCCESS path: a successful comps run does not touch it', async () => {
+      const { spy, after } = await manualThenComps('p-success', {
+        subject: SUBJECT_B, comps: FRESH_COMPS,
       });
-
-      let stateAtProviderCall: Record<string, unknown> | undefined;
-      let providerWasCalled = false;
-      const spy = makeProviderSpy({ subject: SUBJECT_B, comps: FRESH_COMPS });
-      const watching = {
-        name: 'watching',
-        async lookupSubject(addr: string) {
-          providerWasCalled = true;
-          stateAtProviderCall = supabase.compsBlockFor('s-order');
-          return (spy.provider as { lookupSubject(a: string): Promise<unknown> }).lookupSubject(addr);
-        },
-        fetchSoldComps: (spy.provider as { fetchSoldComps: unknown }).fetchSoldComps,
-      };
-
-      const openai = makeFakeOpenAI([runComps('456 Oak Ave'), say('done')]);
-      const app = buildApp(config, {
-        openai: openai.client, supabase: supabase.client, propertyProvider: watching,
-      } as never);
-      await chat(app, 'run comps on 456 Oak Ave', 's-order');
-
-      expect(providerWasCalled, 'the provider was never called').toBe(true);
-      expect(
-        stateAtProviderCall,
-        'the previous comps block was still present when the provider was hit — ' +
-          'the clear runs on success instead of at the START of the run',
-      ).toBeUndefined();
+      expect(spy.callCount, 'PRECONDITION: the provider was never reached').toBeGreaterThan(0);
+      expect(after?.arv, "a SUCCESSFUL comps run deleted the member's own ARV").toBe(450000);
+      expect(after?.arvSource, 'the manual ARV was relabelled').toBe('manual');
     });
 
     it.each([
@@ -265,43 +268,67 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       ['address not found', { subject: null }],
       ['no subject sqft', { subject: { ...SUBJECT_B, livingArea: null }, comps: FRESH_COMPS }],
       ['too few comps', { subject: SUBJECT_B, comps: FRESH_COMPS.slice(0, 2) }],
-    ])('every failure mode clears: %s', async (_label, provider) => {
-      const supabase = makeCompsSupabase({
-        sessionState: {
-          's-fail': {
-            comps: {
-              subjectAddress: '123 MAIN STREET', subjectSqft: 2000,
-              subjectBeds: 3, subjectBaths: 2,
-              arv: 403000, arvLow: 394000, arvHigh: 412000,
-              arvConfidence: 'high', arvSource: 'comps', compsRunId: 'run-a',
-              computedAt: '2025-07-15T00:00:00.000Z',
-            },
-          },
-        },
-      });
-      const spy = makeProviderSpy(provider as ProviderSpyOptions);
-      const openai = makeFakeOpenAI([runComps('456 Oak Ave'), say('sorry')]);
-      const app = buildApp(config, {
-        openai: openai.client, supabase: supabase.client, propertyProvider: spy.provider,
-      } as never);
-      await chat(app, 'run comps on 456 Oak Ave', 's-fail');
+    ])('every failure mode PRESERVES it: %s', async (label, provider) => {
+      // This is the exact list the old suite used to prove the block was
+      // CLEARED. Same eight paths, opposite expectation. Keeping the list
+      // identical is deliberate: it makes the inversion legible in a diff, and
+      // it means no failure mode quietly lost its coverage in the flip.
+      const { after } = await manualThenComps(
+        `p-fail-${label.replace(/\W+/g, '-')}`,
+        provider as ProviderSpyOptions,
+      );
+      expect(
+        after?.arv,
+        `a ${label} failure destroyed the member's manual ARV — running comps ` +
+          'must never silently delete a number they typed themselves',
+      ).toBe(450000);
+      expect(after?.arvSource).toBe('manual');
+    });
 
-      const block = supabase.compsBlockFor('s-fail');
-      expect(block, 'the comps block survived a failed run').toBeUndefined();
-      for (const key of ARV_BEARING_KEYS) {
-        expect((block ?? {})[key], `${key} survived a failed run`).toBeUndefined();
+    it('clearCompsBlock has no production caller on the comps path', async () => {
+      // §14.8 keeps `clearCompsBlock` exported and tested but leaves it with no
+      // caller. Asserted from the OUTSIDE — across a success and a failure,
+      // no observable write ever removes the block — rather than by reading
+      // the source, because a re-introduced caller anywhere on the path is
+      // what this needs to catch, not a specific call site.
+      for (const [name, provider] of [
+        ['ok', { subject: SUBJECT_B, comps: FRESH_COMPS }],
+        ['fail', { failSubject: { kind: 'timeout' as const } }],
+      ] as const) {
+        const { supabase, after } = await manualThenComps(
+          `p-noclear-${name}`,
+          provider as ProviderSpyOptions,
+        );
+        expect(after?.arv, `${name}: the block was cleared`).toBe(450000);
+        for (const w of supabase.stateWrites) {
+          const block = compsBlockOf(w);
+          expect(
+            block === null || block === undefined,
+            `${name}: write #${w.seq} nulled the comps block — that is the removed clear`,
+          ).toBe(false);
+        }
       }
     });
   });
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('atomicity: never half a comps block', () => {
-    it('no observable write has `arv` without `subjectAddress`, or the reverse', async () => {
+    // Re-pointed onto set_manual_arv, which is now the only writer. The
+    // guarantee is unchanged and still matters: §8 says the block is written
+    // whole or not at all, and a half-written block is what makes an ARV
+    // reachable without the address it is bound to.
+    function writeManual(sessionId: string) {
       const { app, supabase } = buildCompsApp({
-        script: [runComps('123 Main St'), say('done')],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+        script: [
+          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
+          say('done'),
+        ],
       });
-      await chat(app, 'run comps on 123 Main St', 's-atomic');
+      return chat(app, 'set the ARV to 450k', sessionId).then(() => supabase);
+    }
+
+    it('no observable write has `arv` without `subjectAddress`, or the reverse', async () => {
+      const supabase = await writeManual('s-atomic');
 
       expect(supabase.stateWrites.length, 'nothing was written').toBeGreaterThan(0);
       for (const w of supabase.stateWrites) {
@@ -313,35 +340,32 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           `write #${w.seq} has arv but no subjectAddress — a partial block is observable`,
         ).toBe(false);
         expect(
-          hasAddress && hasArv === false && s.arvSource === 'comps',
-          `write #${w.seq} claims arvSource 'comps' with no arv`,
+          hasAddress && !hasArv && s.arvSource !== undefined,
+          `write #${w.seq} claims an arvSource with no arv`,
         ).toBe(false);
       }
     });
 
-    it('the ARV band is never partially written', async () => {
-      const { app, supabase } = buildCompsApp({
-        script: [runComps('123 Main St'), say('done')],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
-      });
-      await chat(app, 'run comps on 123 Main St', 's-band');
+    it('a manual write never leaves a comps-shaped band behind', async () => {
+      // RE-POINTED. The old case checked arv/arvLow/arvHigh moved together.
+      // There is no band any more, so the risk inverted: a manual ARV must not
+      // be written alongside band or confidence fields left over from a v2
+      // session, which would make it look like a computed estimate.
+      const supabase = await writeManual('s-band');
 
-      // POSITIVE PRECONDITION. Without this the loop below iterates an empty
-      // array and the test passes having proven nothing at all.
-      expect(supabase.stateWrites.length, 'no state was written — nothing to check').toBeGreaterThan(0);
-      const complete = supabase.stateWrites.filter((w) => {
-        const s = compsBlockOf(w) ?? {};
-        return ['arv', 'arvLow', 'arvHigh'].every((k) => s[k] !== undefined);
-      });
-      expect(complete.length, 'no write ever carried a complete band').toBeGreaterThan(0);
+      expect(supabase.stateWrites.length, 'no state was written — nothing to check')
+        .toBeGreaterThan(0);
+      const withArv = supabase.stateWrites.filter((w) => (compsBlockOf(w) ?? {}).arv !== undefined);
+      expect(withArv.length, 'no write ever carried an arv').toBeGreaterThan(0);
 
-      for (const w of supabase.stateWrites) {
+      for (const w of withArv) {
         const s = compsBlockOf(w) ?? {};
-        const present = ['arv', 'arvLow', 'arvHigh'].filter((k) => s[k] !== undefined);
-        expect(
-          present.length === 0 || present.length === 3,
-          `write #${w.seq} has a partial band: ${present.join(', ')}`,
-        ).toBe(true);
+        for (const dead of MANUAL_NULLED_KEYS) {
+          expect(
+            s[dead] ?? null,
+            `write #${w.seq} carries ${dead} on a MANUAL ARV — it reads as a computed estimate`,
+          ).toBeNull();
+        }
       }
     });
   });
@@ -353,12 +377,20 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // only present when the model chooses to include it, then it is a system
       // prompt instruction, and a model under pressure drops it. §8 says "the
       // reply MUST echo the injection visibly" — that has to be structural.
+      //
+      // RE-POINTED post-removal: the only thing that binds an ARV now is the
+      // member, via set_manual_arv (BUG-011: with an address from the CURRENT
+      // message). The echo guarantee is unchanged — arguably more important,
+      // since the number being echoed is one the member typed and a mis-echo
+      // misquotes THEM.
       const { app, openai } = buildCompsApp({
-        script: [runComps('123 Main St'), say('Comps done.'), runFlip(), say('Net profit is $88,000.')],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
+        script: [
+          setArv(403000, '123 Main St'), say('Stored.'),
+          runFlip(), say('Net profit is $88,000.'),
+        ],
         supabase: {},
       });
-      await chat(app, 'run comps on 123 Main St', 's-echo');
+      await chat(app, 'use 403k as the ARV for 123 Main St', 's-echo');
       const reply = await chat(app, 'now run the flip numbers', 's-echo');
 
       const digits = reply.output.replace(/[$,\s]/g, '');
@@ -383,20 +415,19 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     it('an explicit ARV in the call beats the pre-fill, and the echo says so', async () => {
       const { app, openai, supabase } = buildCompsApp({
         script: [
-          runComps('123 Main St'), say('Comps done.'),
+          setArv(403000, '123 Main St'), say('Stored.'),
           runFlip({ after_repair_value: 500000 }), say('Net profit is $140,000.'),
         ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      await chat(app, 'run comps on 123 Main St', 's-explicit');
+      await chat(app, 'use 403k as the ARV for 123 Main St', 's-explicit');
 
-      // POSITIVE PRECONDITION: there must be a stored comps ARV that COULD have
+      // POSITIVE PRECONDITION: there must be a stored ARV that COULD have
       // overridden the explicit one. `flip_calculator` already exists and
       // already honours an explicit ARV, so without this the test passes with
       // the comps feature entirely absent and proves nothing about precedence.
       expect(
         supabase.compsBlockFor('s-explicit')?.arv,
-        'no comps ARV was stored — there is nothing for the explicit value to beat',
+        'no ARV was stored — there is nothing for the explicit value to beat',
       ).toBe(403000);
 
       const reply = await chat(app, 'run the flip with a 500k ARV', 's-explicit');
@@ -423,31 +454,33 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('address A then address B', () => {
     it('the flip uses B\'s ARV and names B in the echo', async () => {
+      // RE-POINTED: the member states an ARV for A, then a different one for
+      // B. The second statement REPLACES the first (BUG-011: a manual ARV is a
+      // fresh statement, no inheritance) — so the flip must price with B's
+      // number and the echo must name B, with A's number gone.
       const supabase = makeCompsSupabase({});
 
       const app1 = buildApp(config, {
-        openai: makeFakeOpenAI([runComps('123 Main St'), say('A done')]).client,
+        openai: makeFakeOpenAI([setArv(403000, '123 Main St'), say('A stored')]).client,
         supabase: supabase.client,
-        propertyProvider: makeProviderSpy({ subject: SUBJECT_A, comps: FRESH_COMPS }).provider,
+        propertyProvider: makeProviderSpy({}).provider,
       } as never);
-      await chat(app1, 'run comps on 123 Main St', 's-ab');
+      await chat(app1, 'use 403k as the ARV for 123 Main St', 's-ab');
       expect(supabase.compsBlockFor('s-ab')!.arv).toBe(403000);
 
-      // B: same comps, smaller subject (1,800 sqft) -> 201.3333 x 1800
-      // = 362,400 -> $362,000. Different from A by design.
       const openai2 = makeFakeOpenAI([
-        runComps('456 Oak Ave'), say('B done'), runFlip(), say('Numbers are in.'),
+        setArv(362000, '456 Oak Ave'), say('B stored'), runFlip(), say('Numbers are in.'),
       ]);
       const app2 = buildApp(config, {
         openai: openai2.client,
         supabase: supabase.client,
-        propertyProvider: makeProviderSpy({ subject: SUBJECT_B, comps: FRESH_COMPS }).provider,
+        propertyProvider: makeProviderSpy({}).provider,
       } as never);
-      await chat(app2, 'run comps on 456 Oak Ave', 's-ab');
+      await chat(app2, 'now use 362k as the ARV for 456 Oak Ave', 's-ab');
       const reply = await chat(app2, 'run the flip numbers', 's-ab');
 
       expect(supabase.compsBlockFor('s-ab')!.arv).toBe(362000);
-      expect(supabase.compsBlockFor('s-ab')!.subjectAddress).toContain('456 OAK');
+      expect(supabase.compsBlockFor('s-ab')!.subjectAddress).toContain('456 Oak');
 
       const flip = toolResults(openai2.calls).find(
         (r) => (r as { calculator?: string }).calculator === 'flip',
@@ -467,34 +500,43 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
   //
   // Live verification (MASON) showed the real model does NOT omit
   // `after_repair_value` and let the pre-fill inject it. It reads the ARV out
-  // of the prior comps tool result — which is sitting right there in its
-  // context — and passes it EXPLICITLY. So every guarantee attached to the
-  // injection path (the echo, the address-mismatch ask) was being exercised on
-  // a branch production rarely takes.
+  // of its context — the member's own statement, these days — and passes it
+  // EXPLICITLY. So every guarantee attached to the injection path (the echo,
+  // the address-mismatch ask) was being exercised on a branch production
+  // rarely takes.
   //
   // Same class as the COMPS_STRICT catch one level up: not assertions passing
   // on nothing, but assertions passing on the wrong thing. The tests below
   // drive the path the model actually takes.
+  //
+  // RE-POINTED post-removal: the stored block is now a MANUAL one bound to
+  // 123 Main. The carry hazard is unchanged — the model re-reads a number
+  // from context and applies it to a property the member named as different.
+  // If anything the stakes rose: the carried number is the member's own, so
+  // a silent carry misapplies THEIR figure, not our estimate.
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('production path: the model carries the ARV explicitly', () => {
-    /** Run comps on A, then have the model pass an explicit ARV of its own choosing. */
-    async function compsThenExplicitFlip(opts: {
+    /** Bind a manual ARV to A, then have the model pass an explicit ARV of its own choosing. */
+    async function boundThenExplicitFlip(opts: {
       session: string;
       followUp: string;
       explicitArv: number;
     }) {
       const { app, openai, supabase } = buildCompsApp({
         script: [
-          runComps('123 Main St'), say('Comps done — ARV $403,000.'),
+          setArv(403000, '123 Main St'), say('Stored — ARV $403,000 for 123 Main St.'),
           runFlip({ after_repair_value: opts.explicitArv }), say('Net profit is $88,000.'),
         ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      await chat(app, 'run comps on 123 Main St', opts.session);
+      await chat(app, 'use 403k as the ARV for 123 Main St', opts.session);
       expect(
         supabase.compsBlockFor(opts.session)?.arv,
-        'precondition: no comps block was bound',
+        'precondition: no block was bound',
       ).toBe(403000);
+      expect(
+        supabase.compsBlockFor(opts.session)?.subjectAddress ?? '',
+        'precondition: the ARV did not bind to the address',
+      ).toContain('123 Main');
 
       const reply = await chat(app, opts.followUp, opts.session);
       const flip = toolResults(openai.calls).find(
@@ -506,7 +548,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     it('an explicit ARV equal to the stored block still gets the echo', async () => {
       // MASON's 8b9ee5b: same value ⇒ same guarantees. Without this the reply
       // carries no address binding at all on the path production actually uses.
-      const { reply, flip } = await compsThenExplicitFlip({
+      const { reply, flip } = await boundThenExplicitFlip({
         session: 'p-echo', followUp: 'now run the flip numbers', explicitArv: 403000,
       });
       expect(flip, 'flip never ran').toBeDefined();
@@ -517,17 +559,19 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     });
 
     it('an explicit ARV equal to the stored block, on a DIFFERENT address, is refused', async () => {
-      const { reply, flip } = await compsThenExplicitFlip({
+      const { reply, flip } = await boundThenExplicitFlip({
         session: 'p-mismatch',
         followUp: 'run the flip on 456 Oak Ave',
         explicitArv: 403000,
       });
-      if (flip?.inputs_used) {
-        expect(
-          flip.inputs_used.after_repair_value,
-          "123 Main's ARV priced a deal the member asked about at 456 Oak",
-        ).not.toBe(403000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "123 Main's ARV priced a deal the member asked about at 456 Oak",
+      ).not.toBe(403000);
       expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('403000');
     });
 
@@ -546,7 +590,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
      * reconcile it.
      */
     it('LEAK: a TRANSFORMED carry on a different address is silently accepted', async () => {
-      const { reply, flip } = await compsThenExplicitFlip({
+      const { reply, flip } = await boundThenExplicitFlip({
         session: 'p-leak',
         followUp: 'run the flip on 456 Oak Ave',
         explicitArv: 400000, // 403,000 rounded — not equal, so the guard misses
@@ -555,14 +599,16 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // 400,000 is not the member's number: it appears nowhere in their message.
       // It is 123 Main's ARV, rounded, applied to a property the member named
       // as different.
-      if (flip?.inputs_used) {
-        expect(
-          flip.inputs_used.after_repair_value,
-          "a rounded carry of 123 Main's ARV priced the deal at 456 Oak — " +
-            'the mismatch guard is keyed on exact equality and a transformed ' +
-            'carry walks straight past it',
-        ).not.toBe(400000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "a rounded carry of 123 Main's ARV priced the deal at 456 Oak — " +
+          'the mismatch guard is keyed on exact equality and a transformed ' +
+          'carry walks straight past it',
+      ).not.toBe(400000);
       expect(
         reply.output.replace(/[$,\s]/g, ''),
         'the reply prices 456 Oak with a number derived from 123 Main',
@@ -575,7 +621,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // obtuse — they just told us. The discriminator available in code is
       // whether the figure appears in the member's own message; here "450k"
       // does, and in the LEAK case above "400000" does not.
-      const { flip } = await compsThenExplicitFlip({
+      const { flip } = await boundThenExplicitFlip({
         session: 'p-control',
         followUp: 'run the flip on 456 Oak Ave with a 450k ARV',
         explicitArv: 450000,
@@ -596,7 +642,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // untouched — no echo, no ask.
       const { app, openai, supabase } = buildCompsApp({
         script: [
-          runComps('123 Main St'), say('Comps done — ARV $403,000.'),
+          setArv(403000, '123 Main St'), say('Stored — $403,000 for 123 Main St.'),
           {
             toolCalls: [{
               id: 'flip-1', name: 'flip_calculator',
@@ -608,9 +654,8 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           },
           say('Here are the numbers.'),
         ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      await chat(app, 'run comps on 123 Main St', 'p-coincide');
+      await chat(app, 'use 403k as the ARV for 123 Main St', 'p-coincide');
       expect(supabase.compsBlockFor('p-coincide')?.arv).toBe(403000);
 
       const reply = await chat(
@@ -642,7 +687,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // guarantee, and BRRRR is the long-hold member's tool.
       const { app, openai, supabase } = buildCompsApp({
         script: [
-          runComps('123 Main St'), say('Comps done — ARV $403,000.'),
+          setArv(403000, '123 Main St'), say('Stored — $403,000 for 123 Main St.'),
           {
             toolCalls: [{
               id: 'brrrr-1', name: 'brrrr_calculator',
@@ -654,9 +699,8 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           },
           say('Here is the BRRRR.'),
         ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      await chat(app, 'run comps on 123 Main St', 'p-brrrr-guard');
+      await chat(app, 'use 403k as the ARV for 123 Main St', 'p-brrrr-guard');
       expect(supabase.compsBlockFor('p-brrrr-guard')?.arv).toBe(403000);
 
       const reply = await chat(app, 'run the BRRRR on 456 Oak Ave', 'p-brrrr-guard');
@@ -664,17 +708,19 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
         (r) => (r as { calculator?: string }).calculator === 'brrrr',
       ) as { inputs_used?: Record<string, unknown> } | undefined;
 
-      if (brrrr?.inputs_used) {
-        expect(
-          brrrr.inputs_used.after_repair_value,
-          "123 Main's ARV priced a BRRRR the member asked about at 456 Oak",
-        ).not.toBe(403000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        brrrr?.inputs_used?.after_repair_value,
+        "123 Main's ARV priced a BRRRR the member asked about at 456 Oak",
+      ).not.toBe(403000);
       expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('403000');
     });
 
     it('CONTROL: a member-supplied ARV for the SAME address is accepted untouched', async () => {
-      const { flip } = await compsThenExplicitFlip({
+      const { flip } = await boundThenExplicitFlip({
         session: 'p-control-2',
         followUp: 'run the flip on 123 Main St but use 520k as the ARV',
         explicitArv: 520000,
@@ -686,14 +732,14 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('BRRRR pre-fills identically to Flip', () => {
-    it('brrrr_calculator receives the comps ARV and echoes the bound address', async () => {
+    it('brrrr_calculator receives the bound manual ARV and echoes the address', async () => {
       // §8 names both calculators. Flip is covered above; BRRRR has to behave
       // the same or the guarantee is half a guarantee — and BRRRR is the tool a
       // long-term-hold member reaches for, so a stale ARV there is just as
       // expensive.
       const { app, openai, supabase } = buildCompsApp({
         script: [
-          runComps('123 Main St'), say('Comps done.'),
+          setArv(403000, '123 Main St'), say('Stored.'),
           {
             toolCalls: [{
               id: 'brrrr-1', name: 'brrrr_calculator',
@@ -702,10 +748,9 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           },
           say('Here is the BRRRR.'),
         ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      await chat(app, 'run comps on 123 Main St', 's-brrrr');
-      expect(supabase.compsBlockFor('s-brrrr')?.arv, 'no comps ARV to pre-fill from').toBe(403000);
+      await chat(app, 'use 403k as the ARV for 123 Main St', 's-brrrr');
+      expect(supabase.compsBlockFor('s-brrrr')?.arv, 'no ARV to pre-fill from').toBe(403000);
 
       const reply = await chat(app, 'now run the BRRRR numbers', 's-brrrr');
 
@@ -713,7 +758,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
         (r) => (r as { calculator?: string }).calculator === 'brrrr',
       ) as { inputs_used?: Record<string, unknown> } | undefined;
       expect(brrrr, 'brrrr_calculator never ran').toBeDefined();
-      expect(brrrr!.inputs_used!.after_repair_value, 'the comps ARV did not reach BRRRR')
+      expect(brrrr!.inputs_used!.after_repair_value, 'the bound ARV did not reach BRRRR')
         .toBe(403000);
 
       const digits = reply.output.replace(/[$,\s]/g, '');
@@ -725,7 +770,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     it('an explicit ARV beats the pre-fill for BRRRR too', async () => {
       const { app, openai, supabase } = buildCompsApp({
         script: [
-          runComps('123 Main St'), say('Comps done.'),
+          setArv(403000, '123 Main St'), say('Stored.'),
           {
             toolCalls: [{
               id: 'brrrr-2', name: 'brrrr_calculator',
@@ -737,9 +782,8 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           },
           say('Here is the BRRRR.'),
         ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      await chat(app, 'run comps on 123 Main St', 's-brrrr-x');
+      await chat(app, 'use 403k as the ARV for 123 Main St', 's-brrrr-x');
       expect(supabase.compsBlockFor('s-brrrr-x')?.arv).toBe(403000);
       await chat(app, 'run the BRRRR with a 520k ARV', 's-brrrr-x');
 
@@ -758,25 +802,31 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // "run comps on 123 Main" then "run the flip on 456 Oak" must NOT quietly
       // apply 123's ARV to 456. Silently pre-filling here produces a complete,
       // confident analysis of the wrong house.
-      const { app, openai } = buildCompsApp({
+      // RE-POINTED: after the removal this test was passing VACUOUSLY —
+      // run_comps stored nothing, so there was no ARV to leak and the absence
+      // assertions held on an empty store. The bind is manual now, with a
+      // precondition that it happened.
+      const { app, openai, supabase } = buildCompsApp({
         script: [
-          runComps('123 Main St'), say('Comps done.'),
+          setArv(403000, '123 Main St'), say('Stored.'),
           say('Which ARV should I use for 456 Oak Ave?'),
         ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      await chat(app, 'run comps on 123 Main St', 's-mismatch');
+      await chat(app, 'use 403k as the ARV for 123 Main St', 's-mismatch');
+      expect(supabase.compsBlockFor('s-mismatch')?.arv, 'PRECONDITION: nothing bound').toBe(403000);
       const reply = await chat(app, 'run the flip numbers on 456 Oak Ave', 's-mismatch');
 
       const flip = toolResults(openai.calls).find(
         (r) => (r as { calculator?: string }).calculator === 'flip',
       ) as { inputs_used?: Record<string, unknown> } | undefined;
-      if (flip) {
-        expect(
-          flip.inputs_used!.after_repair_value,
-          "123 Main's ARV was applied to a flip the member asked for on 456 Oak",
-        ).not.toBe(403000);
-      }
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "123 Main's ARV was applied to a flip the member asked for on 456 Oak",
+      ).not.toBe(403000);
       expect(reply.output.replace(/[$,\s]/g, ''), "123 Main's ARV was quoted for 456 Oak")
         .not.toContain('403000');
     });
@@ -787,14 +837,26 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
     it('two sessions never see each other\'s ARV', async () => {
       const supabase = makeCompsSupabase({});
 
+      // Re-pointed: Alice binds a MANUAL ARV, since a comps run no longer
+      // stores anything for Bob to inherit. Isolation is if anything more
+      // important now — a manual ARV is a number the member typed, so leaking
+      // it across sessions leaks their input, not just our estimate.
       const appA = buildApp(config, {
-        openai: makeFakeOpenAI([runComps('123 Main St'), say('A done')]).client,
+        openai: makeFakeOpenAI([
+          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
+          say('A done'),
+        ]).client,
         supabase: supabase.client,
-        propertyProvider: makeProviderSpy({ subject: SUBJECT_A, comps: FRESH_COMPS }).provider,
+        propertyProvider: makeProviderSpy({}).provider,
       } as never);
-      await chat(appA, 'run comps on 123 Main St', 'session-alice');
+      await chat(appA, 'use 450k as the ARV', 'session-alice');
 
-      // Bob never ran comps. His flip must not inherit Alice's ARV.
+      // POSITIVE PRECONDITION — with nothing bound to Alice, "Bob did not
+      // inherit it" is true of an empty store.
+      expect(supabase.compsBlockFor('session-alice')?.arv, 'PRECONDITION: nothing bound to Alice')
+        .toBe(450000);
+
+      // Bob never set an ARV. His flip must not inherit Alice's.
       const openaiB = makeFakeOpenAI([runFlip(), say('Numbers.')]);
       const appB = buildApp(config, {
         openai: openaiB.client,
@@ -808,41 +870,56 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       const flip = toolResults(openaiB.calls).find(
         (r) => (r as { calculator?: string }).calculator === 'flip',
       ) as { inputs_used?: Record<string, unknown>; error?: string } | undefined;
-      if (flip?.inputs_used) {
-        expect(flip.inputs_used.after_repair_value, "Alice's ARV reached Bob's calculator")
-          .not.toBe(403000);
-      }
-      expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('403000');
+      // NO GUARD. `?.` yields undefined when the call was refused, and
+      // undefined !== the leaked figure — so this passes on a refusal and
+      // fails on a leak. The old `if (flip?.inputs_used)` wrapper made the
+      // assertion DEAD: the guard refuses every time, so it never ran.
+      expect(
+        flip?.inputs_used?.after_repair_value,
+        "Alice's ARV reached Bob's calculator",
+      ).not.toBe(450000);
+      expect(reply.output.replace(/[$,\s]/g, '')).not.toContain('450000');
       // Alice's own state is untouched by Bob's turn.
-      expect(supabase.compsBlockFor('session-alice')!.arv).toBe(403000);
+      expect(supabase.compsBlockFor('session-alice')!.arv).toBe(450000);
     });
   });
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('set_manual_arv', () => {
-    it('sets arvSource manual and clears the band and confidence', async () => {
+    it('sets arvSource manual, clears the band, and does NOT inherit the old binding', async () => {
+      // RE-POINTED for BUG-011. §8's original rule — subjectAddress "carried
+      // from the existing block" — is superseded by the ruling: a manual ARV
+      // is a FRESH statement, bound to the address in the current message or
+      // to nothing. Inheritance is exactly the mechanism that produced the
+      // 'manual entry' placeholder, so its absence is asserted, not assumed.
       const { app, supabase } = buildCompsApp({
         script: [
-          runComps('123 Main St'), say('Comps done.'),
-          { toolCalls: [{ id: 'm1', name: 'set_manual_arv', args: { arv: 450000 } }] },
-          say('Using your ARV of $450,000.'),
+          setArv(400000, '123 Main St'), say('Stored for 123 Main St.'),
+          setArv(450000), say('Using your ARV of $450,000.'),
         ],
-        provider: { subject: SUBJECT_A, comps: FRESH_COMPS },
       });
-      await chat(app, 'run comps on 123 Main St', 's-manual');
+      await chat(app, 'use 400k as the ARV for 123 Main St', 's-manual');
+      // PRECONDITION — the first statement bound to the real address.
+      expect(supabase.compsBlockFor('s-manual')?.subjectAddress).toContain('123 Main');
+
       await chat(app, 'actually use 450k as the ARV', 's-manual');
 
       const block = supabase.compsBlockFor('s-manual')!;
       expect(block.arv).toBe(450000);
       expect(block.arvSource).toBe('manual');
-      // §8 says these are NULLED, not deleted — the block keeps its shape.
+      // §8: the dead fields are NULLED, not deleted — the block keeps its shape.
       for (const key of MANUAL_NULLED_KEYS) {
         expect(block[key], `${key} was not cleared by set_manual_arv`).toBeNull();
       }
-      expect(block.arvLow, 'a stale band survived a manual ARV').not.toBe(394000);
-      expect(block.arvConfidence, 'a comps confidence tier survived a manual ARV').not.toBe('high');
-      // subjectAddress is carried from the existing block (§8).
-      expect(block.subjectAddress).toContain('123 MAIN');
+      // THE FRESH-STATEMENT RULE. The new message named no property, so the
+      // new block is unbound — null, not the old address, and never the
+      // placeholder. (Member-visible consequence, worth knowing: re-stating a
+      // number without re-stating the address drops the binding, and the echo
+      // stops naming the property.)
+      expect(
+        block.subjectAddress,
+        'the re-stated ARV inherited the previous binding — fresh statements must not',
+      ).toBeNull();
     });
 
     it('rejects non-positive and non-finite values rather than storing them', async () => {
@@ -915,8 +992,12 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
       // The comps must actually have been fetched and rendered — otherwise this
       // is just asserting the server did not crash.
       expect(spy.callCount, 'the provider was never reached').toBeGreaterThan(0);
+      // The discriminator used to be the ARV appearing in the payload ('403').
+      // With no ARV, look for the rendered block itself.
       const comps = toolResults(openai.calls).find(
-        (r) => typeof r === 'string' ? /\$\s?\d/.test(r) : JSON.stringify(r).includes('403'),
+        (r) => typeof r === 'object' && r !== null
+          && typeof (r as { rendered_block?: unknown }).rendered_block === 'string'
+          && (r as { rendered_block: string }).rendered_block.length > 200,
       );
       expect(comps, 'no comps result reached the model despite a write-only failure').toBeDefined();
     });

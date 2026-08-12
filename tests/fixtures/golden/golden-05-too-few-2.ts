@@ -18,6 +18,14 @@
  *
  * ---------------------------------------------------------------------------
  * STEP 1 — hard filters, first-matching reason per CONTRACT §5.3:
+ *   $/sqft for the comps that have one, in the same form as the other
+ *   fixtures so the header table can be checked against the data:
+ *   G5-C1  400,000 / 2,000 = 200
+ *   G5-C2  441,000 / 2,100 = 210
+ *   G5-C4  380,000 / 1,900 = 200
+ *   (G5-C3 has no price, so no $/sqft — it is excluded from the rule-10
+ *   candidate median entirely, not counted as a zero.)
+ *
  *   G5-C1  SOLD, 60 d, 2,000 sqft, 0.069 mi   -> KEPT   ($/sqft 200)
  *   G5-C2  SOLD, 90 d, 2,100 sqft, 0.138 mi   -> KEPT   ($/sqft 210)
  *   G5-C3  status 'FOR_SALE'                  -> NOT_SOLD (rule 1)
@@ -34,16 +42,17 @@
  *   excluded from the median entirely. Median of [200, 200, 210] = 200,
  *   threshold 0.4 × 200 = 80. Neither survivor is anywhere near it.
  *
- * STEP 2 — radius tier. C3 and C4 fail for reasons that have nothing to do with
- *   distance, so widening the search cannot rescue them:
- *     0.5 mi -> 2 kept, 2 < 5, escalate
- *     1.0 mi -> 2 kept, 2 < 5, escalate
- *     2.0 mi -> 2 kept, out of tiers -> use this outcome
- *   radiusTierMi = 2.0
+ * STEP 2 — the LADDER (§14.2). C3 and C4 fail for reasons no rung can cure:
+ *   C3 is unsold at every rung, and C4 at 400 d = 13.14 mo is outside even the
+ *   12-month wall. So every one of the six rungs keeps the same two, the walk
+ *   exhausts, and the LAST rung's outcome is used:
+ *     1.0/3 -> 2   1.0/6 -> 2   1.0/12 -> 2
+ *     3.0/3 -> 2   3.0/6 -> 2   3.0/12 -> 2
+ *   radiusTierMi = 3.0, recencyTierMonths = 12
  *
  * STEP 3 — the gate. 2 < MIN_COMPS_TO_COMPUTE (3).
- *   => { ok: false, code: 'TOO_FEW_COMPS', algoVersion: 1,
- *        detail: { kept: 2, needed: 3, radiusTierMi: 2.0 } }
+ *   => { ok: false, code: 'TOO_FEW_COMPS', algoVersion: 3,
+ *        detail: { kept: 2, needed: 3, radiusTierMi: 3.0 } }
  *
  * WHAT MUST NOT HAPPEN, in order of how badly it ends:
  *   - an ARV of $410,000 from the two survivors
@@ -109,9 +118,10 @@ export const golden05: GoldenCase = {
   expected: {
     ok: false,
     code: 'TOO_FEW_COMPS',
-    detail: { kept: 2, needed: 3, radiusTierMi: 2.0 },
+    detail: { kept: 2, needed: 3, radiusTierMi: 3.0 },
     compsKept: 2,
-    radiusTierMi: 2.0,
+    radiusTierMi: 3.0,
+    recencyTierMonths: 12,
     rejected: [
       { zpid: 'G5-C3', reason: 'NOT_SOLD' },
       { zpid: 'G5-C4', reason: 'STALE_SALE' },
@@ -139,9 +149,10 @@ export const golden05Empty: GoldenCase = {
   expected: {
     ok: false,
     code: 'TOO_FEW_COMPS',
-    detail: { kept: 0, needed: 3, radiusTierMi: 2.0 },
+    detail: { kept: 0, needed: 3, radiusTierMi: 3.0 },
     compsKept: 0,
-    radiusTierMi: 2.0,
+    radiusTierMi: 3.0,
+    recencyTierMonths: 12,
     rejected: [],
   },
   wrongAnswers: [

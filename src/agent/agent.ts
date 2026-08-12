@@ -37,11 +37,23 @@ const MAX_TOOL_ROUNDS = 6;
  * prompt is the BACKUP for behaviour the tool layer already enforces in code:
  * rendered-block relay, the pre-fill echo, and the mismatch ask.
  */
+/**
+ * BUG-014: this section is the ONLY instruction source on turns where no
+ * tool runs (a recall turn calls nothing), so every sentence must be true
+ * of the post-§14.8 world — run_comps produces comparable sales and NO
+ * ARV; every ARV comes from the member. Deleting the stale claims is not
+ * enough: a gap where an instruction was is worse than the wrong
+ * instruction, because the model fills gaps. Each removed claim below is
+ * REPLACED by its true counterpart.
+ */
 function compsPromptSection(hasProvider: boolean): string {
   const manualOnly = `
 
-## ARV for Flip/BRRRR
-- If the member states their own ARV ("use 450k as the ARV"), call set_manual_arv to store it.
+## ARV for Flip/BRRRR — always the member's number
+- Nothing in this system computes an ARV. The ARV used in any calculation comes from the MEMBER:
+  when they state one ("use 450k as the ARV"), call set_manual_arv to store it.
+- If THAT SAME message names the property ("use 450k for 123 Main St"), pass the address too. If it
+  does not, OMIT the address argument entirely — never supply one from earlier in the conversation.
 - A stored ARV pre-fills the Flip and BRRRR calculators; they then only need the remaining inputs.
 - When a tool result carries "arv_prefill", its echo_instruction is MANDATORY: the first line of
   your reply states the ARV used and where it came from, with the override offer. Never present a
@@ -53,21 +65,31 @@ function compsPromptSection(hasProvider: boolean): string {
 
   return `
 
-## Comps and ARV (run_comps)
-- When the member asks to run comps / find comps / estimate ARV and gives a street address, call
-  run_comps with the full address (street, city, state). If the address is partial, ask for the rest
-  first — one question.
+## Comps (run_comps) — comparable sales, not a valuation
+- run_comps returns recent comparable SALES for an address: sold prices, $/sqft, beds/baths, lot
+  size, year built, days on market, property links, and neighborhood context. It does NOT produce
+  an ARV, a value estimate, or any number for the member's own property — never promise it will,
+  and never describe comps as a way to "get the ARV".
+- When the member asks for comparable sales IN ANY PHRASING — "run comps", "run a comparable",
+  "pull comps", "find comps", "show me comparables", "what are similar homes selling for" — or
+  wants market data to help value a property, call run_comps with the full address (street, city,
+  state). The INTENT (comparable sales for an address) is the trigger, never the exact words. If
+  the address is partial, ask for the rest first — one question. If they then want deal numbers
+  run, the ARV is theirs to choose from those comps: ask for their figure and call set_manual_arv.
 - The result contains "rendered_block": relay it VERBATIM. Never re-derive, summarise, or adjust its
   numbers, and NEVER invent a comp, an address, or an ARV yourself. You may add one short coaching
   line after the block.
 - If the lookup fails, the block explains why and offers manual entry — relay it, and if they answer
   with their own number, call set_manual_arv.
-- If the member asks about an address you already ran, call run_comps AGAIN — a repeat address is
-  answered from the cache at no cost, and the member must always receive the full rendered block.
-  NEVER answer a comps request by summarising an earlier result from memory: every ARV the member
-  sees must come from a run_comps result in THIS turn. (Operator ruling: the old "don't re-run"
-  spend guard solved a problem the cache already solves, and it pushed replies outside the
-  rendered-block guarantees.)${manualOnly}`;
+- If the member asks for comps on an address you already ran — AGAIN, IN ANY PHRASING, including
+  "run a comparable for the same address" — call run_comps AGAIN: a repeat address is answered
+  from the cache at no cost, and the member must always receive the full rendered block.
+  NEVER answer a comps request by summarising an earlier result from memory: every comps figure the
+  member sees must come from a run_comps result in THIS turn, and every ARV comes from the member
+  via set_manual_arv — comps never produce one. If asked "what was the ARV?", say plainly that
+  comps don't produce an ARV, and offer to re-run the comps or to use their own figure. (Operator
+  ruling: the old "don't re-run" spend guard solved a problem the cache already solves, and it
+  pushed replies outside the rendered-block guarantees.)${manualOnly}`;
 }
 
 const ASK_WHICH_CALCULATOR = [
@@ -255,9 +277,11 @@ export async function runAgent(
     if (!prefill || !output) return output;
     const digits = output.replace(/[$,\s]/g, '');
     const arvDigits = String(prefill.arv);
-    const addressHead = prefill.subjectAddress.split(',')[0].trim().toUpperCase();
+    // BUG-011: an unbound ARV (subjectAddress null) has no address to echo —
+    // the address requirement is waived, never satisfied by a placeholder.
+    const addressHead = prefill.subjectAddress ? prefill.subjectAddress.split(',')[0].trim().toUpperCase() : null;
     const hasArv = digits.includes(arvDigits);
-    const hasAddress = addressHead.length > 0 && output.toUpperCase().includes(addressHead);
+    const hasAddress = addressHead === null || (addressHead.length > 0 && output.toUpperCase().includes(addressHead));
     const hasOverride = /change arv|override|different arv/i.test(output);
     if (hasArv && hasAddress && hasOverride) return output;
     if (prefill.source === 'override') {
@@ -275,11 +299,22 @@ export async function runAgent(
       }
       // Same property: the member's own number replacing a stored estimate —
       // the echo names BOTH, so a mistaken override is visible immediately.
+      // A null binding (BUG-011) names no property on either side.
+      const storedAt = prefill.subjectAddress ? ` stored for ${prefill.subjectAddress}` : ' you set earlier';
       const replaced =
         prefill.overridden !== undefined
-          ? ` (overriding the $${prefill.overridden.toLocaleString('en-US')} estimate stored for ${prefill.subjectAddress})`
-          : ` for ${prefill.subjectAddress}`;
+          ? ` (overriding the $${prefill.overridden.toLocaleString('en-US')} estimate${storedAt})`
+          : prefill.subjectAddress
+            ? ` for ${prefill.subjectAddress}`
+            : '';
       return `Using YOUR ARV $${prefill.arv.toLocaleString('en-US')}${replaced} — say "change ARV" to switch back or set another.\n\n${output}`;
+    }
+    // BUG-011: unbound manual ARV — no address clause, ever. The old code
+    // rendered the 'manual entry' placeholder here, member-visible.
+    if (prefill.subjectAddress === null) {
+      return (
+        `Using your ARV of $${prefill.arv.toLocaleString('en-US')} — say "change ARV" to override.\n\n` + output
+      );
     }
     const source =
       prefill.source === 'comps'
@@ -366,7 +401,8 @@ interface ToolContext {
   /** Set when a calculator ran on a pre-filled/bound ARV this turn; finish() enforces the echo. */
   lastArvPrefill?: {
     arv: number;
-    subjectAddress: string;
+    /** Null = the ARV is unbound (BUG-011): the echo carries no address clause. */
+    subjectAddress: string | null;
     source: 'comps' | 'manual' | 'override';
     /** For 'override': the stored comps/manual value the member's number replaced. */
     overridden?: number;
@@ -417,7 +453,12 @@ async function applyArvPrefill(
   const store = ctx.comps?.stateStore;
   if (!store || !ctx.comps) return { args };
 
-  const block = await store.getCompsBlock(ctx.comps.sessionId);
+  const stored = await store.getCompsBlock(ctx.comps.sessionId);
+  // MANUAL ARVs ONLY (CONTRACT §14.8). The computed comps ARV is gone; any
+  // block still carrying arvSource 'comps' is a leftover from a cached v2
+  // session and must not pre-fill anything. set_manual_arv is unaffected —
+  // a member's own number still flows through every guard below.
+  const block = stored && stored.arvSource === 'manual' ? stored : null;
 
   const explicit = args.after_repair_value;
   if (explicit !== undefined && explicit !== null) {
@@ -441,10 +482,14 @@ async function applyArvPrefill(
     if (typeof explicit !== 'number' || !Number.isFinite(explicit)) return { args };
 
     if (explicit === block.arv) {
-      if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
+      // BUG-011: the guard compares addresses, so it needs one. An unbound
+      // ARV (subjectAddress null) has nothing to conflict with — it applies
+      // wherever the member takes it, and the echo says so without naming a
+      // property. A BOUND ARV keeps the full A-vs-B refusal.
+      if (block.subjectAddress !== null && addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
         return {
           error:
-            `The ARV ${block.arv} is the one computed for ${block.subjectAddress}, but this message names a ` +
+            `The ARV ${block.arv} is the one stored for ${block.subjectAddress}, but this message names a ` +
             'different property. Do NOT price this deal with it. Ask ONE question: which deal is this — the one ' +
             `at ${block.subjectAddress}, or the new address (offer to run comps on it or take its ARV)?`,
         };
@@ -461,8 +506,13 @@ async function applyArvPrefill(
       // $403k), and state.comps stays bound to the OLD address afterwards.
       // The echo therefore names the property being analysed AND flags that
       // the comps on file belong elsewhere.
-      const newAddress = findConflictingAddress(ctx.userMessage, block.subjectAddress, normalizeAddress);
-      if (newAddress) {
+      // Null binding ⇒ no stale-comps flag is possible: nothing is bound
+      // elsewhere, so a member-stated number is a plain override (BUG-011).
+      const newAddress =
+        block.subjectAddress !== null
+          ? findConflictingAddress(ctx.userMessage, block.subjectAddress, normalizeAddress)
+          : null;
+      if (newAddress && block.subjectAddress !== null) {
         ctx.lastArvPrefill = {
           arv: explicit,
           subjectAddress: newAddress,
@@ -475,18 +525,28 @@ async function applyArvPrefill(
       return { args };
     }
 
+    // BUG-011: the stale-figure refusal is VALUE-based, not address-based —
+    // it fires whether or not the stored ARV is bound. Only the wording
+    // changes when there is no address to name.
+    const storedLabel =
+      block.subjectAddress !== null
+        ? `the stored ARV for ${block.subjectAddress}`
+        : 'the stored manual ARV (not bound to any address)';
     return {
       error:
-        `ARV mismatch: you passed ${explicit}, but the stored ARV for ${block.subjectAddress} is ${block.arv}, ` +
+        `ARV mismatch: you passed ${explicit}, but ${storedLabel} is ${block.arv}, ` +
         `and the member did not state ${explicit} in this message — so that number is likely carried from an ` +
         'earlier deal. Do NOT run the calculator. Ask ONE question: should this deal use the stored ' +
-        `${block.arv} ARV for ${block.subjectAddress}, or a different number (have them state it)?`,
+        `${block.arv} ARV, or a different number (have them state it)?`,
     };
   }
 
   if (!block || !(block.arv > 0)) return { args };
 
-  if (addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
+  // BUG-011: only a BOUND ARV can conflict. subjectAddress null means the
+  // member never named a property for this number — it pre-fills anywhere in
+  // the session, and the echo carries no address clause.
+  if (block.subjectAddress !== null && addressConflict(ctx.userMessage, block.subjectAddress, normalizeAddress)) {
     return {
       error:
         `No ARV was given, and the stored ARV belongs to ${block.subjectAddress} while this message names a ` +
@@ -496,6 +556,11 @@ async function applyArvPrefill(
   }
 
   ctx.lastArvPrefill = { arv: block.arv, subjectAddress: block.subjectAddress, source: block.arvSource };
+  const exampleEcho =
+    block.subjectAddress === null
+      ? `"Using your ARV of $${block.arv.toLocaleString('en-US')} — say 'change ARV' to override."`
+      : `"using ARV $${block.arv.toLocaleString('en-US')} from ${block.arvSource === 'comps' ? 'the comps on' : 'your manual entry for'} ` +
+        `${block.subjectAddress} — say 'change ARV' to override."`;
   return {
     args: { ...args, after_repair_value: block.arv },
     prefill: {
@@ -503,9 +568,9 @@ async function applyArvPrefill(
       arv_source: block.arvSource,
       subject_address: block.subjectAddress,
       echo_instruction:
-        `REQUIRED: your reply's first line must state the pre-fill, e.g. "using ARV ` +
-        `$${block.arv.toLocaleString('en-US')} from ${block.arvSource === 'comps' ? 'the comps on' : 'your manual entry for'} ` +
-        `${block.subjectAddress} — say 'change ARV' to override." Never present a pre-filled ARV as if the member typed it.`,
+        `REQUIRED: your reply's first line must state the pre-fill, e.g. ${exampleEcho} ` +
+        'Never present a pre-filled ARV as if the member typed it' +
+        (block.subjectAddress === null ? ', and never attach it to a property address — none is bound.' : '.'),
     },
   };
 }
@@ -536,7 +601,9 @@ async function executeTool(
     }
     case 'set_manual_arv': {
       if (!ctx.comps) return { error: 'Comps state is not configured on this deployment.' };
-      return setManualArvToolHandler(args, ctx.comps);
+      // BUG-011: the handler binds a model-supplied address against the
+      // member's CURRENT message — threaded here, not trusted from the args.
+      return setManualArvToolHandler(args, { ...ctx.comps, userMessage: ctx.userMessage });
     }
     case 'request_calculator_form': {
       const calculator = args.calculator;
@@ -564,7 +631,10 @@ async function executeTool(
       return {
         // Address only, never the value: the binding is worth mentioning in
         // the one-liner; the number must come from the form, not the model.
-        ...(arvPrefill ? { arv_prefilled_from: arvPrefill.subjectAddress } : {}),
+        // Null binding (BUG-011) ⇒ name the source, never a placeholder.
+        ...(arvPrefill
+          ? { arv_prefilled_from: arvPrefill.subjectAddress ?? 'your manual ARV (not bound to an address)' }
+          : {}),
         form_rendered: true,
         // Named form_calculator, NOT `calculator`: that key is the calculator
         // RESULT discriminator (runFlipTool et al.), and a form directive

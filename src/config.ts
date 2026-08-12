@@ -18,8 +18,17 @@ export interface AppConfig {
    * lookup the backend cannot perform.
    */
   apifyToken?: string;
-  /** Daily cap on PROVIDER runs (cache hits are free) — the spend guard on the client's Apify quota. */
+  /** Daily cap on Apify-touching LOOKUPS (cache hits are free) — the spend guard on the client's quota. */
   compsDailyRunCap: number;
+  /**
+   * US Census API key for the demographics section (CONTRACT §14.10).
+   * OPTIONAL, same gating pattern as apifyToken: absent ⇒ demographics are
+   * never attempted and NO section renders (an unconfigured feature is not a
+   * failure). The key is free (api.census.gov/data/key_signup.html) — the
+   * API stopped serving keyless requests (verified 2026-08-10: 302 to a
+   * "Missing Key" page on every vintage).
+   */
+  censusApiKey?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -43,6 +52,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableDemoPage: env.ENABLE_DEMO_PAGE === 'true' || env.NODE_ENV !== 'production',
     ...(env.APIFY_TOKEN ? { apifyToken: env.APIFY_TOKEN } : {}),
     compsDailyRunCap: Number(env.COMPS_DAILY_RUN_CAP ?? 50),
+    ...(env.CENSUS_API_KEY ? { censusApiKey: env.CENSUS_API_KEY } : {}),
   };
 }
 

@@ -17,6 +17,9 @@ import { logExchange } from './logging.js';
 import type { PropertyDataProvider } from '../features/comps/providers/types.js';
 import { ApifyZillowProvider } from '../features/comps/providers/apifyZillow.js';
 import { createCompsCache } from '../features/comps/cache/compsCache.js';
+import { createDetailCache, type DetailCacheLike } from '../features/comps/cache/detailCache.js';
+import { createCensusCache, type CensusCacheLike } from '../features/comps/cache/censusCache.js';
+import { CensusAcsProvider, type DemographicsProviderLike } from '../features/comps/providers/census.js';
 import { createDailyRunBudget, type CompsCacheLike, type RunBudgetLike } from '../features/comps/service.js';
 import { createSessionStateStore } from '../features/comps/sessionState.js';
 import type { SessionStateStore } from '../features/comps/tools.js';
@@ -48,6 +51,8 @@ export interface AppDeps {
    * scope, so importing the app can never touch the network.
    */
   propertyProvider?: PropertyDataProvider;
+  /** Census demographics provider (§14.10) — same seam pattern; tests inject a fake, production builds from CENSUS_API_KEY. */
+  censusProvider?: DemographicsProviderLike;
 }
 
 /**
@@ -84,6 +89,15 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       : undefined);
   let compsCache: CompsCacheLike | undefined;
   const getCompsCache = () => (compsCache ??= createCompsCache(getSupabase()));
+  let detailCache: DetailCacheLike | undefined;
+  const getDetailCache = () => (detailCache ??= createDetailCache(getSupabase()));
+  // Same gate pattern as the Apify token (§14.10): no CENSUS_API_KEY ⇒ no
+  // provider ⇒ demographics never attempted and no section rendered.
+  let censusProvider = deps.censusProvider;
+  const getCensusProvider = (): DemographicsProviderLike | undefined =>
+    (censusProvider ??= config.censusApiKey ? new CensusAcsProvider(config.censusApiKey) : undefined);
+  let censusCache: CensusCacheLike | undefined;
+  const getCensusCache = () => (censusCache ??= createCensusCache(getSupabase()));
   let sessionStateStore: SessionStateStore | undefined;
   const getSessionStateStore = () => (sessionStateStore ??= createSessionStateStore(getSupabase()));
   // One budget per app instance: the daily Apify spend cap. In-memory (resets
@@ -279,6 +293,9 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
           sessionId: session_id,
           provider: getPropertyProvider(),
           cache: getCompsCache(),
+          detailCache: getDetailCache(),
+          censusProvider: getCensusProvider(),
+          censusCache: getCensusCache(),
           budget: compsBudget,
           stateStore: getSessionStateStore(),
           logger: request.log,

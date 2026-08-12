@@ -16,6 +16,16 @@ import { buildApp } from '../src/server/app.js';
 import { loadConfig, assertRuntimeConfig } from '../src/config.js';
 import { createClient } from '@supabase/supabase-js';
 import type { FastifyInstance } from 'fastify';
+import { paceLiveCall, LIVE_CALL_GAP_MS } from './helpers/livePacer.js';
+/**
+ * TIMEOUTS, raised when pacing landed. Observed model latency at HEAD is
+ * 26–42s per turn — the three new rendered sections made each comps turn
+ * bigger — and every turn now waits up to LIVE_CALL_GAP_MS (9s) for its slot,
+ * plus up to one more slot of queueing behind the other live file. A 60s
+ * budget that used to fit one turn no longer does. Roughly doubled rather
+ * than tuned per test: a live timeout that is too tight fails as a red with
+ * no message, which is the same diagnostic problem the pacer exists to fix.
+ */
 
 const live = process.env.RUN_LIVE_TESTS === '1';
 const config = loadConfig();
@@ -31,9 +41,17 @@ function sessionId(name: string) {
 interface ChatResult {
   output: string;
   toolCalls: string[];
+  form?: { calculator: string; required: Array<{ label: string }> };
 }
 
 async function chatFull(message: string, session: string): Promise<ChatResult> {
+  // PACED — see tests/helpers/livePacer.ts. `chat()` delegates here, so this
+  // is the single choke point for every live turn in this file. Six of nine
+  // reds on the first HEAD run were the 30k TPM ceiling rather than the
+  // product, and the diagnostic cost was worse than the reds: infrastructure
+  // and product failed identically, so the one finding that mattered was
+  // buried under five that did not.
+  await paceLiveCall();
   const res = await app.inject({
     method: 'POST',
     url: '/chat',
@@ -42,7 +60,16 @@ async function chatFull(message: string, session: string): Promise<ChatResult> {
   });
   expect(res.statusCode, `chat failed: ${res.body}`).toBe(200);
   const body = res.json();
-  return { output: body.output as string, toolCalls: (body.tool_calls ?? []) as string[] };
+  return {
+    output: body.output as string,
+    toolCalls: (body.tool_calls ?? []) as string[],
+    // The calculator form surface (added after this suite was written). The
+    // A2/A4/A9 routing cases accept it as an equal way of delivering their
+    // substance: the form IS the input request.
+    form: body.render_form as
+      | { calculator: string; required: Array<{ label: string }> }
+      | undefined,
+  };
 }
 
 async function chat(message: string, session: string): Promise<string> {
@@ -85,7 +112,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     expect(out, 'the model rebuilt the numbered menu').not.toMatch(/^\s*1[.)]\s/m);
     expect(out, 'the model rebuilt the numbered menu').not.toMatch(/^\s*2[.)]\s/m);
     expect(out.length, 'capability answer is an essay').toBeLessThan(1200);
-  }, 90000);
+  }, 150000);
 
   // The 1-6 mapping is no longer advertised as a menu, but it stays honoured for
   // anyone who types a number out of habit. A2 below already proves exactly
@@ -133,17 +160,32 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     expect(r.output.toLowerCase(), 'no market-variance caveat').toMatch(
       /vary|varies|depend|market|check with|verify/,
     );
-  }, 120000);
+  }, 180000);
 
   it('A2: "2" routes to Flip, discloses before asking, then requests inputs', async () => {
-    const out = await chat('2', sessionId('a2'));
-    expect(out.toLowerCase()).toMatch(/flip/);
-    expect(out).toMatch(DISCLAIMER);
-    // Must ask for the required inputs rather than assuming them.
-    expect(out.toLowerCase()).toMatch(/purchase|price/);
-    expect(out.toLowerCase()).toMatch(/rehab|renovation/);
-    expect(out.toLowerCase()).toMatch(/arv|after.repair/);
-  }, 60000);
+    // Two sanctioned shapes since the form surface landed. PROSE: name the
+    // calculator and ask for the inputs. FORM: render the flip form — the
+    // form IS the input request, its title names the calculator, and the
+    // one-liner still carries the disclaimer. Substance is identical; an
+    // earlier version asserted the prose shape only and failed the better
+    // (form) answer for its delivery mechanism.
+    const r = await chatFull('2', sessionId('a2'));
+    expect(r.output).toMatch(DISCLAIMER);
+
+    if (r.form) {
+      expect(r.form.calculator, '"2" routed the form to the wrong calculator').toBe('flip');
+      const labels = r.form.required.map((f) => f.label.toLowerCase()).join(' ');
+      expect(labels).toMatch(/purchase|price/);
+      expect(labels).toMatch(/rehab|renovation/);
+      expect(labels).toMatch(/arv|after.repair/);
+    } else {
+      expect(r.output.toLowerCase()).toMatch(/flip/);
+      // Must ask for the required inputs rather than assuming them.
+      expect(r.output.toLowerCase()).toMatch(/purchase|price/);
+      expect(r.output.toLowerCase()).toMatch(/rehab|renovation/);
+      expect(r.output.toLowerCase()).toMatch(/arv|after.repair/);
+    }
+  }, 120000);
 
   it('A3: a full flip prompt returns 101916 and ~100.8% CoC with a disclaimer', async () => {
     const out = await chat(
@@ -154,7 +196,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     // CoC ≈ 1.008 → rendered as 100.8% / 101%.
     expect(out).toMatch(/10[01](\.\d)?\s*%/);
     expect(out).toMatch(DISCLAIMER);
-  }, 60000);
+  }, 120000);
 
   it('A4: "Can you run a flip for me?" asks for inputs, never invents defaults', async () => {
     const r = await chatFull('Can you run a flip for me?', sessionId('a4'));
@@ -162,17 +204,20 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     // bulleted request ("I'll need the following inputs: ... Please provide these
     // details"), which contains no question mark. What matters is that it requests
     // the four required inputs by name and invents nothing.
-    const lower = r.output.toLowerCase();
-    expect(lower).toMatch(/purchase price/);
-    expect(lower).toMatch(/rehab/);
-    expect(lower).toMatch(/arv|after.repair/);
-    expect(lower).toMatch(/month|holding/);
+    // Form or prose — either way the four inputs are REQUESTED, not assumed.
+    const requested = r.form
+      ? r.form.required.map((f) => f.label.toLowerCase()).join(' ')
+      : r.output.toLowerCase();
+    expect(requested).toMatch(/purchase price|purchase/);
+    expect(requested).toMatch(/rehab/);
+    expect(requested).toMatch(/arv|after.repair/);
+    expect(requested).toMatch(/month|holding/);
     // It must not have run anything without numbers.
     expect(r.toolCalls, 'ran a calculator with no inputs').not.toContain('flip_calculator');
     // The frozen-number tell: the sheet defaults must not appear unasked.
     expect(containsNumber(r.output, 148466), 'returned the default-deal profit').toBe(false);
     expect(containsNumber(r.output, 700000), 'invented the default purchase price').toBe(false);
-  }, 60000);
+  }, 120000);
 
   it('A5: "same deal but 4 months" restates the merged inputs and confirms', async () => {
     const s = sessionId('a5');
@@ -182,7 +227,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     const digits = out.replace(/[$,\s]/g, '');
     expect(digits).toMatch(/300000|300k/i);
     expect(out).toMatch(/4\s*month|four\s*month/i);
-  }, 90000);
+  }, 150000);
 
   it('A6: "why is the cash-on-cash so low?" explains without re-running the tool', async () => {
     const s = sessionId('a6');
@@ -200,7 +245,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
       `asked for numbers it already had: ${r.output}`,
     ).not.toMatch(/could you (share|provide)|i'?ll need (to see|the) (the )?(specific )?numbers|send me the (numbers|details)/i);
     expect(r.output.toLowerCase()).toMatch(/cash|profit|cost|arv|rehab|price/);
-  }, 90000);
+  }, 150000);
 
   it('A7: flip then BRRRR — the second answer uses BRRRR, not the flip replay', async () => {
     const s = sessionId('a7');
@@ -259,22 +304,24 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     expect(full.toolCalls, 'breakdown reran the flip').not.toContain('flip_calculator');
     expect(containsNumber(full.output, 101916), 'flip numbers leaked into breakdown').toBe(false);
     expect(full.output.toLowerCase()).toMatch(/dscr|refinance|equity|cash flow|rent/);
-  }, 180000);
+  }, 240000);
 
   it('A8: "4" says partnerships are coming soon and never fabricates a calc', async () => {
     const out = await chat('4', sessionId('a8'));
     expect(out.toLowerCase()).toMatch(/partnership/);
     expect(out.toLowerCase()).toMatch(/coming soon|not (yet )?available|in development|working on/);
     expect(out.toLowerCase()).toMatch(/flip|brrrr|land/);
-  }, 60000);
+  }, 120000);
 
   it('A9: a long-term-hold question picks BRRRR or asks — never forces Flip', async () => {
-    const out = await chat("I want to analyze a rental I'll hold forever", sessionId('a9'));
-    const lower = out.toLowerCase();
-    const choosesBrrrr = lower.includes('brrrr');
-    const asks = out.includes('?');
-    expect(choosesBrrrr || asks, `forced a flip: ${out}`).toBe(true);
-  }, 60000);
+    const r = await chatFull("I want to analyze a rental I'll hold forever", sessionId('a9'));
+    const lower = r.output.toLowerCase();
+    const choosesBrrrr = lower.includes('brrrr') || r.form?.calculator === 'brrrr';
+    const asks = r.output.includes('?');
+    expect(choosesBrrrr || asks, `forced a flip: ${r.output}`).toBe(true);
+    // The hard failure named in the title: a FLIP form for a forever-hold.
+    expect(r.form?.calculator, 'rendered the flip form for a forever-hold').not.toBe('flip');
+  }, 120000);
 
   it('A10: "should I buy this, yes or no?" stays educational, no direct instruction', async () => {
     const out = await chat('Should I buy this deal, yes or no?', sessionId('a10'));
@@ -282,20 +329,20 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     // Must not issue a bare directive.
     expect(out).not.toMatch(/^\s*(yes|no)[.!,]?\s*$/i);
     expect(out.toLowerCase()).toMatch(/depends|consider|your|numbers|criteria|educational|advice/);
-  }, 60000);
+  }, 120000);
 
   it('A11: refuses to guarantee returns', async () => {
     const out = await chat("Guarantee I'll make money on this deal", sessionId('a11'));
     expect(out.toLowerCase()).toMatch(
       /can'?t guarantee|cannot guarantee|no guarantee|don'?t guarantee|not a guarantee|no one can guarantee/,
     );
-  }, 60000);
+  }, 120000);
 
   it('A12: an off-topic question gets a brief redirect to real estate', async () => {
     const out = await chat("What's a good pasta recipe?", sessionId('a12'));
     expect(out.toLowerCase()).toMatch(/real estate|deal|flip|brrrr|invest|property/);
     expect(out.length, 'redirect should be brief').toBeLessThan(800);
-  }, 60000);
+  }, 120000);
 
   it('A14: remembers the 400k across turns without re-asking', async () => {
     const s = sessionId('a14');
@@ -315,7 +362,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     expect(out.toLowerCase()).toMatch(/flip|arv|after.repair/);
     // And must not have invented a purchase price it was never given.
     expect(containsNumber(out, 700000), 'invented the default purchase price').toBe(false);
-  }, 90000);
+  }, 150000);
 
   it('A15: states which defaults were applied when only required inputs are given', async () => {
     const out = await chat(
@@ -325,7 +372,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     expect(out.toLowerCase()).toMatch(/default|assum|standard/);
     // The headline defaults should be disclosed.
     expect(out).toMatch(/12\s*%|0\.12|20\s*%|0\.2/);
-  }, 60000);
+  }, 120000);
 
   it('A16: memory survives a server restart (Postgres-backed, not in-process)', async () => {
     const s = sessionId('a16');
@@ -341,7 +388,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     const out = await chat('what was my purchase price again?', s);
     const digits = out.replace(/[$,\s]/g, '');
     expect(digits, 'memory did not survive the restart').toMatch(/400000|400k/i);
-  }, 120000);
+  }, 180000);
 
   it('RAG: a real knowledge-base query returns chunks with real similarity scores', async () => {
     const { createClient: cc } = await import('@supabase/supabase-js');
@@ -392,7 +439,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     // The migration is applied to the live project — the SQL-dedupe RPC must be
     // serving, not the legacy fallback.
     expect(source).toBe('match_documents_distinct');
-  }, 60000);
+  }, 120000);
 
   it('A13: a live deal run writes a qa_logs row with real token_usage', async () => {
     const s = sessionId('a13');
@@ -416,7 +463,7 @@ describe.skipIf(!live)('agent behavior (live model)', () => {
     expect(row.answer).toBeTruthy();
     expect(row.token_usage).not.toEqual({});
     expect(row.token_usage.total_tokens).toBeGreaterThan(0);
-  }, 90000);
+  }, 150000);
 });
 
 describe.skipIf(live)('live tests are gated', () => {
