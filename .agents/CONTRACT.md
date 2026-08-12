@@ -673,10 +673,12 @@ degrades to comps-without-detail — never `RATE_LIMITED`.
   skipped entirely below `DETAIL_MIN_REMAINING_MS = 20_000` (spike measured
   ~16s for a batch of 5 — starting with less mostly buys a timeout we still
   paid for).
-- **NO retry on the detail batch** — a pinned DEVIATION from the §6 seam
-  policy (one retry on transient): detail is decoration; a retry doubles
-  the bill for it and eats the ceiling. The em-dash degradation IS the
-  retry. Subject/search retry behaviour is unchanged.
+- ~~**NO retry on the detail batch**~~ — **SUPERSEDED by §14.14.2**
+  (operator ruling 2026-08-12, after the Daffodil 0/5 incident): the
+  batch now takes ONE bounded retry on transient throw or empty/short
+  result, backoff explicit, ceiling still respected. The original
+  rationale (decoration must not eat the ceiling) survives inside the
+  new rule's headroom guard. Subject/search retry behaviour unchanged.
 - **Render** (§14.5 extension): one added per-comp line, label-first —
   `year built <v> · days on market <v> · parking spaces <v>` — em-dash per
   §14.5 for any missing value or a wholly missing detail. Em-dash marker
@@ -692,6 +694,68 @@ degrades to comps-without-detail — never `RATE_LIMITED`.
 - **Failure posture**: every enrichment failure (cache read, cache write,
   batch error, ceiling, budget) degrades to comps-without-detail; a detail
   problem can never turn a working comps run into a failure (rule 3).
+
+### 14.14.2 Enrichment reliability (operator ruling 2026-08-12; SUPERSEDES the §14.14.1 no-retry pin)
+
+**The incident (register number PENDING from INSPECTOR — the operator's
+slice label "BUG-014" collides with the canonical BUG-014, the ARV
+recall-phrasing bug fixed at 0047; standing §12.5 rule applies, both
+labels recorded).** Two consecutive live runs on 1646 N Daffodil St
+(2026-08-12): run 1 served 0/5 enrichment (em-dash details, DOM line
+"across 0 of the 5"), run 2 served 5/5 with DOM 51. Forensics from the
+durable stores, cited:
+
+- `comps_cache` row (key `…DAFFODIL…`) created **13:54:27Z** — run 1's
+  live-path write, BEFORE enrichment;
+- `qa_logs` run 1 turn end **13:54:35Z** — ~8s after the write, far
+  under a measured ~16s successful batch, so run 1's batch either never
+  started or failed near-instantly;
+- ALL FIVE `comps_detail_cache` rows for the kept zpids created
+  **13:55:39Z** — inside run 2 (turn end 13:55:47Z): run 1 cached
+  nothing; run 2's live batch bought everything.
+
+**Discrimination, honest about its limit:** the zpid/address JOIN is
+EXCLUDED (run 2 joined 5/5 on identical inputs 72s later); BUDGET
+denial is excluded (live path pre-consumes the unit). The remaining
+candidates are the CEILING SKIP (remaining < DETAIL_MIN_REMAINING_MS
+at enrichment start — slow actors that minute) or an instant transient
+HTTP failure. Both logged only to a stdout nobody keeps, and the Apify
+run ledger is closed to this token (403, same scope finding as §14.14
+rule 7) — which is precisely the observability gap this section closes:
+the next occurrence carries its cause in a WARN.
+
+**Ruled, binding:**
+
+1. **Bounded retry on the detail batch — the §14.14.1 "NO retry" pin is
+   SUPERSEDED.** Retry conditions: the batch call THROWS transient
+   (timeout / 5xx / network — never 4xx), or returns **EMPTY or SHORT**
+   (fewer TOTAL items than addresses requested — the actor dropped
+   work). `DETAIL_BATCH_MAX_RETRIES = 1`, after an explicit
+   `DETAIL_RETRY_BACKOFF_MS = 2_000` backoff, and ONLY while remaining
+   pipeline headroom still clears `DETAIL_MIN_REMAINING_MS` — the
+   retry never eats the ceiling. **A complete batch containing
+   `isValid: false` items is an ANSWER, not a short batch** (rule 3's
+   partial-failure semantics stand): retrying it would re-bill for
+   addresses Zillow already said are invalid.
+2. **Coverage is logged on every served comps result**: INFO
+   `{ covered, total }` always; **WARN when covered = 0 and total > 0 —
+   a 0/N can never again be silent.** The ceiling skip upgrades from
+   info to WARN (it produces a 0/N) and carries `remainingMs`.
+3. **No swallowed exceptions on the enrichment path** — every catch
+   logs WARN with the error class and message plus `cacheKey`. (Already
+   the shipped behaviour; pinned now as a guarantee so a refactor
+   cannot quietly demote it.)
+4. **Battery policy (INSPECTOR derives the assertion from HERE):**
+   served comps with **0/N enrichment coverage FAIL the live battery**;
+   partial coverage (0 < c < N) WARNS and passes with the ratio
+   reported. Observable from the render alone — the DOM line's
+   load-bearing "across N of the M" count and the em-dash detail
+   lines — so the battery needs no new field.
+5. **Degraded results are NOT cached — standing architecture,
+   re-affirmed by the incident itself**: the comps result is stored
+   DETAIL-FREE (§14.14.1) and enrichment re-attaches per serve, which
+   is exactly why run 2 self-healed from run 1's row. A 0/N serve can
+   never be frozen into the cache by construction.
 
 ### 14.15 BUG-011 — manual ARV address binding (operator ruling)
 
