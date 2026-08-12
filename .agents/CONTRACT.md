@@ -991,6 +991,55 @@ parametrized across phrasings — a fix verified against the one wording
 that already worked is unverified. (INSPECTOR parametrizes the recall
 case; the principle applies to every prompt-enforced rule.)
 
+### 14.21 Thin-market disclosure (RULING 2, approved as proposed; ALGO_VERSION 8)
+
+**Composite trigger, both signals structural, no tuned thresholds:**
+served `radiusTierMi > NEIGHBORHOOD_RADIUS_MI` (1 mi) **AND**
+`nearInBandSameTypeSales < MIN_COMPS_TO_COMPUTE` (3). The second is a NEW
+REQUIRED field on `CompsResult`: the deduped count of SOLD, in-sqft-band,
+same-mapped-type sales within 1 mile and 12 months, computed over the
+UNION pool in `computeFromRaw`. Ratio is NEVER the trigger (0.31 band on
+two observations does not survive a third market; ppsf dispersion is
+regime-dependent) — it appears in the copy as a quoted fact only.
+
+**Serve-with-disclosure, not refusal.** Operator constraints, pinned:
+- **The comp set is BYTE-IDENTICAL with and without the disclosure** — no
+  re-ranking, no scoring change, no refusal. It is a line of copy and
+  nothing else.
+- **Guarantee 4**: the block carries what a member needs — the 1-mile
+  count, the actual radius served, median distance of the kept set, and
+  the ppsf range as quoted fact. If the trigger holds and the block cannot
+  render, that is a BUG, not a degradation — silence must not read as
+  endorsement. The field is REQUIRED on the type so a result without it
+  cannot exist; ALGO_VERSION 8 recomputes cached rows into the new shape.
+- Placement: directly AFTER the comps table, before the neighbourhood
+  block; §14.5 em-dash exclusivity holds; no ARV.
+
+Verification rows (operator-named): **Mesquite triggers** (3mi served, 2
+near in-band same-type — both in the subject's own complex), **Grandview
+must not** (1mi/3mo, five), **Don Frank is the rural control** (1mi serve
+⇒ signal 1 already holds it silent).
+
+### 14.22 The multi-unit ask (RULING 1; live path only)
+
+The Mesquite anatomy: a bare multi-unit address ("700 E Mesquite Cir")
+resolves silently to ONE unit of the complex (zpid 7584173, 804 sqft),
+while the member expected another (7584180, 934 sqft). **Ruling: ASK.**
+
+- **Detection (live path, after pool acquisition, before compute)**: the
+  member's RAW input has no unit designator (`hasUnitDesignator` false —
+  conservative, bare trailing numbers excluded) AND the union pool holds
+  ≥1 card with a DIFFERENT zpid, the SAME normalized street part, and a
+  unit designator in its address — evidence the address is a multi-unit
+  building.
+- **Outcome**: `ADDRESS_NOT_FOUND` with `resolution: 'unit_mismatch',
+  inputHasUnit: false` — the EXISTING §10 ask copy ("try including the
+  unit number… otherwise tell me your ARV") is the ruled ask; no new copy.
+- **Live path only, deliberately**: recompute-from-raw has no raw input
+  string (normalization strips `#`), so detection there would
+  false-positive on members who DID type a unit. Cached successes serve
+  until their 14-day TTL; new lookups get the ask.
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live
