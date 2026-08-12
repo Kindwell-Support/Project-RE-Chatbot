@@ -341,6 +341,16 @@ export function makeCompsSupabase(options: CompsSupabaseOptions = {}): CompsSupa
   const inserts: Array<{ table: string; payload: unknown }> = [];
   const counters = { stateReads: 0, cacheReads: 0, seq: 0 };
   const history = options.history ?? [];
+  /**
+   * FINDING-014, and this is the copy that MATTERS: the live battery builds on
+   * makeCompsSupabase, not on fakes.ts's makeFakeSupabase. Both carried the
+   * same defect — appendExchange's rows were recorded and discarded, so the
+   * second turn of any session read EMPTY history and the model was asked to
+   * remember a conversation it had never seen. Fixing only the other one is
+   * exactly the near-miss worth writing down: the fix was real and reached
+   * nothing the live cases exercise.
+   */
+  const appended: Record<string, Array<{ role: string; content: string }>> = {};
 
   /** Pull `session_id` / `cache_key` out of whatever .eq() chain was built. */
   interface Filters { [column: string]: unknown }
@@ -363,7 +373,15 @@ export function makeCompsSupabase(options: CompsSupabaseOptions = {}): CompsSupa
     let pendingRows: unknown[] | null = null;
 
     const rowsForTable = (): unknown[] => {
-      if (table === 'chat_messages') return [...history].reverse();
+      if (table === 'chat_messages') {
+        const id = filters.session_id as string | undefined;
+        const turns = id === undefined
+          ? Object.values(appended).flat()
+          : appended[id] ?? [];
+        // Scoped by session: flattening every conversation would leak one
+        // into another, which is a worse failure than the empty history.
+        return [...history, ...turns].reverse();
+      }
       if (table === 'session_state') {
         counters.stateReads++;
         if (options.failStateReads) throw new Error('session_state read failed');
@@ -431,6 +449,17 @@ export function makeCompsSupabase(options: CompsSupabaseOptions = {}): CompsSupa
         return Promise.resolve({ data: null, error: null });
       }
       inserts.push({ table, payload });
+      if (table === 'chat_messages') {
+        for (const row of (Array.isArray(payload) ? payload : [payload]) as Array<
+          Record<string, unknown>
+        >) {
+          const id = String(row?.session_id ?? '');
+          if (!id || (row?.role !== 'user' && row?.role !== 'assistant')) continue;
+          (appended[id] ??= []).push({
+            role: String(row.role), content: String(row.content ?? ''),
+          });
+        }
+      }
       return Promise.resolve({ data: null, error: null });
     };
 

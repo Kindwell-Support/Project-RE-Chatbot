@@ -6,7 +6,7 @@
  *
  * THE RULING. Null beds/baths still score 0 — unknown is not a penalty, and
  * that stays true. But ORDERING adds a shadow term: a comp pays
- * COMPLETENESS_TIEBREAK_PER_FIELD per undisclosed bed/bath field, so within
+ * MARGIN per undisclosed bed/bath field, so within
  * the margin disclosure beats silence, and beyond it the better score still
  * wins.
  *
@@ -31,7 +31,6 @@ import { pendingSlice, sliceNote } from '../helpers/compsGate.js';
 import { scoreComp, rankComps, orderingKey, effectiveWeights } from '../../src/features/comps/rank.js';
 import { applyHardFilters } from '../../src/features/comps/filter.js';
 import {
-  COMPLETENESS_TIEBREAK_PER_FIELD,
   WEIGHT_BEDBATH,
   MAX_BED_DIFF,
   MAX_BATH_DIFF,
@@ -40,6 +39,17 @@ import {
 import type { RawComp, SubjectProperty } from '../../src/features/comps/types.js';
 
 const MODS = ['rank', 'config'] as const;
+
+/**
+ * The margin, derived here the way CONTRACT §14.20 now derives it — per
+ * SUBJECT TYPE, since FINDING-013's second half moved it off the raw
+ * WEIGHT_BEDBATH constant and onto effectiveWeights. Recomputed in the test
+ * rather than imported: importing MASON's number would make every assertion
+ * below agree with the implementation by construction.
+ */
+const marginFor = (type: SubjectProperty['propertyType']) =>
+  effectiveWeights(type).bedbath / 2;
+const MARGIN = marginFor('SFR');
 
 const NOW = new Date('2025-07-15T00:00:00.000Z');
 const MI_PER_DEG_LAT = (EARTH_RADIUS_MI * Math.PI) / 180;
@@ -135,12 +145,12 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
         worst,
         'a single undisclosed field can hide MORE than the margin, so a ' +
           'concealing comp can still outrank a discloser it should lose to',
-      ).toBeLessThanOrEqual(COMPLETENESS_TIEBREAK_PER_FIELD);
+      ).toBeLessThanOrEqual(MARGIN);
       expect(
         worst,
         'no admissible comp reaches the margin — 5 over-penalises every ' +
           'concealer and the number is not derived from anything reachable',
-      ).toBe(COMPLETENESS_TIEBREAK_PER_FIELD);
+      ).toBe(MARGIN);
     });
 
     it('the margin matches the EFFECTIVE bedbath weight on BOTH subject branches', () => {
@@ -157,13 +167,21 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
       // the tie-breaker wrong for CONDO/TOWNHOUSE subjects and right for SFR
       // — a divergence with no symptom, since both still return five comps.
       for (const type of ['SFR', 'CONDO', 'TOWNHOUSE'] as const) {
+        // FIXED at 0daf2d4: the margin now derives from effectiveWeights, so
+        // this asserts the two stay in step per BRANCH rather than that a
+        // single global constant happens to match. The raw constant is still
+        // checked against the SFR branch, because if those ever diverge the
+        // §14.20 derivation prose is describing a number nothing uses.
         expect(
-          effectiveWeights(type).bedbath / 2,
-          `${type}: the concealment margin no longer equals half the bedbath ` +
-            'weight actually used to score this subject type. The margin is ' +
-            'derived from WEIGHT_BEDBATH directly, so a branch-specific ' +
-            're-weighting silently decouples them.',
-        ).toBe(COMPLETENESS_TIEBREAK_PER_FIELD);
+          marginFor(type),
+          `${type}: the margin is not half the bedbath weight used to score ` +
+            'this subject type',
+        ).toBe(effectiveWeights(type).bedbath / 2);
+        expect(
+          marginFor('SFR'),
+          'the SFR margin no longer matches WEIGHT_BEDBATH / 2, so §14.20 ' +
+            'documents a derivation nothing computes',
+        ).toBe(WEIGHT_BEDBATH / 2);
       }
     });
 
@@ -182,7 +200,7 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
         'two concealed fields hide less than 2 x the margin — the tie-break ' +
           'over-credits the second field and a double-concealer is demoted ' +
           'further than it ever gained',
-      ).toBe(2 * COMPLETENESS_TIEBREAK_PER_FIELD);
+      ).toBe(2 * MARGIN);
     });
   });
 
@@ -205,9 +223,9 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
         scored.parts.bedbath + scored.parts.lot,
       );
       expect(
-        orderingKey(scored) - scored.score,
+        orderingKey(scored, SUBJECT) - scored.score,
         'the ordering key does not carry exactly one field of demotion',
-      ).toBe(COMPLETENESS_TIEBREAK_PER_FIELD);
+      ).toBe(MARGIN);
     });
 
     it('a ranked comp reports the SAME score it would have scored alone', () => {
@@ -260,7 +278,7 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
           scored[id] - scored.CONCEAL,
           `precondition: the gap to ${id} exceeds the margin, so the ` +
             'tie-breaker could not move it and the case is vacuous',
-        ).toBeLessThan(COMPLETENESS_TIEBREAK_PER_FIELD);
+        ).toBeLessThan(MARGIN);
       }
       expect(order().indexOf('CONCEAL'), 'the concealer was not demoted at all').toBe(3);
     });
@@ -277,7 +295,7 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
         s('WORSE') - s('CONCEAL'),
         'the control comp is within the margin of the concealer, so it does ' +
           'not test "beyond the margin" at all — it tests a tie',
-      ).toBeGreaterThan(COMPLETENESS_TIEBREAK_PER_FIELD);
+      ).toBeGreaterThan(MARGIN);
       const o = order();
       expect(o.indexOf('CONCEAL'), 'the concealer fell past a genuinely worse comp')
         .toBeLessThan(o.indexOf('WORSE'));
@@ -293,8 +311,8 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
         .toBeCloseTo(b.score, 10);
       expect([a.comp.zpid, b.comp.zpid], 'the second missing field bought no further demotion')
         .toEqual(['ONE', 'TWO']);
-      expect(orderingKey(b) - orderingKey(a), 'the fields did not compound')
-        .toBeCloseTo(COMPLETENESS_TIEBREAK_PER_FIELD, 10);
+      expect(orderingKey(b, SUBJECT) - orderingKey(a, SUBJECT), 'the fields did not compound')
+        .toBeCloseTo(MARGIN, 10);
     });
   });
 
@@ -327,7 +345,7 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
           scores[i] - scores[i - 1],
           'the pool is spaced wider than the margin, so no preference can ' +
             'chain and this case cannot detect intransitivity',
-        ).toBeLessThan(COMPLETENESS_TIEBREAK_PER_FIELD);
+        ).toBeLessThan(MARGIN);
       }
 
       // Deterministic permutations — no Math.random, so a failure reproduces.
@@ -351,52 +369,59 @@ describe(`§14.20 completeness tie-breaker${sliceNote(...MODS)}`, () => {
 
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))(
-    'FINDING-013: the margin is charged even where nothing could be concealed',
+    'FINDING-013 — CLOSED at 0daf2d4, and verified rather than deleted',
     () => {
-      it('a subject with no beds recorded still demotes comps for not disclosing theirs', () => {
-        // THE GAP, and it is in the derivation rather than the arithmetic.
-        //
-        // The margin is "the largest advantage one undisclosed field could
-        // have concealed". rank.ts zeroes a diff when EITHER side is null, so
-        // when the SUBJECT's beds are unknown the term is 0 for every comp
-        // whether it discloses or not. The concealable advantage is exactly
-        // zero — there is nothing to conceal — yet orderingKey counts the
-        // comp's nulls unconditionally and charges the full 5.
-        //
-        // It is not a wrong figure and no score changes. It reorders, and
-        // ordering decides which five comps survive MAX_COMPS_KEPT, so in a
-        // thin market it can drop a genuinely better comp out of the set in
-        // favour of a worse one whose beds happen to be populated — on a
-        // subject where beds were never scoreable in the first place.
-        //
-        // Recorded as a finding, not a bug: the ruling may well intend to
-        // reward disclosure unconditionally. But the margin's derivation does
-        // not support it here, and the two should agree.
-        const noBeds: SubjectProperty = { ...SUBJECT, beds: null };
-        const discloser = comp({ zpid: 'HAS', beds: 5, lat: latAt(0.03) });
-        const concealer = comp({ zpid: 'NONE', beds: null, lat: latAt(0.00) });
+      // THE SENTINEL FIRED. It read "if this is 0 the gap is closed and this
+      // case should be deleted", and it failed with expected +0 to be 5 —
+      // MASON's fix landing while the suite still asserted the defect. Flipped
+      // to assert what the fix DOES, per the standing preference for verifying
+      // a repair over merely removing the case that caught it.
+      //
+      // Both halves were fixed. orderingKey now counts a comp's missing field
+      // only when the SUBJECT has that field, and the margin derives from
+      // effectiveWeights rather than the raw constant.
+      const noBeds: SubjectProperty = { ...SUBJECT, beds: null };
+      const concealer = comp({ zpid: 'NONE', beds: null, lat: latAt(0.00) });
 
-        // Neither is penalised on beds: the subject has none to compare.
-        for (const c of [discloser, concealer]) {
-          expect(
-            scoreComp(noBeds, c, NOW).parts.bedbath,
-            `${c.zpid}: the bed term is non-zero against a bedless subject`,
-          ).toBe(0);
-        }
-        // So disclosure bought the discloser nothing...
+      it('an UNSCOREABLE missing field is no longer charged', () => {
+        // The precondition first: disclosure genuinely buys nothing here, so
+        // charging for its absence would be an unearned demotion.
         const gain =
           scoreComp(noBeds, { ...concealer, beds: 5 }, NOW).parts.bedbath -
           scoreComp(noBeds, concealer, NOW).parts.bedbath;
         expect(gain, 'precondition: disclosure DID affect the score here').toBe(0);
 
-        // ...yet the concealer is still charged the full margin for it.
-        const charged =
-          orderingKey(scoreComp(noBeds, concealer, NOW)) -
-          scoreComp(noBeds, concealer, NOW).score;
+        const scored = scoreComp(noBeds, concealer, NOW);
         expect(
-          charged,
-          'if this is 0 the gap is closed and this case should be deleted',
-        ).toBe(COMPLETENESS_TIEBREAK_PER_FIELD);
+          orderingKey(scored, noBeds) - scored.score,
+          'a comp is charged the margin for withholding a field the subject ' +
+            'does not have. Nothing was concealable, so the demotion is ' +
+            'unearned — and it decides which five comps survive the cap.',
+        ).toBe(0);
+      });
+
+      it('but a SCOREABLE one still is — the fix did not disable the tie-break', () => {
+        // The control, and the failure mode a narrow fix invites: satisfying
+        // FINDING-013 by never charging at all would pass the case above and
+        // silently revert §14.20. Same comp, same margin, subject WITH beds.
+        const scored = scoreComp(SUBJECT, concealer, NOW);
+        expect(
+          orderingKey(scored, SUBJECT) - scored.score,
+          'the tie-breaker stopped charging for a genuinely concealed field — ' +
+            '§14.20 has been reverted, not scoped',
+        ).toBe(MARGIN);
+      });
+
+      it('the charge follows the SUBJECT, comp held constant', () => {
+        // States the rule as a difference rather than as two absolutes: the
+        // only thing that changed between the two cases above is the subject.
+        const a = scoreComp(SUBJECT, concealer, NOW);
+        const b = scoreComp(noBeds, concealer, NOW);
+        expect(
+          orderingKey(a, SUBJECT) - a.score,
+          'the same concealing comp is charged identically against both ' +
+            'subjects, so the charge is not keyed to scoreability at all',
+        ).not.toBe(orderingKey(b, noBeds) - b.score);
       });
     },
   );

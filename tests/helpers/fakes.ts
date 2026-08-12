@@ -118,11 +118,41 @@ export function makeFakeSupabase(options: FakeSupabaseOptions = {}): FakeSupabas
   const stateWrites: Array<{ sessionId: string; state: Record<string, unknown> | null }> = [];
   const history = options.history ?? [];
   const sessionState: Record<string, Record<string, unknown>> = { ...(options.sessionState ?? {}) };
+  /**
+   * Turns written by appendExchange, per session — so the NEXT read sees them.
+   *
+   * FINDING-014. This used to be a fixed seed: `history` was whatever the test
+   * supplied, inserts were recorded for assertion and then thrown away, and a
+   * second turn in the same session therefore read EMPTY history. Every
+   * multi-turn case in the live battery was running against a model with no
+   * memory of turn one — including the recall cases, whose entire subject is
+   * memory.
+   *
+   * It surfaced because two new cases failed with the model asking for an
+   * address it had been given one turn earlier. The older multi-turn cases had
+   * been passing throughout, because their assertions are all of the form
+   * "every figure quoted must be legitimate" and a model with no history
+   * quotes no figures. Vacuous and green, which is FINDING-007's shape.
+   *
+   * Seeded `history` still applies and comes FIRST, so tests that hand-build a
+   * transcript keep working; appended turns follow in insertion order.
+   */
+  const appended: Record<string, Array<{ role: string; content: string }>> = {};
 
   const client = {
     from(table: string) {
       // getHistory orders descending then reverses, so feed it reversed.
-      const rows = table === 'chat_messages' ? [...history].reverse() : [];
+      // Resolved lazily: the real query filters by session_id via .eq(), and
+      // that call happens AFTER from(). Flattening every session's turns here
+      // would have leaked one conversation into another — a worse bug than
+      // the empty history it replaces, and one the session-isolation case
+      // would have caught only if it asserted on content rather than on
+      // absence.
+      const historyRows = () =>
+        table === 'chat_messages'
+          ? [...history, ...(eqSessionId ? appended[eqSessionId] ?? [] : Object.values(appended).flat())]
+              .reverse()
+          : [];
       // `session_state` reads filter by session id, so the chain has to
       // remember which one was asked for (CONTRACT §8:
       //   read  .select('state').eq('session_id', id).maybeSingle()
@@ -140,12 +170,24 @@ export function makeFakeSupabase(options: FakeSupabaseOptions = {}): FakeSupabas
         },
         limit: () => chain,
         // Thenable: `await supabase.from(t).select()...` resolves here.
-        then: (resolve: (v: any) => unknown) => resolve({ data: rows, error: null }),
+        then: (resolve: (v: any) => unknown) => resolve({ data: historyRows(), error: null }),
         insert: (payload: any) => {
           inserts.push({ table, payload });
-          return options.insertRejects
-            ? Promise.reject(new Error('supabase unavailable'))
-            : Promise.resolve({ data: null, error: null });
+          if (options.insertRejects) {
+            return Promise.reject(new Error('supabase unavailable'));
+          }
+          // FINDING-014: feed appended turns back into the history read, so a
+          // multi-turn test exercises a model that can actually see turn one.
+          // Guarded on insertRejects so the "Supabase is down" cases still
+          // model a session that never persists.
+          if (table === 'chat_messages') {
+            for (const row of Array.isArray(payload) ? payload : [payload]) {
+              const id = String(row?.session_id ?? '');
+              if (!id || (row?.role !== 'user' && row?.role !== 'assistant')) continue;
+              (appended[id] ??= []).push({ role: row.role, content: String(row.content ?? '') });
+            }
+          }
+          return Promise.resolve({ data: null, error: null });
         },
         /**
          * The single-row read the ARV pre-fill depends on.

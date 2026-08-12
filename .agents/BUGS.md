@@ -101,6 +101,64 @@ Searchable phrasings: *migrate probe says table exists when it does not*,
 
 ---
 
+## FINDING-014 — every multi-turn LIVE case ran with EMPTY history, and passed
+
+- **Status**: FIXED in both fakes. The live battery must be re-run; its prior
+  greens on multi-turn cases proved nothing.
+- **Severity**: high, and entirely mine. This is the largest vacuity I have
+  shipped.
+
+Both Supabase doubles read history from a fixed seed:
+
+```ts
+const history = options.history ?? [];
+...
+if (table === 'chat_messages') return [...history].reverse();
+```
+
+`appendExchange` writes each turn, the fakes recorded the payload into
+`inserts[]` for assertion, and then **discarded it**. Nothing fed it back. So
+the second `chat()` in a session read an empty transcript, and the model was
+being asked to recall a conversation it had never seen.
+
+**Why it stayed invisible for the whole project.** Every multi-turn live
+assertion is of the form *"every figure in this reply must be a legitimate
+one"*. A model with no memory quotes no figures at all, so the set is empty and
+the assertion passes. The recall cases are the worst of it — their entire
+subject is memory, and they were the least capable of detecting its absence.
+One of them is even guarded by `if (/\d{6}/.test(reply))`, so it skips its only
+assertion when the reply has no number, which is precisely what an amnesiac
+model returns. FINDING-007's shape, at the scale of a whole surface.
+
+**How it surfaced**: two new BUG-019 follow-up cases failed with the model
+asking for an address it had been given one turn earlier. The reply was too
+sensible to be a model failure, and "asks for something it was just told" reads
+as missing context rather than bad instruction-following. Re-run four times to
+rule out FINDING-010's intermittency bucket — consistent every time, which is
+what a structural cause looks like.
+
+**Resolution**: appended turns now feed the history read, scoped by
+`session_id`. The scoping is not incidental — flattening every session's turns
+into one transcript would have leaked conversations into each other, a worse
+bug than the empty history, and the session-isolation case could not have
+caught it because it asserts on absence rather than on content.
+
+**THE NEAR-MISS INSIDE THE FIX, which is the part worth remembering.** I fixed
+`fakes.ts` first, re-ran the live cases, and they failed identically. The live
+battery builds on `makeCompsSupabase` in `compsFakes.ts` — a *different*
+double with the same defect. A real fix that reached nothing the failing tests
+exercise, and had the cases passed for some other reason I would have recorded
+it as verified. **Rule: when a fix does not change a failing result, suspect
+the fix is not on the path before suspecting the diagnosis.**
+
+Both follow-up cases pass with history wired, so BUG-019's intent-based trigger
+handles bare anaphora correctly. There was no product bug here at all.
+
+Searchable: *empty history in live tests*, *appendExchange not fed back*,
+*multi-turn vacuous*, *two supabase fakes*.
+
+---
+
 ## BUG-020 — livingArea float artifacts — FILED AND REFUTED
 
 - **Status**: CLOSED, not a bug. Recorded because the reasoning is reusable.
