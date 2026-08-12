@@ -387,3 +387,34 @@ location field). Handoff 0057.
 11:55 MASON — src/ WINDOW RE-OPEN (FINDING-015 only, operator-ordered; freeze re-posted when it closes). §14.22 amended FIRST with the three-condition guard + a raw-verified DEVIATION on condition 2: one live detail run (recorded, spike-mesquite-bare-detail.json) proves the bare-Mesquite resolved card carries NO unit designator in any field (804sqft CONDO wearing the building's address) — literal condition 2 would silence the ask the ruling requires; implemented per the rationale (unit designator OR attached-type resolution), flagged to operator. HANDOFF 0068 sent before code
 12:20 MASON — src/ WINDOW CLOSED AGAIN (FINDING-015 landed; frozen from my side). §14.22 now all three conjunctive conditions: (1) bare input, (2) resolved-card unit evidence — WITH A FLAGGED DEVIATION: raw-verified (spike-mesquite-bare-detail.json, one live detail run) that bare-Mesquite's resolved card carries NO unit designator anywhere yet is a silently-picked 804sqft CONDO, so literal condition 2 kills the ask the ruling requires; implemented as designator OR attached-type per the ruling's rationale, operator to overrule if wanted — (3) >=2 DISTINCT unit cards (street-part+unit distinctness). Bonus catch reading INSPECTOR's fixture: street comparison now strips the subject's own unit (stripUnitDesignator, shared regex) — the literal condition-2 arm was unsatisfiable without it. Smokes 6/6; tsc clean; suite 1,519 green + 3 red ALL in INSPECTOR's multiUnitAsk.test.ts (two delete-if-tightened probes + a positive fixture whose SFR subject fails the ruling under either reading — theirs to re-point). HANDOFF 0069
 12:45 MASON — Condition-2 deviation APPROVED by operator; §14.22 text updated to state the implemented rule directly (designator OR attached-type), evidence folded in as rationale — no rule-vs-implementation contradiction left for INSPECTOR to derive against. stripUnitDesignator street-base + shared-regex no-drift pinned in the same condition. DEVELOPMENT CLOSED; src/ HELD (frozen since 80bad74, untouched); docs commit only. Holding for INSPECTOR's battery + GREEN — nothing else opens
+
+## GREEN — the comps module, FINAL (INSPECTOR, at 9e39ab8; src frozen at 80bad74)
+
+Offline 1525/0 across 43 files, IDENTICAL under COMPS_STRICT=1. Live battery
+39/0/2-gated at 15s pacing, 1013s, zero 429s, tree unchanged start to finish —
+the first battery that is attributable at HEAD. Dead-guard sweep 26 blocks /
+8 dead, all parameterized or conditional.
+
+THIS IS THE FIRST RUN IN WHICH THE MULTI-TURN CASES MEAN ANYTHING. FINDING-014:
+both Supabase doubles read history from a fixed seed, so every multi-turn live
+case had been asking a model to recall a conversation it never saw, and passing
+because "every figure quoted must be legitimate" is vacuously true of a reply
+with no figures. That includes BUG-014's original verification. All of them pass
+now that they genuinely exercise memory.
+
+A15 PASSED HERE AND FAILED ON THE PREVIOUS RUN. Same build. That is BUG-015's
+~2-in-4 intermittency sampling green, not a fix — recorded explicitly so the
+colour of this run cannot be read as more than it tested.
+
+Verified this block: §14.20 (margin proved exhaustively against the shipped
+gate; FINDING-013 found, fixed, sentinel flipped to verify the repair), §14.21
+RULING 2 (both matrix rows, neither signal firing alone), §14.22 RULING 1
+(six-case matrix, three must-not-ask, conjunction proved by mirrored rows;
+condition-2 deviation verified at its recording), §14.23 (reference floor pinned
+at 4/5/6 because Don Frank sits at exactly 5), BUG-018 both sites plus the class
+sweep, BUG-019 parametrized across phrasings the prompt does not list.
+
+Carried as stated known limitations: BUG-015 (defaults disclosure ~2-in-4) and
+the Census reconciliation backstop's uncovered live case.
+
+Handoff 0071. Nothing further opens from my side.
