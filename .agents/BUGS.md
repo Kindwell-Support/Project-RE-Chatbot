@@ -101,6 +101,78 @@ Searchable phrasings: *migrate probe says table exists when it does not*,
 
 ---
 
+## BUG-022 — the detail mapper renders "0 parking spaces" for units that HAVE parking
+
+- **Status**: OPEN — MASON fixing at time of writing. Verification written from
+  the contract first, as always.
+- **Severity**: WRONG OUTPUT, not degraded output. This is the distinction that
+  matters and it is why this entry exists in the shape it does.
+- **Found**: by the operator, in the field.
+
+Two shapes, both observed on prod:
+
+| row | zpid | truth | rendered |
+| --- | --- | --- | --- |
+| Osborn comp 3 | 7573111 | 2 spaces | `0 parking spaces` |
+| Cypress comp 5 | 92353100 | a carport, no numeric count | `0 parking spaces` |
+
+**Why "wrong" and not "degraded" is the whole point.** Every other failure this
+module has shipped declines to answer: an em dash, an unavailable line, a
+refusal. Those cost a member information. This one asserts a falsehood — it
+tells someone a house has no parking when it has two spaces or a carport — and
+a member acting on it is acting on a fact we invented. The em-dash convention
+exists exactly so that unknown and zero are never confused, and here a null was
+coerced into the most confusable value available.
+
+**THE OPERATOR'S FRAMING IS CORRECTED, at their instruction.** "Degraded output,
+not wrong output" was used three times to justify not hotfixing, and it was
+false for this bug. The posture — no hotfix — still holds, but on a different
+and honest rationale: **parking is low-materiality beside sold price and
+$/sqft, and those are correct.** Recorded so nobody inherits the void reason and
+reapplies it to a bug where it does not hold.
+
+**Root cause is upstream of both symptoms**: two null strategies coexist in the
+detail mapper. The two rows above are downstream instances, not independent
+bugs, and a fix that patches parking alone leaves the class open.
+
+Searchable: *0 parking spaces wrong*, *carport renders zero*, *null coerced to
+zero detail field*, *parkingCapacity fallback*.
+
+---
+
+## FINDING-016 — two wrong-subject errors in one day: the confident answer about the wrong thing
+
+- **Status**: standing rule adopted.
+- **Severity**: process. Both were caught by me, NEITHER by a test.
+
+Two instances, hours apart, same class:
+
+1. **A loose `/ceiling/` assertion** matched the NEIGHBOURHOOD skip line, which
+   also carries `remainingMs` and also fires in that scenario. The case passed
+   while saying nothing about the detail-path branch it was written for.
+2. **A store query attributed run 2's detail rows to run 1's comps write** via a
+   90-second window, and reported Daffodil's batch as `72.65s`. Run 1 wrote no
+   detail rows at all. The number was confident, precise, and about a different
+   run.
+
+Both return a plausible answer about the wrong subject, and neither announces
+itself — a passing test and a clean number look identical to correct ones. This
+is the family that also contains the DOM row slicer that matched a sibling comp
+and the unscoped `/days on market/i`.
+
+**Standing rules, both directions:**
+
+- **Any store-derived timing pins the RUN, never a time window.** Join on a key
+  that identifies the run; a window will silently annex a neighbour's rows.
+- **Any WARN or log assertion scopes to its MESSAGE, never a shared field.**
+  `remainingMs` appears on at least two lines today and will appear on more; a
+  field-only matcher is satisfied by whichever line fires first.
+
+Searchable: *wrong-subject assertion*, *window join annexed another run*,
+*shared log field matched the wrong line*.
+
+---
+
 ## BUG-021 — Daffodil served 0/5 enrichment, cause unrecoverable (slice label "BUG-014")
 
 - **Status**: OPEN — fix built at `f33f43e`, under verification this slice.
