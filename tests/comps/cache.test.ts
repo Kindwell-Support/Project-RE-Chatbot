@@ -221,7 +221,27 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
   // raw, update result, DO NOT re-hit the provider."
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('ALGO_VERSION recompute', () => {
-    it('a STALE-BUT-SOUND row recomputes from raw with ZERO provider calls', () => {
+    /**
+     * EVERY version in the free-recompute window, not just the floor.
+     *
+     * The window is [RAW_REFETCH_BELOW_VERSION, ALGO_VERSION) and it has been
+     * widening fast — §14.19 took the version to 5, §14.20's tie-breaker to 6,
+     * §14.3's attached-lot amendment to 7, all with the floor held at 4. The
+     * cached corpus therefore contains rows at 4, 5 AND 6 right now, and every
+     * one of them must recompute for free. Pinning only the floor would have
+     * tested the oldest row and none of the ones a bump actually creates.
+     *
+     * Generated from the constants so it extends itself on the next bump
+     * rather than going quietly out of date.
+     */
+    const RECOMPUTE_WINDOW = Array.from(
+      { length: ALGO_VERSION - RAW_REFETCH_BELOW_VERSION },
+      (_, i) => RAW_REFETCH_BELOW_VERSION + i,
+    );
+
+    it.each(RECOMPUTE_WINDOW)(
+      'a STALE-BUT-SOUND row at v%i recomputes from raw with ZERO provider calls',
+      (stampedAt) => {
       // THE SENTINEL FLIPPED, and it flipped by firing rather than by anyone
       // remembering. It read: "if the floor and the version diverge, this path
       // is REACHABLE and needs its assertion back, with a row stamped between
@@ -245,7 +265,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
           result: null,
           // Stale by version (< 5, so it recomputes) and sound by regime
           // (>= 4, so it must NOT refetch). Both true only in this window.
-          algoVersion: RAW_REFETCH_BELOW_VERSION,
+          algoVersion: stampedAt,
           provider: 'stub',
           expiresAt: iso(CACHE_TTL_DAYS),
         });
@@ -274,7 +294,8 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
         expect(rows.get(KEY)?.algoVersion, 'the row kept its stale version')
           .toBe(ALGO_VERSION);
       })();
-    });
+      },
+    );
 
     it('CONSEQUENCE, stated so it is a decision: the whole corpus refetches once', async () => {
       // With the floor at the current version, every pre-existing cached row
