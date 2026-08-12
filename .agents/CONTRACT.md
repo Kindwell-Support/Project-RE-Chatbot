@@ -1057,12 +1057,37 @@ The Mesquite anatomy: a bare multi-unit address ("700 E Mesquite Cir")
 resolves silently to ONE unit of the complex (zpid 7584173, 804 sqft),
 while the member expected another (7584180, 934 sqft). **Ruling: ASK.**
 
-- **Detection (live path, after pool acquisition, before compute)**: the
-  member's RAW input has no unit designator (`hasUnitDesignator` false —
-  conservative, bare trailing numbers excluded) AND the union pool holds
-  ≥1 card with a DIFFERENT zpid, the SAME normalized street part, and a
-  unit designator in its address — evidence the address is a multi-unit
-  building.
+- **Detection (live path, after pool acquisition, before compute) —
+  THREE CONJUNCTIVE CONDITIONS (FINDING-015 ruling; the original build
+  checked only 1 and a weaker 3, and INSPECTOR demonstrated the failure:
+  a plain SFR whose pool held one stale unit-bearing card got an ask it
+  could not satisfy):**
+  1. the member's RAW input has no unit designator (`hasUnitDesignator`
+     false — conservative, bare trailing numbers excluded);
+  2. the RESOLVED subject shows unit evidence — `hasUnitDesignator` on
+     the resolved address **OR an ATTACHED-type resolution
+     (CONDO/TOWNHOUSE, `ATTACHED_SUBJECT_TYPES`)**. **DEVIATION FROM THE
+     LITERAL RULING, flagged (§14.13 precedent):** the ruling said "the
+     resolved card carries a unit designator", but the raw-verified
+     Mesquite payload (`spike-mesquite-bare-detail.json`, one live
+     detail run, 2026-08-12) carries NO unit anywhere — streetAddress,
+     abbreviatedAddress and unitNumber are all bare on the resolved
+     zpid 7584173, an 804-sqft CONDO wearing the building's address.
+     Literal condition 2 would therefore silence the Mesquite ask the
+     same ruling requires. The ruling's RATIONALE ("if the resolved card
+     has no unit, we resolved a whole property — nothing ambiguous to
+     ask about") is what discriminates: an SFR/MANUFACTURED resolution
+     is a whole property (condition 2 FALSE, regardless of the pool); a
+     bare attached-type resolution is Zillow silently picking a unit —
+     the exact anatomy. Unit-designator evidence still counts when
+     Zillow does surface one;
+  3. the union pool holds **≥ 2 DISTINCT unit cards at the subject's
+     street** — different zpid from the subject, same normalized street
+     part, a unit designator in the address; DISTINCT by normalized
+     street-part-plus-unit (ZIP variants of one unit are one card; the
+     recorded Mesquite pool holds 4: M129, O210, L107, J135). One lone
+     unit-bearing card is not evidence of a multi-unit building — it is
+     exactly the stale-card false positive INSPECTOR demonstrated.
 - **Outcome**: `ADDRESS_NOT_FOUND` with `resolution: 'unit_mismatch',
   inputHasUnit: false` — the EXISTING §10 ask copy ("try including the
   unit number… otherwise tell me your ARV") is the ruled ask; no new copy.
