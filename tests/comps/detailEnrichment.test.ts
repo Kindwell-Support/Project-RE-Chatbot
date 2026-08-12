@@ -869,31 +869,85 @@ describe(`§14.14.3 zpid verification — adversarial${sliceNote('detail')}`, ()
     expect(out.missing, 'a degraded join must count as missing').toBe(1);
   });
 
-  it('RESIDUAL RISK: a NULL item zpid skips the check and still CACHES', () => {
-    // Not a pass and not a failure — a hole recorded with its blast radius.
-    // The check is `item.zpid !== null && comp.zpid && differ`, so an item
-    // with no identity is attached AND queued for the cache under the comp
-    // zpid. If Zillow ever returns a valid detail with a null zpid for the
-    // wrong property, that is BUG-022 again with nothing to catch it.
+  it('THE SENTINEL FLIPPED: a null ITEM zpid is now counted and caches nothing', () => {
+    // This case pinned a HOLE. It read: the check is
+    // `item.zpid !== null && comp.zpid && differ`, so an item with no
+    // identity was attached AND queued for the cache under the comp zpid —
+    // BUG-022 again with nothing to catch it, reachable in principle though
+    // unobserved in the recordings.
     //
-    // Unobserved in the recordings: every valid item in spike-detail-batch5
-    // carries a zpid, and the only null-zpid items are isValid:false, which
-    // never reach the join. So this is reachable in principle, not in
-    // evidence — recorded so the next payload change is measured against it.
+    // MASON closed it at 02b3e53 by inverting the rule: the join now requires
+    // a POSITIVE match, both zpids present and equal. So the pin flips from
+    // recording the gap to proving it stays shut, which is the whole point of
+    // writing it as a sentinel rather than a comment.
     const out = join('COMP-ZPID', { zpid: null });
-    expect(out.zpidMismatches, 'a null item zpid was counted as a mismatch').toBe(0);
+    expect(out.zpidMismatches, 'an unidentified item is no longer counted').toBe(1);
     expect(
-      out.fetched.length,
-      'if this is 0 the null-zpid hole has been closed and this case should ' +
-        'become a plain assertion of the new behaviour',
-    ).toBe(1);
+      out.fetched,
+      'an item with NO identity was cached under the comp zpid. Absence of ' +
+        'identity must never satisfy an identity check — that is the whole ' +
+        'inversion, and this is the path it was reachable on.',
+    ).toHaveLength(0);
+    expect(out.comps[0].detail, 'an unidentified payload reached the render').toBeUndefined();
+    expect(out.missing, 'an unidentified join must count as missing').toBe(1);
   });
 
-  it('a NULL comp zpid attaches but caches NOTHING — the safer half', () => {
-    // The other skip, and it degrades correctly by accident of the cache
-    // guard rather than by the rule: no comp zpid means no cache key, so a
-    // wrong payload cannot persist even though it can render.
+  it('a NULL comp zpid is now safe BY RULE, not by accident of the cache guard', () => {
+    // Previously this degraded correctly only because `if (scored.comp.zpid)`
+    // happened to gate the cache write — the payload still ATTACHED and could
+    // render another property. Under the inversion it takes the same path as
+    // every other non-match.
     const out = join(null);
     expect(out.fetched, 'a detail was cached with no verified identity').toHaveLength(0);
+    expect(out.comps[0].detail, 'an unverified payload still renders').toBeUndefined();
+    expect(out.zpidMismatches, 'a missing comp identity is not surfaced').toBe(1);
+  });
+
+  it.each([
+    ['empty string comp zpid', ''],
+    ['whitespace comp zpid', '   '],
+  ])('ABSENCE OF IDENTITY: %s never satisfies the check', (_label, compZpid) => {
+    // The falsy-vs-absent seam. '' is falsy so the old guard skipped it; '   '
+    // is TRUTHY and would compare unequal, which happens to reject — but for
+    // the wrong reason, and a future trim() would flip it silently.
+    const out = join(compZpid);
+    expect(out.fetched, 'a blank identity was treated as an identity').toHaveLength(0);
+    expect(out.comps[0].detail, 'a blank identity attached a payload').toBeUndefined();
+  });
+
+  it('BOTH null is a non-match, not a vacuous match', () => {
+    // The equality trap: null === null is true. A rule written as "reject when
+    // they differ" accepts two absences as agreement, which is the most
+    // confident possible way to be wrong about identity.
+    const out = join(null, { zpid: null });
+    expect(out.fetched, 'two absences were treated as agreement').toHaveLength(0);
+    expect(out.comps[0].detail, 'two absences produced a join').toBeUndefined();
+  });
+
+  it('TYPE COERCION: a numeric item zpid and a string comp zpid still match', () => {
+    // The other direction, and the one that would cause a FALSE rejection:
+    // the payload carries zpid as a number, the comp as a string. If the
+    // comparison is strict without normalising, every legitimate join breaks
+    // and every comp renders em-dashes — a silent total-coverage loss that
+    // looks like an Apify problem.
+    const numeric = Number(BATCH5[0].zpid);
+    const out = join(String(numeric));
+    expect(
+      out.comps[0].detail,
+      'a numeric payload zpid failed to match its string comp zpid. This is ' +
+        'not a security failure, it is a total enrichment outage that reads ' +
+        'as a provider fault.',
+    ).toBeDefined();
+    expect(out.zpidMismatches, 'a legitimate match was counted as a mismatch').toBe(0);
+  });
+
+  it('an item present but the COMP ROW absent joins nothing and throws nothing', () => {
+    // Degenerate input: a batch answering for an address no comp holds. It
+    // must be inert rather than an exception on the enrichment path, which
+    // rule 3 makes non-fatal.
+    const orphanItem = item({ addressOrUrlFromInput: 'NOWHERE AT ALL, PHOENIX, AZ' });
+    const out = attachDetails([], {}, mapDetailBatchItems([orphanItem] as never));
+    expect(out.comps, 'comps appeared from nowhere').toHaveLength(0);
+    expect(out.fetched, 'an orphan item was cached').toHaveLength(0);
   });
 });
