@@ -101,6 +101,46 @@ Searchable phrasings: *migrate probe says table exists when it does not*,
 
 ---
 
+## BUG-021 — Daffodil served 0/5 enrichment, cause unrecoverable (slice label "BUG-014")
+
+- **Status**: OPEN — fix built at `f33f43e`, under verification this slice.
+- **Severity**: major as an OBSERVABILITY failure. The served block was
+  degraded but honest (em-dashes, "across 0 of the 5"), so no member saw a
+  false figure. What makes it major is that the cause could not be recovered
+  afterwards at all.
+
+**NUMBERING — read this before searching.** The operator's slice brief, MASON's
+0072/0073 and CONTRACT §14.14.2 all call this **"BUG-014"**. That number is
+already taken by the system-prompt-still-promises-an-ARV bug, closed at
+`a6e98c5` and verified at 0047. Per the register header rule the canonical
+register wins and the incident is **BUG-021**; both labels are recorded here so
+a reader arriving from the contract, the mailbox or the commit history lands on
+this entry either way.
+
+Searchable: *Daffodil 0/5*, *enrichment coverage zero*, *BUG-014 enrichment*,
+*detail batch silent failure*, *1646 N Daffodil*.
+
+**The incident.** Two consecutive live runs on 1646 N Daffodil St (2026-08-12):
+run 1 served 0/5 enrichment, run 2 served 5/5 with DOM 51. Same inputs, 72
+seconds apart.
+
+**Why it was unrecoverable**, which is the actual defect: the only records of
+the batch outcome were stdout lines nobody kept, and the Apify run ledger 403s
+for this token (the §14.14 rule 7 scope finding). Two candidate causes survive
+the forensics — a CEILING SKIP or an instant transient HTTP failure — and
+nothing distinguishes them after the fact.
+
+**Excluded by evidence, not by argument**: the zpid/address join (run 2 joined
+5/5 on identical inputs) and budget denial (the live path pre-consumes its
+unit).
+
+§14.14.2 is the fix: bounded retry, coverage logging on every serve, the ceiling
+skip upgraded to a WARN carrying `remainingMs`, and no swallowed exceptions.
+Closes when the cold live run exercises the retry path — MASON's three runs all
+rode cache and never reached it.
+
+---
+
 ## FINDING-015 — §14.22's ask is LOOSER than RULING 1; one stale card false-asks
 
 - **Status**: OPEN. Reported to MASON and the operator. Not a merge blocker.
