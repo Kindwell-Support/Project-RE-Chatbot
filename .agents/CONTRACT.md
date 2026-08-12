@@ -207,11 +207,15 @@ model-authored, not prompt-dependent), on every SUCCESSFUL comps render:
   for that location and home type. Please note responses are for education and
   based on available public data. Investors are encouraged to review each
   address for additional information."*
-- `COMPS_CLOSING` (always the LAST content before the footer — the FULL
-  emit order as of §14.23 is opening → header → table → [thin-market
-  §14.21] → [outlier §14.23] → [neighborhood §14.16.1] → [demographics
-  §14.10] → closing → footer; the bracketed sections are conditional and
-  their insertion never displaced the closing's position): evaluate each
+- `COMPS_CLOSING` (the FULL emit order as of the §10 amendment is
+  opening → header → table → [thin-market §14.21] → [outlier §14.23] →
+  [neighborhood §14.16.1] → [demographics §14.10] → closing →
+  **COMPS_ARV_CLOSE** → footer; the bracketed sections are conditional.
+  The 2026-08-12 §10 amendment added COMPS_ARV_CLOSE — the ONE
+  member-facing comps line naming ARV, VERBATIM: *"If you want to run
+  deal numbers, you'll need to supply your own ARV based on these
+  comps."* — emitted structurally like every prescribed string, ending
+  the era of the model paraphrasing it per turn): evaluate each
   property carefully;
   current quality of home, overall appeal, lot location and usability can
   drastically impact value; consider external factors such as view properties,
@@ -1992,7 +1996,50 @@ query, not forensics.
 Rate cap: the **daily** cap only (per-session cap cut). Checked before provider
 work; cache hits bypass it entirely; breach ⇒ `RATE_LIMITED`.
 
-## 10. Failure copy (all end by offering manual ARV entry; none produce a number)
+## 10. Failure copy — AMENDED BY OPERATOR RULING 2026-08-12: NO PATH SOLICITS AN ARV
+
+**The original rule ("all end by offering manual ARV entry") is
+REVERSED.** Post-merge production showed three distinct output paths
+trending toward ARV conversation — the §14.8 removal stripped the
+computed ARV, and the solicitation copy was quietly rebuilding the ARV
+conversation around the hole. Now binding:
+
+- **A failure message says what went wrong and what to do next. It does
+  not pivot to deal numbers and it does not name or solicit an ARV.**
+  The MANUAL_OFFER constant is deleted; no failure branch carries an
+  ARV clause (the unit-mismatch and no-type-match branches lose their
+  trailing offers; TOO_FEW_COMPS states the comp threshold without
+  invoking ARV at all).
+- **Exactly ONE member-facing comps line names ARV: the prescribed
+  success close (§14.7, COMPS_ARV_CLOSE)** — *"If you want to run deal
+  numbers, you'll need to supply your own ARV based on these comps."* —
+  VERBATIM, emitted STRUCTURALLY by format.ts after COMPS_CLOSING and
+  before the footer. It was previously only a prompt-suggested idea the
+  model paraphrased per turn ("choose an ARV from these comps… let me
+  know if you have a figure in mind!" reached members) — prescribed
+  copy that lives in a prompt is not fixed, it is requested. §14.7's
+  structural-emission rule now covers it, and the §14.7/§14.8 emit
+  order gains one line: … → closing → ARV close → footer.
+- **Manual ARV stays available REACTIVELY**: a member who volunteers a
+  number still flows through set_manual_arv with every existing
+  guarantee. We stopped asking; we did not stop listening. The prompt
+  (§9) is amended to match: the model relays blocks verbatim, adds no
+  ARV-related lines on ANY path (intent-based prohibition per the
+  BUG-019 phrasing lesson), and calls set_manual_arv only when the
+  member initiates. (Scope note: the calculator surfaces' ARV echo and
+  prefill labels are provenance guarantees for a number the MEMBER
+  supplied — untouched by this rule, which governs comps output paths.)
+- **The guard INSPECTOR derives**: a golden-copy test over EVERY
+  terminal path — success, provider error/timeout, insufficient comps
+  (both branches), address-not-found (all three branches), sqft
+  unknown, rate-limited — asserting the exact prescribed strings where
+  prescribed and the ABSENCE of ARV-solicitation phrasing everywhere.
+  Its absence is why this shipped: the no-ARV battery tests refusal to
+  FABRICATE under pressure, not closing-copy fidelity, so it passed
+  21/21 while the copy drifted freely.
+
+(Original path copy below, retained for the branch structure — the
+ARV/manual-entry clauses in it are SUPERSEDED by this amendment.)
 
 | Code | Copy gist |
 | --- | --- |
