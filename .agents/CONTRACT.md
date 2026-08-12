@@ -807,11 +807,33 @@ facts):**
    to per-field absence or falsehood (Osborn read 5/5 while comp 3
    rendered `Built —` with a sibling's parking). Not fixed now; any
    future per-field coverage is its own ruling.
-5. **Detail-cache poisoning, deferred decision:** rows written before
-   this fix can carry sibling-unit payloads or default zeros (both
-   named zpids confirmed poisoned). The fix stops NEW poison; existing
-   rows serve until their 90-day TTL. Purging comps_detail_cache is a
-   shared-store data operation — operator's call, post-green.
+5. **Detail-cache poisoning — RULED (operator, 2026-08-12): PURGE THE
+   UNION, post-green, same day as the green.** Scope: `parkingSpaces =
+   0` rows (stale under rule 2 regardless of poisoning — they would
+   render "0 parking spaces" from cache for up to 90 days AFTER the fix
+   deploys, a cache silently defeating a shipped fix) ∪ rows whose zpid
+   belongs to a unit-token address (the contamination boundary: an
+   address-keyed join can only fetch a sibling where siblings exist —
+   INSPECTOR's mechanism argument). Predicted ~19 of 57; the 3
+   unverifiable orphans STAY and age out. Execution rules: snapshot the
+   rows before deleting; DELETE only, never rewrite; report actual
+   count vs predicted (mismatch = signature drift); then ONE serve on
+   Osborn (#D) as the end-to-end proof that comp 3 returns Unit C's
+   real facts through a cold cache. TIMING: the 15-row signature
+   depends on comps_cache rows that expire at 14 days — if green slips
+   more than a few days the signature is stale and the operator re-rules.
+
+6. **Schema finding (recorded, NOT built) + the post-green backlog:**
+   `comps_detail_cache` stores a bare `CompDetail` with no source zpid
+   and no source address — a row cannot be audited against the property
+   it claims to describe, which is why the purge scope is an estimate
+   instead of a query. Three backlog slices are the SAME finding (no
+   post-hoc auditability), all operator-authorized post-green, none
+   authorized now: (a) a source-address or source-comp-zpid column on
+   comps_detail_cache; (b) qa_logs coverage persistence (§14.14.2
+   remedy b); (c) front-half instrumentation (stage durations recorded
+   durably — the lookupSubject/search/hood/detail split exists today
+   only when someone hand-times a run).
 
 **Re-verifications ordered with the fix (absence-of-code reasoning
 retired, positive raw evidence recorded):**
