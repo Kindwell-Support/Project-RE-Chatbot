@@ -1066,21 +1066,24 @@ while the member expected another (7584180, 934 sqft). **Ruling: ASK.**
      false — conservative, bare trailing numbers excluded);
   2. the RESOLVED subject shows unit evidence — `hasUnitDesignator` on
      the resolved address **OR an ATTACHED-type resolution
-     (CONDO/TOWNHOUSE, `ATTACHED_SUBJECT_TYPES`)**. **DEVIATION FROM THE
-     LITERAL RULING, flagged (§14.13 precedent):** the ruling said "the
-     resolved card carries a unit designator", but the raw-verified
-     Mesquite payload (`spike-mesquite-bare-detail.json`, one live
-     detail run, 2026-08-12) carries NO unit anywhere — streetAddress,
-     abbreviatedAddress and unitNumber are all bare on the resolved
-     zpid 7584173, an 804-sqft CONDO wearing the building's address.
-     Literal condition 2 would therefore silence the Mesquite ask the
-     same ruling requires. The ruling's RATIONALE ("if the resolved card
-     has no unit, we resolved a whole property — nothing ambiguous to
-     ask about") is what discriminates: an SFR/MANUFACTURED resolution
-     is a whole property (condition 2 FALSE, regardless of the pool); a
-     bare attached-type resolution is Zillow silently picking a unit —
-     the exact anatomy. Unit-designator evidence still counts when
-     Zillow does surface one;
+     (CONDO/TOWNHOUSE, `ATTACHED_SUBJECT_TYPES`)**. This IS the ruled
+     rule (operator approved 2026-08-12, superseding the ruling's
+     original "carries a unit designator" wording — the evidence
+     overruled it): the raw-verified Mesquite payload
+     (`spike-mesquite-bare-detail.json`, one live detail run) carries
+     NO unit designator in ANY field — streetAddress, abbreviatedAddress
+     and unitNumber all bare on resolved zpid 7584173 — yet it is an
+     804-sqft CONDO wearing the building's address: a silently-picked
+     unit, not the "whole property" the rationale describes. The
+     discriminator: an SFR/MANUFACTURED resolution IS a whole property
+     (condition 2 FALSE, regardless of what sits in the pool); a bare
+     attached-type resolution is the Mesquite anatomy; unit-designator
+     evidence counts whenever Zillow does surface one. The condition-3
+     street comparison uses the street BASE via `stripUnitDesignator`
+     (normalize.ts), which shares the ONE designator regex with
+     `hasUnitDesignator` so detect and strip cannot drift — without the
+     strip, a resolved address carrying its unit never prefix-matches
+     its siblings and this condition's designator arm is unsatisfiable;
   3. the union pool holds **≥ 2 DISTINCT unit cards at the subject's
      street** — different zpid from the subject, same normalized street
      part, a unit designator in the address; DISTINCT by normalized
