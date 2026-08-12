@@ -9,6 +9,8 @@
  * and how many candidates were rejected. (The trim/ARV arithmetic this
  * comment once promised is gone with the ARV itself — CONTRACT §14.8.)
  */
+import { MIN_COMPS_TO_COMPUTE, NEIGHBORHOOD_RADIUS_MI } from './config.js';
+import { median } from './filter.js';
 import type { CompsFailure, CompsFailureCode, CompsOutcome, CompsResult, ScoredComp } from './types.js';
 
 const USD = new Intl.NumberFormat('en-US', {
@@ -179,6 +181,34 @@ function compEntry(s: ScoredComp, index: number): string {
 }
 
 /**
+ * Thin-market disclosure (§14.21, RULING 2 — approved as proposed).
+ * Composite trigger, both signals structural: the served rung exceeded the
+ * 1-mile ring AND fewer than MIN_COMPS_TO_COMPUTE in-band same-type sales
+ * existed within it. Serve-with-disclosure, never refusal: this is a line
+ * of copy and nothing else — the comp set is byte-identical either way.
+ * Guarantee 4: the block carries what a member needs to judge the set (the
+ * 1-mile count, the radius served, median distance, and the ppsf range AS
+ * A QUOTED FACT — ratio is never the trigger). All figures derive from the
+ * served result itself. No em dash; no ARV.
+ */
+function renderThinMarketDisclosure(result: CompsResult): string | null {
+  const fired =
+    result.radiusTierMi > NEIGHBORHOOD_RADIUS_MI &&
+    result.nearInBandSameTypeSales < MIN_COMPS_TO_COMPUTE;
+  if (!fired || result.comps.length === 0) return null;
+  const medianDist = median(result.comps.map((c) => c.distanceMi));
+  const ppsf = result.comps.map((c) => c.pricePerSqft).sort((a, b) => a - b);
+  const n = result.nearInBandSameTypeSales;
+  return (
+    `_A note on this set: only ${n} comparable sale${n === 1 ? '' : 's'} of this home's type and size ` +
+    `closed within 1 mile in the past 12 months, so these comps come from up to ` +
+    `${result.radiusTierMi} miles away (median ${medianDist.toFixed(2)} mi). Prices in this set range from ` +
+    `${USD.format(Math.round(ppsf[0]))} to ${USD.format(Math.round(ppsf[ppsf.length - 1]))} per square foot; ` +
+    `weigh each comp's location and condition accordingly._`
+  );
+}
+
+/**
  * Neighbourhood sales section (§14.16.1). Three states like demographics.
  * Guarantee 4 twice over: the section header carries geography AND window
  * verbatim ("past 12 months within 1 mile") in the same template as the
@@ -299,6 +329,7 @@ function renderSuccess(result: CompsResult): string {
     COMPS_OPENING,
     header,
     table,
+    renderThinMarketDisclosure(result),
     renderNeighborhood(result.neighborhood, comps.length),
     renderDemographics(result.demographics),
     COMPS_CLOSING,

@@ -13,11 +13,13 @@
  * 3 = the ARV removal (§14.8). 4 = the comps-fetch truncation fix (§14.17).
  * 5 = the union (§14.19): the 1-mile aggregate payload joins the comps
  * candidate pool before the filters. 6 = the completeness tie-breaker
- * (§14.20). 7 = zero lot weight for attached subjects (§14.3 amendment):
- * scores AND order change for CONDO/TOWNHOUSE subjects. v4+ rows RECOMPUTE
- * free — raw payloads sound (RAW_REFETCH_BELOW_VERSION stays 4).
+ * (§14.20). 7 = zero lot weight for attached subjects (§14.3 amendment).
+ * 8 = the thin-market disclosure (§14.21): CompsResult gains the REQUIRED
+ * nearInBandSameTypeSales field, so cached rows recompute into the new
+ * shape. v4+ rows RECOMPUTE free — raw payloads sound
+ * (RAW_REFETCH_BELOW_VERSION stays 4).
  */
-export const ALGO_VERSION = 7;
+export const ALGO_VERSION = 8;
 
 /**
  * Rows whose raw payload predates this version were fetched under the old

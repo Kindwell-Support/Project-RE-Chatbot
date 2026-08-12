@@ -23,6 +23,7 @@ import {
   DETAIL_MIN_REMAINING_MS,
   MAX_COMP_AGE_MONTHS,
   MIN_COMPS_TO_COMPUTE,
+  SQFT_TOLERANCE,
   NEIGHBORHOOD_MIN_REMAINING_MS,
   NEIGHBORHOOD_RADIUS_MI,
   NEIGHBORHOOD_RESULTS_LIMIT,
@@ -35,7 +36,7 @@ import { computeNeighborhoodAggregates, isWindowTruncated } from './aggregates.j
 import { attachDetails, detailBatchFor } from './detail.js';
 import { SEARCH_RESULTS_LIMIT } from './providers/apifyZillow.js';
 import { FAILURE_COPY } from './format.js';
-import { selectTiers, unionCandidatePools } from './filter.js';
+import { dedupeSales, haversineMiles, monthsBetween, selectTiers, unionCandidatePools } from './filter.js';
 import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
 import { rankComps } from './rank.js';
 import type { CensusCacheLike } from './cache/censusCache.js';
@@ -221,6 +222,21 @@ function computeFromRaw(
   }
 
   const ranked = rankComps(subject, tier.kept, now);
+  // §14.21: the thin-market disclosure's second signal — deduped count of
+  // sold, in-band, same-type sales within 1 mile / 12 months over the
+  // UNION pool. Pure arithmetic on the pool; NEVER feeds selection or
+  // ranking (the comp set is byte-identical whether the disclosure fires).
+  const subjectSqft = subject.livingArea ?? 0;
+  const nearInBand = pool.filter((c) => {
+    if (c.status.toUpperCase() !== 'SOLD' || !c.soldDate) return false;
+    const m = monthsBetween(c.soldDate, now);
+    if (m < 0 || m > MAX_COMP_AGE_MONTHS) return false;
+    if (c.propertyType !== subject.propertyType) return false;
+    const s = c.livingArea ?? 0;
+    if (!(s > 0) || !(subjectSqft > 0) || Math.abs(s - subjectSqft) / subjectSqft > SQFT_TOLERANCE) return false;
+    return haversineMiles(subject.lat, subject.lng, c.lat, c.lng) <= NEIGHBORHOOD_RADIUS_MI;
+  });
+  const nearInBandSameTypeSales = dedupeSales(nearInBand).kept.length;
   // §14.17 truncation honesty: flags describe the COMPS FETCH (the union's
   // 1-mile portion legitimately extends earlier — nearRingCompleteMi is
   // what says so). isWindowTruncated's slack covers the raw→mapped skip.
@@ -243,6 +259,7 @@ function computeFromRaw(
       !isWindowTruncated(neighborhoodSales.length, NEIGHBORHOOD_RESULTS_LIMIT)
         ? NEIGHBORHOOD_RADIUS_MI
         : null,
+    nearInBandSameTypeSales,
     comps: ranked,
     rejected: tier.rejected,
     fromCache,
@@ -383,6 +400,46 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
           'neighborhood fetch failed — pool stays comps-only; section renders unavailable',
         );
       }
+    }
+  }
+
+  // §14.22 (RULING 1, live path only): a BARE multi-unit address must ASK
+  // for the unit, not silently run one unit of the complex. Evidence of
+  // multi-unit: the pool holds a card with a DIFFERENT zpid, the SAME
+  // normalized street part, and a unit designator. Live-path-only is
+  // deliberate — recompute has no raw input string (normalization strips
+  // "#"), so detection there would false-positive on unit-typed members.
+  if (!hasUnitDesignator(rawAddress)) {
+    const subjectStreet = normalizeAddress(subject.address.split(',')[0]);
+    const unitSibling = unionCandidatePools(comps, neighborhoodSales).find(
+      (c) =>
+        c.zpid !== subject.zpid &&
+        normalizeAddress(c.address.split(',')[0]).startsWith(subjectStreet) &&
+        hasUnitDesignator(c.address),
+    );
+    if (unitSibling) {
+      logger?.info?.(
+        { cacheKey: key, guard: 'multi_unit_bare_address' },
+        'bare address resolves to one unit of a multi-unit building — asking for the unit',
+      );
+      const ask = failure('ADDRESS_NOT_FOUND', { resolution: 'unit_mismatch', inputHasUnit: false });
+      // Cached WITHOUT raw payloads, deliberately: detection is live-only,
+      // so a future ALGO bump recomputing from raw would flip this ask into
+      // a silently-served unit. No rawSubject ⇒ a bump refetches instead,
+      // and the detection runs again. Repeat bare-address lookups inside
+      // the TTL still serve this cached ask at zero cost.
+      await writeCache(deps, logger, {
+        cacheKey: key,
+        normalizedAddress: normalized,
+        rawSubject: null,
+        rawComps: [],
+        rawNeighborhood: null,
+        result: ask,
+        algoVersion: ALGO_VERSION,
+        provider: deps.provider.name,
+        expiresAt: new Date(now().getTime() + CACHE_TTL_MS).toISOString(),
+      });
+      return ask;
     }
   }
 

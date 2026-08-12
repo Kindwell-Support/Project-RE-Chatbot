@@ -237,6 +237,15 @@ export interface CompsResult {
    * comps fetch truncated.
    */
   nearRingCompleteMi: number | null;
+  /**
+   * §14.21: deduped count of SOLD, in-sqft-band, same-mapped-type sales
+   * within 1 mile and 12 months, over the UNION pool. REQUIRED so a result
+   * without it is unrepresentable — the thin-market disclosure's second
+   * trigger signal, and the count the disclosure copy quotes. Never
+   * affects selection or ranking (the comp set is byte-identical whether
+   * or not the disclosure fires).
+   */
+  nearInBandSameTypeSales: number;
   comps: ScoredComp[];
   rejected: RejectedComp[];
   fromCache: boolean;
