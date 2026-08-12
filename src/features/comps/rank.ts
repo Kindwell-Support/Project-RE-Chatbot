@@ -6,6 +6,8 @@
  * ranked above that one?" and get arithmetic, not vibes.
  */
 import {
+  ATTACHED_REDISTRIBUTION_FACTOR,
+  ATTACHED_SUBJECT_TYPES,
   COMPLETENESS_TIEBREAK_PER_FIELD,
   DISTANCE_NORM_MI,
   LOT_NORM_RATIO,
@@ -55,17 +57,18 @@ export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): S
       ? Math.abs(comp.lotSize - (subject.lotSize as number)) / (subject.lotSize as number) / LOT_NORM_RATIO
       : 0;
 
+  const w = effectiveWeights(subject.propertyType);
   const parts = {
-    distance: Math.min(distanceMi / DISTANCE_NORM_MI, 1) * WEIGHT_DISTANCE,
-    sqft: Math.min(sqftFrac, 1) * WEIGHT_SQFT,
-    lot: Math.min(lotFrac, 1) * WEIGHT_LOT,
+    distance: Math.min(distanceMi / DISTANCE_NORM_MI, 1) * w.distance,
+    sqft: Math.min(sqftFrac, 1) * w.sqft,
+    lot: Math.min(lotFrac, 1) * w.lot,
     // max(…, 0) is BUG-003's defensive half: min() alone only capped the TOP
     // of the range, so a future-dated comp scored NEGATIVE and sorted ahead of
     // flawless comps — bad data promoted, not just tolerated. Rule 12 rejects
     // such comps at the filter; this keeps §5.4's 0-100 range structural no
     // matter what reaches the function.
-    recency: Math.min(Math.max(monthsAgo, 0) / RECENCY_NORM_MONTHS, 1) * WEIGHT_RECENCY,
-    bedbath: Math.min((Math.abs(dBeds) + Math.abs(dBaths)) / 2, 1) * WEIGHT_BEDBATH,
+    recency: Math.min(Math.max(monthsAgo, 0) / RECENCY_NORM_MONTHS, 1) * w.recency,
+    bedbath: Math.min((Math.abs(dBeds) + Math.abs(dBaths)) / 2, 1) * w.bedbath,
   };
 
   return {
@@ -75,6 +78,42 @@ export function scoreComp(subject: SubjectProperty, comp: RawComp, now: Date): S
     pricePerSqft,
     score: parts.distance + parts.sqft + parts.recency + parts.bedbath + parts.lot,
     parts,
+  };
+}
+
+/**
+ * §14.3 amendment (operator ruling): the weights BRANCH on the subject's
+ * type. For ATTACHED subjects (CONDO/TOWNHOUSE) the lot weight is ZERO —
+ * Zillow's parcel records for attached housing are inconsistent
+ * (raw-verified: same-complex near-identical units at 684/1,202/2,276 sqft
+ * lots), and a noisy soft term displaces signal from terms that are not —
+ * with the 10 points redistributed PROPORTIONALLY across distance, sqft
+ * and recency (each × 9/8, derived). SFR keeps the original weights: lot
+ * is real there. Both branches total 100 — exported so it is asserted
+ * directly, not inferred from score behaviour.
+ */
+export function effectiveWeights(subjectType: SubjectProperty['propertyType']): {
+  distance: number;
+  sqft: number;
+  recency: number;
+  bedbath: number;
+  lot: number;
+} {
+  if (ATTACHED_SUBJECT_TYPES.includes(subjectType)) {
+    return {
+      distance: WEIGHT_DISTANCE * ATTACHED_REDISTRIBUTION_FACTOR,
+      sqft: WEIGHT_SQFT * ATTACHED_REDISTRIBUTION_FACTOR,
+      recency: WEIGHT_RECENCY * ATTACHED_REDISTRIBUTION_FACTOR,
+      bedbath: WEIGHT_BEDBATH,
+      lot: 0,
+    };
+  }
+  return {
+    distance: WEIGHT_DISTANCE,
+    sqft: WEIGHT_SQFT,
+    recency: WEIGHT_RECENCY,
+    bedbath: WEIGHT_BEDBATH,
+    lot: WEIGHT_LOT,
   };
 }
 

@@ -13,11 +13,11 @@
  * 3 = the ARV removal (§14.8). 4 = the comps-fetch truncation fix (§14.17).
  * 5 = the union (§14.19): the 1-mile aggregate payload joins the comps
  * candidate pool before the filters. 6 = the completeness tie-breaker
- * (§14.20): cached v5 results can carry a stale ORDER, and order is
- * member-visible ("best match first" is numbered). v4/v5 rows RECOMPUTE
+ * (§14.20). 7 = zero lot weight for attached subjects (§14.3 amendment):
+ * scores AND order change for CONDO/TOWNHOUSE subjects. v4+ rows RECOMPUTE
  * free — raw payloads sound (RAW_REFETCH_BELOW_VERSION stays 4).
  */
-export const ALGO_VERSION = 6;
+export const ALGO_VERSION = 7;
 
 /**
  * Rows whose raw payload predates this version were fetched under the old
@@ -112,6 +112,27 @@ export const WEIGHT_SQFT = 25;
 export const WEIGHT_RECENCY = 20;
 export const WEIGHT_BEDBATH = 10;
 export const WEIGHT_LOT = 10;
+
+/**
+ * §14.3 amendment (operator ruling, 2026-08-13): lot weight is ZERO for
+ * ATTACHED subjects — CONDO and TOWNHOUSE — because Zillow's parcel records
+ * for attached housing are internally inconsistent (raw-verified,
+ * spike-evergreen-lots.json: same-complex units with 1,105–1,135 sqft
+ * interiors carrying 684/1,202/2,276 sqft lots, each explicitly "Square
+ * Feet" in Zillow's own record). A soft term that is noise is not neutral —
+ * it displaces signal from terms that are not. SFR keeps the lot term:
+ * there, lot is real.
+ *
+ * The freed 10 points redistribute PROPORTIONALLY across distance, sqft
+ * and recency (ruling's words): each scales by
+ * (80 + 10) / 80 = 9/8 — DERIVED from the weights, not typed, so a future
+ * weight change keeps the redistribution proportional and the total at
+ * 100 (35→39.375, 25→28.125, 20→22.5; bedbath stays 10; lot 0).
+ */
+export const ATTACHED_SUBJECT_TYPES: ReadonlyArray<string> = ['CONDO', 'TOWNHOUSE'];
+export const ATTACHED_REDISTRIBUTION_FACTOR =
+  (WEIGHT_DISTANCE + WEIGHT_SQFT + WEIGHT_RECENCY + WEIGHT_LOT) /
+  (WEIGHT_DISTANCE + WEIGHT_SQFT + WEIGHT_RECENCY);
 
 /**
  * Completeness tie-breaker (§14.20, operator ruling): null bed/bath diffs

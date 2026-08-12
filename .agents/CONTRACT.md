@@ -89,16 +89,29 @@ lot      = min(|cLot - sLot| / sLot / LOT_NORM_RATIO, 1)          * 10   (NEW)
 `LOT_NORM_RATIO = 1.0` — a 100% lot difference saturates the term. **Null lot on
 either side scores 0**, exactly as null beds/baths do: unknown is not a penalty.
 
-**Lot is LOW-SIGNAL for CONDO and TOWNHOUSE subjects (operator note,
-2026-08-13, recorded not fixed):** Zillow's parcel records for attached
-housing are internally inconsistent — verified raw (`spike-evergreen-lots.json`,
-one batched detail run): same-complex townhouse units with 1,105–1,135 sqft
-interiors carry lots of 684, 1,202 and 2,276 sqft, each explicitly
-`lotAreaUnits: "Square Feet"` in Zillow's own record — their data, not our
-acres conversion. The soft lot term may therefore add noise rather than
-signal on attached-housing subjects. No change ruled; if one ever is, the
-obvious shape is zeroing the lot weight when the subject is CONDO/TOWNHOUSE
-(redistributing its 10 points), which is a §14.3 amendment, not a patch.
+**§14.3 AMENDMENT (operator rulings, folded 2026-08-13; ALGO_VERSION 7).
+Three rules now govern scoring/ordering beyond the base weights:**
+
+1. **Lot weight is ZERO for ATTACHED subjects (CONDO, TOWNHOUSE) —
+   RULED.** Evidence: Zillow's parcel records for attached housing are
+   internally inconsistent — verified raw (`spike-evergreen-lots.json`):
+   same-complex townhouse units with 1,105–1,135 sqft interiors carry
+   lots of 684, 1,202 and 2,276 sqft, each explicitly `lotAreaUnits:
+   "Square Feet"` in Zillow's own record. A soft term that is noise is
+   not neutral — it displaces signal from terms that are not. The freed
+   10 points redistribute PROPORTIONALLY across distance, sqft and
+   recency: each × `ATTACHED_REDISTRIBUTION_FACTOR` = (80+10)/80 = 9/8,
+   DERIVED from the weights (35→39.375, 25→28.125, 20→22.5; bedbath
+   stays 10). **SFR keeps the original 35/25/20/10/10 — lot is real
+   there.** `effectiveWeights(subjectType)` (rank.ts, exported) is the
+   single source; BOTH branches total exactly 100 (9/8 is dyadic, so the
+   float sum is exact). INSPECTOR asserts the totals in both branches and
+   that an SFR subject is unaffected.
+2. **Null lot (either side) scores 0** — unchanged, as null beds/baths do:
+   unknown is not a penalty.
+3. **Completeness tie-breaker (§14.20)**: unknown is not an ADVANTAGE
+   either — ordering (not score) demotes missing bed/bath fields by
+   5/field within the concealment margin.
 
 ### 14.4 Confidence, rebased (operator ruling — a consequence, not a choice)
 
@@ -1020,7 +1033,7 @@ sql/add_comps_detail_cache.sql
 | `NON_ARMS_LENGTH_PPSF_FRACTION` | `0.4` | ppsf < 40% of candidate median ⇒ reject |
 | ~~`LOT_ANOMALY_MULTIPLE`~~ | REMOVED | lot is now a soft SCORING term, not a gate (§14.1/§14.3) |
 | `LOT_NORM_RATIO` | `1.0` | lot-score normalizer; 100% difference saturates |
-| `WEIGHT_DISTANCE` / `WEIGHT_SQFT` / `WEIGHT_RECENCY` / `WEIGHT_BEDBATH` / `WEIGHT_LOT` | `35 / 25 / 20 / 10 / 10` | score weights, sum 100 (§14.3) |
+| `WEIGHT_DISTANCE` / `WEIGHT_SQFT` / `WEIGHT_RECENCY` / `WEIGHT_BEDBATH` / `WEIGHT_LOT` | `35 / 25 / 20 / 10 / 10` | base weights, sum 100 (§14.3). **ATTACHED subjects (CONDO/TOWNHOUSE): lot 0, distance/sqft/recency × 9/8 (§14.3 amendment) — both branches sum 100 via `effectiveWeights`** |
 | `DISTANCE_NORM_MI` | `1.0` | score normalizer |
 | `RECENCY_NORM_MONTHS` | `12` | score normalizer |
 | ~~`TRIM_FRACTION` / `ARV_ROUND_TO` / `CONF_HIGH` / `CONF_MEDIUM`~~ | REMOVED | deleted with `arv.ts` (§14.8); values preserved in §5.5's struck spec |
