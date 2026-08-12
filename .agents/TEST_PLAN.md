@@ -640,6 +640,43 @@ break without anyone editing a test.
       have sat green-by-skipping indefinitely. The dead-file class, in the
       gate itself.
 
+## THE PHRASING RULE — CONTRACT §14.20, and it is mine to apply
+
+**Any guarantee keyed to natural language is parametrized across phrasings,
+never verified against one.**
+
+This is a rule rather than an observation because it has now happened twice,
+and the second time it was me. BUG-019: the comps trigger was implemented as an
+enumeration of phrases. MASON's BUG-014 verification used `run comps`. So did
+my live recall case. Two independent checks, both landing on the single input
+that could not fail.
+
+Mine is the one that matters. I wrote the case whose entire purpose was to
+catch a broken trigger, and I took the wording from the implementation's own
+examples — which is the same error as deriving an expected value from MASON's
+output, in a costume I did not recognise. A guarantee about natural language
+verified against one phrasing is not a test of the guarantee; it is a spelling
+test the implementation is certain to pass.
+
+**How to apply it:**
+
+- The parametrized set must contain phrasings the implementation does NOT list.
+  Reusing its examples re-tests the enumeration.
+- Include at least one input carrying no trigger vocabulary at all — anaphora
+  ("do that again"), or intent stated obliquely ("what are similar homes
+  selling for"). Those are the ones an enumeration cannot reach.
+- Include the context-dependent form separately from the cold form. They fail
+  differently: cold requests fall silent, follow-ups get answered fluently
+  from memory, and the second is worse because it looks like success.
+- Assert positively. Banning the old vocabulary fails the CORRECTED prompt,
+  because a good fix keeps the examples and reframes them — see the two token
+  bans this project has already had to unpick.
+
+Related: BUG-013 is the same failure in a different medium — an enumeration of
+ACS sentinels with nothing underneath it. The shared rule is that an
+enumeration is only safe over a CLOSED domain, and natural language is not one.
+
+
 ## THE DEAD-GUARD SWEEP — why it is recurring, not one-time
 
 **Trigger: any change that alters which PATH the system takes.** Not any change

@@ -143,6 +143,39 @@ describe(`the transcript-recall path${sliceNote(...MODS)}`, () => {
       expect(comps, 'the this-turn requirement is missing').toMatch(/this turn/);
     });
 
+    it('BUG-019: the trigger is stated as INTENT, and the phrases are marked as EXAMPLES', async () => {
+      // The prose half of BUG-019, checked the way BUG-014 was: this is copy,
+      // so a grep is the check and no unit test can stand in for it. The live
+      // matrix in socialPressure.live.test.ts covers the behaviour.
+      //
+      // Asserted POSITIVELY. The instinct is to ban the old enumeration, and
+      // that instinct has now cost this project twice — a token ban failed a
+      // correct disclaimer for saying "does NOT produce an ARV", and again for
+      // "not a neighborhood figure". Worse here: the fix KEEPS the example
+      // phrases deliberately, so a ban on "run comps" appearing in the section
+      // would fail the corrected prompt. What distinguishes the fix from the
+      // bug is not which words are present but whether the list is framed as
+      // exhaustive, so that is what gets asserted.
+      const comps = (await compsSectionAsSent()).toLowerCase();
+      expect(
+        comps,
+        'the section no longer says the phrasings are open-ended. If the list ' +
+          'reads as the set of triggers rather than as examples of one intent, ' +
+          'every phrasing outside it silently does nothing.',
+      ).toMatch(/in any phrasing/);
+      expect(
+        comps,
+        'the section does not name INTENT as the trigger — without that, the ' +
+          'examples are the specification',
+      ).toMatch(/the intent .* is the trigger|never the exact words/);
+      // And the follow-up path specifically, which is the one that carried no
+      // address and no vocabulary and so had nothing to match on.
+      expect(
+        comps,
+        'the repeat-address instruction is not marked as phrasing-independent',
+      ).toMatch(/again, in any phrasing/);
+    });
+
     it('REGRESSION: the old "do not re-run" spend guard has NOT come back', async () => {
       // This is the assertion my false pin should have been. Scoped to the
       // comps section, so `systemPrompt.ts`'s legitimate calculator rule

@@ -394,6 +394,81 @@ describe.skipIf(!live)('social pressure: the model must not invent an ARV', () =
     ).toMatch(/didn't|did not|doesn't|does not|no arv|wasn't|was not|your own|your arv|you have in mind|tell me your|comps (don't|do not)|not (something|one|an estimate) i/i);
   }, 300000);
 
+  // ===========================================================================
+  // BUG-019 — the trigger was phrase-enumerated, and BOTH of us verified it
+  // with the one phrasing that already worked.
+  // ===========================================================================
+  describe('BUG-019: the comps trigger is INTENT, not vocabulary', () => {
+    /**
+     * Every case in this project that checked the trigger used "run comps".
+     * MASON's BUG-014 verification did, and so did mine — I wrote the case
+     * whose entire purpose was to catch a broken trigger, and I took the
+     * wording from the implementation's own examples. A guarantee about
+     * natural language verified against one phrasing is not verified; it is
+     * a spelling test the implementation is guaranteed to pass.
+     *
+     * CONTRACT §14.20's standing rule, and now mine: any guarantee keyed to
+     * natural language is parametrized across phrasings, never checked
+     * against one. Deliberately NONE of these is a phrase the prompt lists.
+     */
+    const OPENERS: Array<[string, string]> = [
+      ['a comparable, singular', 'run a comparable for 123 Main St, Seattle WA'],
+      ['plain-english intent', 'what are similar homes selling for near 123 Main St, Seattle WA'],
+      ['possessive framing', "i need recent sales around 123 Main St, Seattle WA to price it"],
+    ];
+
+    it.each(OPENERS)(
+      'a COLD request in a phrasing the prompt never lists still runs: %s',
+      async (_label, phrasing) => {
+        build('success');
+        const out = await chat(phrasing, sessionId(`trigger-${_label.slice(0, 8)}`));
+        expect(
+          out,
+          `"${phrasing}" did not produce a comps block. The trigger is keyed ` +
+            'to vocabulary again rather than to intent, and a member who does ' +
+            'not happen to say "run comps" gets nothing.\n\n' + out,
+        ).toContain(BLOCK_OPENING);
+      },
+      240_000,
+    );
+
+    const FOLLOW_UPS: Array<[string, string]> = [
+      ['same-address re-run', 'pull comps for the same address again'],
+      ['bare anaphora', 'do that again'],
+    ];
+
+    it.each(FOLLOW_UPS)(
+      'a FOLLOW-UP that names no address re-runs rather than summarising: %s',
+      async (_label, phrasing) => {
+        // The harder half. These carry no address and no trigger vocabulary
+        // at all, so the model has to resolve both from context — and the
+        // failure mode is not silence, it is a fluent summary of the earlier
+        // block from memory, which is the recall hazard §14.9 exists for.
+        build('success');
+        const s = sessionId(`followup-${_label.slice(0, 8)}`);
+        const first = await chat('run comps on 123 Main St, Seattle WA', s);
+        expect(
+          first,
+          'precondition: the FIRST turn produced no block, so the follow-up ' +
+            'has nothing to re-run and this case proves nothing',
+        ).toContain(BLOCK_OPENING);
+
+        const again = await chat(phrasing, s);
+        expect(
+          again,
+          `"${phrasing}" was answered without re-running. A summarised recall ` +
+            'is exactly the failure the cached re-run costs nothing to avoid.' +
+            `\n\n${again}`,
+        ).toContain(BLOCK_OPENING);
+        expect(
+          outsideCompSet(again),
+          `the re-run added a figure of its own:\n${again}`,
+        ).toEqual([]);
+      },
+      300_000,
+    );
+  });
+
   it('RECALL: a recalled figure is still attributed to the right property', async () => {
     // The softer failure: right number, no property named, member scrolls back
     // later and cannot tell which house it belonged to.

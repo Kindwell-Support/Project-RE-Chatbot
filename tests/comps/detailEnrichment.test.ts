@@ -480,6 +480,115 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
   // COUNT. Never by timing: the client's Apify quota is what is at stake, and
   // a timing assertion would be flaky about the one thing that costs money.
   // =========================================================================
+  // =========================================================================
+  describe.skipIf(pendingSlice(...MODS))(
+    'STRUCTURAL: a detail attaches WHOLE or not at all',
+    () => {
+      // Offered and taken. Today the join cannot half-match — detail.ts either
+      // spreads the entire CompDetail or returns the comp untouched — so this
+      // asserts a property that currently holds, to stop a refactor
+      // introducing the state rather than to catch one now.
+      //
+      // THE DISTINCTION THAT MAKES IT TESTABLE, and it is the whole point:
+      // comp 5 on the 10th Place run showed year built and lot NULL while DOM
+      // and parking were populated. That is not a partial join. Those are five
+      // KEYS that are always present, two of them carrying null because the
+      // payload had gaps — which is §14.5's honest-unknown, working. A partial
+      // join is a missing KEY, and it renders as undefined rather than as the
+      // em-dash, so it would slip past every value-level assertion in this
+      // file. So the line is key presence, never value presence.
+      const DETAIL_KEYS = [
+        'daysOnMarket', 'parkingSpaces', 'yearBuilt',
+        'architecturalStyle', 'propertyCondition',
+      ] as const;
+
+      /** Every comp's detail, if it has one, must carry the full key set. */
+      function assertWholeOrAbsent(comps: Array<{ comp: { zpid: string }; detail?: object }>) {
+        let withDetail = 0;
+        for (const c of comps) {
+          if (c.detail === undefined) continue;
+          withDetail += 1;
+          expect(
+            Object.keys(c.detail).sort(),
+            `${c.comp.zpid}: a PARTIAL CompDetail attached. Half a join renders ` +
+              'undefined where §14.5 promises an em-dash, and every ' +
+              'value-level assertion in this file would still pass.',
+          ).toEqual([...DETAIL_KEYS].sort());
+        }
+        return withDetail;
+      }
+
+      it('the assertion itself rejects a half-matched detail', () => {
+        // Proving the guard discriminates before trusting it — a key-set
+        // comparison that accepted a subset would pass everywhere and mean
+        // nothing.
+        expect(() =>
+          assertWholeOrAbsent([
+            { comp: { zpid: 'X' }, detail: { daysOnMarket: 25, parkingSpaces: 2 } },
+          ]),
+        ).toThrow(/PARTIAL CompDetail/);
+      });
+
+      it.each([
+        ['every detail resolves', 'all'],
+        ['some items fail', 'partial'],
+        ['no detail support at all', 'none'],
+      ])('holds when %s', async (_label, mode) => {
+        // The bank drives which comps enrich. "partial" supplies detail for
+        // only the FIRST address, so the rest miss — which is the realistic
+        // shape (a batch where some items come back unusable) and the one that
+        // would expose a half-join if the code ever merged field-by-field.
+        const addresses = (golden01.comps as Array<{ address: string }>).map((c) => c.address);
+        const item = (a: string, i: number) => [
+          a,
+          {
+            zpid: `D${i}`, isValid: true, daysOnZillow: 19 + i, yearBuilt: 1998,
+            resoFacts: { parkingCapacity: 2 },
+          },
+        ] as const;
+        const bank = Object.fromEntries(
+          mode === 'partial'
+            ? [item(addresses[0], 0)]
+            : addresses.map((a, i) => item(a, i)),
+        );
+
+        const spy = makeProviderSpy({
+          subject: golden01.subject as never,
+          comps: golden01.comps as never,
+          noDetailSupport: mode === 'none',
+          ...(mode === 'none' ? {} : { detailItems: bank }),
+        } as never);
+        const out = await runComps('123 MAIN ST, SEATTLE WA', {
+          provider: spy.provider as never,
+          now: () => new Date(golden01.now),
+        } as never);
+        expect(out.ok, 'the run failed, so there are no comps to inspect').toBe(true);
+        if (!out.ok) return;
+
+        const withDetail = assertWholeOrAbsent(out.comps as never);
+        if (mode === 'all') {
+          expect(withDetail, 'no comp was enriched, so the whole-join case is vacuous')
+            .toBeGreaterThan(0);
+        }
+        if (mode === 'partial') {
+          // Without this the "partial" row could quietly be all-or-nothing and
+          // would then be a duplicate of one of the other two rows, dressed up
+          // as the interesting case.
+          expect(withDetail, 'nothing enriched — this row is the "none" case again')
+            .toBeGreaterThan(0);
+          expect(
+            withDetail,
+            'everything enriched — this row is the "all" case again, and the ' +
+              'mixed state where a half-join would show is never exercised',
+          ).toBeLessThan(out.comps.length);
+        }
+        if (mode === 'none') {
+          expect(withDetail, 'details attached with no provider support').toBe(0);
+        }
+      });
+    },
+  );
+
   describe.skipIf(pendingSlice(...MODS))('cost: three actor runs per lookup, never forty', () => {
     const ADDRESS = '123 Main St, Seattle WA';
     const SUBJECT = { ...golden01.subject, address: '123 MAIN STREET, SEATTLE, WA 98101' };
