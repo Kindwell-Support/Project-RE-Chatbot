@@ -46,6 +46,21 @@ export const OUTLIER_PPSF_RATIO = 1.6;
  */
 export const OUTLIER_REFERENCE_MIN_COUNT = 5;
 
+// --- Enrichment reliability (CONTRACT §14.14.2) -----------------------------
+
+/**
+ * Bounded retries for the detail batch — SUPERSEDES §14.14.1's no-retry pin
+ * (operator ruling 2026-08-12, the Daffodil 0/5 incident). Fires ONLY on a
+ * transient throw (timeout/5xx/network, never 4xx) or an EMPTY/SHORT batch
+ * (fewer total items than addresses requested); a complete batch carrying
+ * isValid:false items is an ANSWER and never retries. Each retry still
+ * requires remaining pipeline headroom >= DETAIL_MIN_REMAINING_MS.
+ */
+export const DETAIL_BATCH_MAX_RETRIES = 1;
+
+/** Explicit backoff before a detail-batch retry (§14.14.2 rule 1). */
+export const DETAIL_RETRY_BACKOFF_MS = 2_000;
+
 /**
  * Rows whose raw payload predates this version were fetched under the old
  * 40-item/uncapped-window regime and MUST REFETCH rather than
