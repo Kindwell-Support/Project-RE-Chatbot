@@ -640,6 +640,71 @@ break without anyone editing a test.
       have sat green-by-skipping indefinitely. The dead-file class, in the
       gate itself.
 
+## APPENDIX — THE TWO RULINGS, spec written ahead of the build
+
+Neither has landed (`grep` over `src/` finds nothing at `ea5d5f3`). Written
+ahead so MASON can build against it, as with the aggregates slice.
+
+### RULING 1 — under-specified multi-unit addresses route to the ask
+
+Trigger: member supplied no unit **AND** the resolved card has one **AND** 2+
+distinct unit cards exist at that street in the pool. All three, conjunctive.
+
+**The negative cases carry the weight, and I want to be plain about why.** A
+false ask is worse than the guess it replaces. A wrong unit is a wrong figure —
+bad, and the kind of bad this module already guards against everywhere. A
+spurious ask on an ordinary house is different in kind: it makes the tool look
+broken on the most common input there is, and it teaches the member that the
+address they typed was somehow wrong. They will not type it again.
+
+So the cases, negative first:
+
+1. **A plain SFR must never ask.** No unit on the card, no sibling cards.
+2. **A building where exactly ONE unit card exists must never ask** — the
+   third condition is what separates "this address is ambiguous" from "this
+   address happens to have a unit number", and it is the one most likely to be
+   dropped as redundant.
+3. **A member who SUPPLIED the unit must never ask**, even with siblings
+   present. Condition one, and the case that proves the ask is about ambiguity
+   rather than about the building.
+4. Only then the positive: no unit given, card has one, 2+ siblings ⇒ ask.
+
+**And the ask is a failure branch like any other**, so it inherits every
+invariant: no figure of any kind in the copy, manual entry still offered, the
+em-dash rules, and no state write. An ask that quietly renders a partial block
+would be a new shape of the leak this module spent three slices closing.
+
+### RULING 2 — thin-market disclosure
+
+Two triggers: (a) fewer than 3 comps surviving at any rung within 1 mile;
+(b) $/sqft dispersion beyond a threshold MASON proposes.
+
+**The threshold has a hard discriminator, and it must be tested BOTH ways:**
+
+| row | spread | truth | required |
+| --- | --- | --- | --- |
+| Mesquite | $138–276 | cross-city, genuinely poor | MUST fire |
+| Grandview | $215–364 | sub-mile, genuinely good | must NOT fire |
+
+Note what those numbers do to a naive threshold. Mesquite's *ratio* is 2.00 and
+Grandview's is 1.69; the absolute spreads are $138 and $149 — **Grandview's is
+wider**. So any threshold on absolute spread fails outright, and a ratio
+threshold has only a 0.31 band to sit in. If MASON's proposal cannot separate
+these two rows, spread alone is not the signal and the trigger needs a second
+dimension (geographic concentration is the obvious candidate, since that is the
+actual difference between the rows).
+
+Verifying against only the row that fires would confirm the trigger and say
+nothing about the threshold. Both rows, every time.
+
+**Both rulings are disclosure only** — no refusal, no scoring change, no
+re-ranking. The strongest assertion available is therefore the cheapest: the
+comp set is **byte-identical** with and without the disclosure firing. Render
+both, strip the disclosure line, compare. That catches a disclosure implemented
+by re-running the pipeline with different parameters, which is the failure mode
+that would otherwise pass every content assertion.
+
+
 ## THE PHRASING RULE — CONTRACT §14.20, and it is mine to apply
 
 **Any guarantee keyed to natural language is parametrized across phrasings,

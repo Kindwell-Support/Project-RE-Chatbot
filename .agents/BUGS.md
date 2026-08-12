@@ -101,6 +101,70 @@ Searchable phrasings: *migrate probe says table exists when it does not*,
 
 ---
 
+## BUG-020 — livingArea float artifacts — FILED AND REFUTED
+
+- **Status**: CLOSED, not a bug. Recorded because the reasoning is reusable.
+- **Severity**: none.
+
+Raised by the BUG-018 class sweep. `livingArea` is rounded at **neither** site —
+not `apifyZillow.ts:169/214`, not `format.ts:173/280` — while `lotSize` is
+rounded at both. Same field family, same two mapper routes, same payload
+object. The suspicion was sound and I expected it to confirm.
+
+**It is safe anyway, for a reason that is not a guard.** `num()` renders through
+`toLocaleString`, whose default `maximumFractionDigits` is 3. That absorbs the
+`15682.000000000002` shape entirely. The lot needed a real fix because its
+*other* shape — acreage conversion — lands at exactly three decimals
+(`97,199.784`) and passes under that default intact. `livingArea` is sqft-native
+with no conversion path, so it cannot produce a three-decimal value.
+
+The protection is therefore incidental. If `num()` ever gains explicit fraction
+digits, or a sqft value acquires a conversion, this becomes real with nothing
+between it and a member. `numerics.test.ts` asserts both the absorbed shape and
+the three-decimal shape that would get through, so the limit is explicit.
+
+Searchable: *living area decimals*, *sqft float artifact*, *toLocaleString
+default fraction digits*.
+
+---
+
+## FINDING-013 — §14.20 charges the concealment margin where nothing is concealable
+
+- **Status**: OPEN. Reported to MASON; not a merge blocker.
+- **Severity**: minor, but it changes which comps a member sees.
+
+`orderingKey` adds `COMPLETENESS_TIEBREAK_PER_FIELD` per null bed/bath field on
+the **comp**, unconditionally:
+
+```ts
+const missingFields = (comp.beds === null ? 1 : 0) + (comp.baths === null ? 1 : 0);
+```
+
+`scoreComp` zeroes a diff when **either** side is null. So when the SUBJECT's
+beds are unknown, the bedbath term is 0 for every comp whether it discloses or
+not — the concealable advantage is exactly **zero** — and the comp is charged
+the full 5 regardless.
+
+**Why it is not merely academic.** It is reachable: `format.ts:279` renders a
+bedless subject with the em-dash rather than rejecting the run. And ordering is
+not cosmetic — `rankComps` slices at `MAX_COMPS_KEPT`, so the demotion can drop
+a genuinely better comp out of the kept five in favour of a worse one whose beds
+happen to be populated, on a subject where beds were never scoreable.
+
+**The margin itself is correct**, and was verified exhaustively rather than
+taken on report: swept against the shipped gate, one concealed field can hide at
+most 5 and does reach 5; two compound to exactly 10 with no clamp saturation.
+The defect is scope, not arithmetic — the derivation assumes the field is
+scoreable and the implementation does not carry that condition.
+
+**Suggested shape** (MASON's call): count a missing field only when the subject
+has the corresponding field populated.
+
+Searchable: *tie-break penalises unscoreable field*, *bedless subject demotes
+concealers*, *orderingKey ignores subject nulls*.
+
+---
+
 ## FINDING-012 — the sweep tool reproduced FINDING-006, and corrupted the one field a sweep is for
 
 - **Status**: CLOSED (tool fixed, result stands).
