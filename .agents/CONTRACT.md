@@ -1040,6 +1040,74 @@ while the member expected another (7584180, 934 sqft). **Ruling: ASK.**
   false-positive on members who DID type a unit. Cached successes serve
   until their 14-day TTL; new lookups get the ask.
 
+### 14.23 Price-outlier disclosure (operator ruling; ALGO_VERSION 9; the FINAL slice)
+
+The Bellevue anatomy: comp 1 at $1,452/sqft ranked FIRST (closest, exact
+bed/bath match — scoring has no price term, by design) against peers at
+$596–833. §14.21 never fires (served rung was 1 mile). The ARV removal
+took the trimmed mean, the only mechanism that ever saw a price outlier;
+the low-side `NON_ARMS_LENGTH` gate (0.4×) is the sole survivor and it is
+an exclusion, not a disclosure. Measured across all 13 cached rows before
+ruling (outlier report, 2026-08-12); every parameter below is
+evidence-decided, none defaulted.
+
+**Reference (two-level, per the measurements):**
+- **PRIMARY: the matched near-pool median ppsf** — median $/sqft over the
+  deduped SOLD, in-sqft-band, same-mapped-type sales within 1mi/12mo (the
+  §14.21 pool pointed at prices), **when its ppsf sample count ≥
+  `OUTLIER_REFERENCE_MIN_COUNT` (5)**. Two NEW REQUIRED fields on
+  `CompsResult`, computed in `computeFromRaw` beside
+  `nearInBandSameTypeSales`: `nearInBandMedianPpsf: number | null` and
+  `nearInBandPpsfCount: number` (the ppsf sample can be smaller than the
+  §14.21 count — a counted sale without a usable price/sqft pair carries
+  no ppsf).
+- **FALLBACK: the kept set's leave-one-out median** — each comp judged
+  against the median of the OTHER kept comps, so a comp cannot drag its
+  own reference — when the primary's count is below the floor. This level
+  exists because of Coronado: A=1.79 with the matched pool unreliable at
+  n=4.
+- **The neighbourhood aggregate mean is NOT a trigger — RULED OUT by
+  measurement**: Sierra Vista reads 1.60 against it while internally
+  tight (1.25/1.26 on the other two references), because the aggregate is
+  a population mean across ALL types and sizes. Quotable as fact in copy;
+  never a trigger.
+
+**Threshold: `OUTLIER_PPSF_RATIO = 1.6`, TWO-SIDED** — flag above 1.6×
+the reference or below 1/1.6 (0.625×). Evidence beside the constant: on
+13 cached rows, normal spread topped out at ~1.3 and true positives
+started at 1.79 — 1.6 sits in the gap with headroom both directions.
+Two-sided because the low band is a real gap (`NON_ARMS_LENGTH` excludes
+below 0.4× and nothing flags 0.4×–0.625×), not because high mattered
+more; Grandview's comp 5 at 0.73× sits inside the band and correctly
+gets no note.
+
+**Copy — PER-COMP, naming the comp, its ppsf, and the reference** (a
+set-level note makes the member hunt for which comp it means):
+- primary: *"Comp 1 sold at $1,452/sqft against a neighbourhood median
+  of $723/sqft for this home's type and size; weigh its price
+  accordingly."*
+- fallback: *"...against a median of $365/sqft for the other comps in
+  this set; ..."* — the reference is NAMED honestly per Guarantee 4; the
+  fallback line must never claim to be a neighbourhood figure.
+
+**Architecture — identical to §14.21, no deviation:** disclosure only
+(no re-ranking, no exclusion, no scoring change); comp set BYTE-IDENTICAL
+with and without the flag, asserted by render diff; trigger fields
+REQUIRED on the type so flag-holds-but-no-block is unrepresentable;
+Guarantee 4 (cannot-render is a BUG); §14.5 em-dash exclusivity in the
+new copy (this rule has broken three times, every one a copy edit);
+placement in the disclosure slot between the table and the neighbourhood
+block, after the §14.21 line when both fire. **ALGO_VERSION 8 → 9**;
+recompute-from-raw works (the raw is sound); `RAW_REFETCH_BELOW_VERSION`
+stays 4.
+
+**Verification rows (operator-named, from the outlier report):**
+**Bellevue fires via the primary** (comp 1: 1,452 vs 723, ratio 2.01,
+n=15); **Coronado fires via the fallback** (comp 5 at 1.79 against
+peers, matched pool n=4 — the case that justifies the fallback
+existing); **Grandview, Evergreen, 10th Place, Sierra Vista and Don
+Frank all stay silent** (maxima 1.09–1.27, inside the band).
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live
