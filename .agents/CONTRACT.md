@@ -757,6 +757,80 @@ the next occurrence carries its cause in a WARN.
    is exactly why run 2 self-healed from run 1's row. A 0/N serve can
    never be frozen into the cache by construction.
 
+### 14.14.3 Detail truthfulness (operator ruling 2026-08-12; surgical fix on the frozen branch)
+
+**Two member-facing falsehoods, raw-verified (register number pending —
+worse in kind than BUG-021: that degraded honestly; this ASSERTED wrong
+facts):**
+
+1. **Wrong-property join (Osborn comp 3, zpid 7573111).** A diagnostic
+   detail run on the comp's own address "6953 E OSBORN Road #C" returned
+   **zpid 7573110 — Unit D** — whose payload (`parkingCapacity: 0`,
+   `yearBuilt: null`) byte-matches what our cache stored UNDER UNIT C's
+   zpid. The address-keyed join verified nothing about identity, so a
+   sibling unit's facts rendered under the member's comp and were cached
+   under the wrong zpid for 90 days. Unit C's real 2 spaces never
+   reached us.
+2. **Zillow's parking 0 is a DEFAULT, not an observation (Cypress comp
+   5, zpid 92353100).** Raw payload: `resoFacts.parkingCapacity: 0`,
+   `parking.totalSpaces: 0`, **`features: ["Carport"]`** — parking
+   exists, uncounted, and we rendered "0 parking spaces".
+
+**Rules, binding:**
+
+1. **The zpid VERIFIES what the address KEYS.** §14.14 rule 1 stands
+   unchanged (join key = `addressOrUrlFromInput`, never position); this
+   adds: a batch item carrying a zpid that differs from the comp's is a
+   WRONG-PROPERTY payload — it joins nothing, caches nothing, counts as
+   missing, and is surfaced (`DetailJoin.zpidMismatches`; service WARNs
+   with the count). **Recorded tension, accepted:** BUG-010 proved one
+   SALE can wear two zpids, so this check may occasionally cost a
+   legitimate comp its decoration — an em-dash. The alternative costs a
+   member another property's facts. Falsehood loses.
+2. **Parking renders a count ONLY when the payload states one > 0.**
+   Zero and absent both map to null (em-dash). This SUPERSEDES the
+   §14.14.1 "0 is a value" note FOR PARKING ONLY: the carport row
+   proves Zillow emits 0 as an unfilled default, indistinguishable from
+   a real zero — so a rendered 0 cannot be an honest claim. (DOM keeps
+   its 0-is-a-value semantics — `daysOnZillow: 0` has no recorded
+   default-abuse and negative sentinels already null.)
+3. **Uniform null strategy, audited across every mapped field** (beds,
+   baths, lot, DOM, parking, year built, and the card fields): a number
+   renders only from a positive payload statement; absent/unverifiable
+   maps to null and renders `—`. Audit result, recorded: no `?? 0` /
+   `|| 0` / `Number()` coercion exists anywhere in the mappers
+   (`asFiniteNumber` is strict number-or-null); parking was the sole
+   deviation and it came from TRUSTING Zillow's default, not from our
+   coercion.
+4. **Coverage `{covered, total}` is PER-COMP presence — a STATED
+   LIMITATION**: it counts comps carrying a detail object and is blind
+   to per-field absence or falsehood (Osborn read 5/5 while comp 3
+   rendered `Built —` with a sibling's parking). Not fixed now; any
+   future per-field coverage is its own ruling.
+5. **Detail-cache poisoning, deferred decision:** rows written before
+   this fix can carry sibling-unit payloads or default zeros (both
+   named zpids confirmed poisoned). The fix stops NEW poison; existing
+   rows serve until their 90-day TTL. Purging comps_detail_cache is a
+   shared-store data operation — operator's call, post-green.
+
+**Re-verifications ordered with the fix (absence-of-code reasoning
+retired, positive raw evidence recorded):**
+
+- **ZIP 85288 — Zillow-side, now PROVEN from the recorded raw payload**
+  (`spike-comps-3mi-doz12.json`): the Daffodil comps' cards carry
+  `item.address: "... Tempe, AZ 85288"` while THE SAME CARDS'
+  `homeInfo.zipcode` reads `"85281"` — the divergence is internal to
+  Zillow's card, and our mapper stores the `item.address` string
+  verbatim. **Noted candidate, NOT built:** the correct ZIP exists on
+  the card (`homeInfo.zipcode`); composing the rendered address from
+  homeInfo fields instead of relaying Zillow's preformatted string is
+  a ruling-worthy remedy with §14.18 relay implications.
+- **Osborn comp 2's 108-sqft lot — Zillow-side, PROVEN at the
+  property**: the detail payload for 3309 N 70TH Street #112 (zpid
+  7573677, matching) itself asserts `lotAreaValue: 108, lotAreaUnits:
+  "Square Feet"` — Zillow's own record, same class as the Evergreen
+  raw-verified lot inconsistencies (§14.3).
+
 ### 14.15 BUG-011 — manual ARV address binding (operator ruling)
 
 The ARV removal (§14.8) orphaned `subjectAddress`: with `run_comps` writing
