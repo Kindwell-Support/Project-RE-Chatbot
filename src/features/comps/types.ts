@@ -246,6 +246,22 @@ export interface CompsResult {
    * or not the disclosure fires).
    */
   nearInBandSameTypeSales: number;
+  /**
+   * §14.23: median $/sqft over the same deduped near in-band same-type
+   * pool, restricted to sales with a computable ppsf (soldPrice > 0 and
+   * livingArea > 0) — the price-outlier disclosure's PRIMARY reference.
+   * Null when no sale in the pool carries a usable pair. REQUIRED so the
+   * flag-holds-but-no-block state is unrepresentable. Never affects
+   * selection or ranking.
+   */
+  nearInBandMedianPpsf: number | null;
+  /**
+   * §14.23: how many sales back that median. Can be SMALLER than
+   * `nearInBandSameTypeSales` (a counted sale without a usable price/sqft
+   * pair carries no ppsf). Below OUTLIER_REFERENCE_MIN_COUNT the renderer
+   * falls back to the kept set's leave-one-out median.
+   */
+  nearInBandPpsfCount: number;
   comps: ScoredComp[];
   rejected: RejectedComp[];
   fromCache: boolean;

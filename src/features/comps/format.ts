@@ -9,7 +9,12 @@
  * and how many candidates were rejected. (The trim/ARV arithmetic this
  * comment once promised is gone with the ARV itself — CONTRACT §14.8.)
  */
-import { MIN_COMPS_TO_COMPUTE, NEIGHBORHOOD_RADIUS_MI } from './config.js';
+import {
+  MIN_COMPS_TO_COMPUTE,
+  NEIGHBORHOOD_RADIUS_MI,
+  OUTLIER_PPSF_RATIO,
+  OUTLIER_REFERENCE_MIN_COUNT,
+} from './config.js';
 import { median } from './filter.js';
 import type { CompsFailure, CompsFailureCode, CompsOutcome, CompsResult, ScoredComp } from './types.js';
 
@@ -209,6 +214,47 @@ function renderThinMarketDisclosure(result: CompsResult): string | null {
 }
 
 /**
+ * Price-outlier disclosure (§14.23, the FINAL slice) — per-comp lines, in
+ * comp order, in the same disclosure slot as §14.21.
+ *
+ * Reference is two-level, both levels evidence-decided (the 2026-08-12
+ * outlier report): the matched near-pool median when its sample clears
+ * OUTLIER_REFERENCE_MIN_COUNT, else the kept set's LEAVE-ONE-OUT median —
+ * each comp judged against the median of the OTHERS, so a comp cannot drag
+ * its own reference (Coronado's 655 among 198–465 is why). The band is
+ * TWO-SIDED (OUTLIER_PPSF_RATIO, high 1.6× and low 1/1.6): NON_ARMS_LENGTH
+ * excludes below 0.4× and nothing else watches 0.4×–0.625×.
+ *
+ * Disclosure only: nothing here re-ranks, excludes, or rescales — the comp
+ * set is byte-identical whether or not any line fires. Guarantee 4: the
+ * copy NAMES its reference honestly; the fallback line must never claim to
+ * be a neighbourhood figure. No em dash; no ARV.
+ */
+function renderOutlierDisclosures(result: CompsResult): string | null {
+  if (result.comps.length < 2) return null;
+  const usePool =
+    result.nearInBandPpsfCount >= OUTLIER_REFERENCE_MIN_COUNT && result.nearInBandMedianPpsf !== null;
+  const ppsf = result.comps.map((c) => c.pricePerSqft);
+  const lines: string[] = [];
+  result.comps.forEach((s, i) => {
+    const reference = usePool
+      ? (result.nearInBandMedianPpsf as number)
+      : median(ppsf.filter((_, j) => j !== i));
+    if (!(reference > 0)) return;
+    const ratio = s.pricePerSqft / reference;
+    if (ratio <= OUTLIER_PPSF_RATIO && ratio >= 1 / OUTLIER_PPSF_RATIO) return;
+    const refClause = usePool
+      ? `a neighbourhood median of ${USD.format(Math.round(reference))}/sqft for this home's type and size`
+      : `a median of ${USD.format(Math.round(reference))}/sqft for the other comps in this set`;
+    lines.push(
+      `_Comp ${i + 1} sold at ${USD.format(Math.round(s.pricePerSqft))}/sqft against ${refClause}; ` +
+        `weigh its price accordingly._`,
+    );
+  });
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
  * Neighbourhood sales section (§14.16.1). Three states like demographics.
  * Guarantee 4 twice over: the section header carries geography AND window
  * verbatim ("past 12 months within 1 mile") in the same template as the
@@ -330,6 +376,7 @@ function renderSuccess(result: CompsResult): string {
     header,
     table,
     renderThinMarketDisclosure(result),
+    renderOutlierDisclosures(result),
     renderNeighborhood(result.neighborhood, comps.length),
     renderDemographics(result.demographics),
     COMPS_CLOSING,

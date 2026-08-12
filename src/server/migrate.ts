@@ -84,14 +84,17 @@ export async function ensureCompsTables(supabase: SupabaseClient): Promise<boole
 }
 
 export async function ensureChatMessagesTable(supabase: SupabaseClient): Promise<boolean> {
-  // Test if the table already exists by trying a zero-cost read
-  const { error } = await supabase
+  // Same BUG-016 posture as ensureCompsTables: a GET probe demanding
+  // POSITIVE evidence (errorless AND an array body). `!error` alone is the
+  // laxity that class closed — an unanticipated response shape must report
+  // NOT VERIFIED, never silently pass.
+  const { data, error } = await supabase
     .from('chat_messages')
     .select('id')
     .limit(0);
 
-  if (!error) {
-    console.log('[migrate] chat_messages table exists');
+  if (!error && Array.isArray(data)) {
+    console.log('[migrate] chat_messages table verified');
     return true;
   }
 

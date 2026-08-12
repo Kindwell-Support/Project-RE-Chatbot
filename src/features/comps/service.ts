@@ -36,7 +36,7 @@ import { computeNeighborhoodAggregates, isWindowTruncated } from './aggregates.j
 import { attachDetails, detailBatchFor } from './detail.js';
 import { SEARCH_RESULTS_LIMIT } from './providers/apifyZillow.js';
 import { FAILURE_COPY } from './format.js';
-import { dedupeSales, haversineMiles, monthsBetween, selectTiers, unionCandidatePools } from './filter.js';
+import { dedupeSales, haversineMiles, median, monthsBetween, selectTiers, unionCandidatePools } from './filter.js';
 import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
 import { rankComps } from './rank.js';
 import type { CensusCacheLike } from './cache/censusCache.js';
@@ -236,7 +236,17 @@ function computeFromRaw(
     if (!(s > 0) || !(subjectSqft > 0) || Math.abs(s - subjectSqft) / subjectSqft > SQFT_TOLERANCE) return false;
     return haversineMiles(subject.lat, subject.lng, c.lat, c.lng) <= NEIGHBORHOOD_RADIUS_MI;
   });
-  const nearInBandSameTypeSales = dedupeSales(nearInBand).kept.length;
+  const nearInBandKept = dedupeSales(nearInBand).kept;
+  const nearInBandSameTypeSales = nearInBandKept.length;
+  // §14.23: the same pool pointed at prices — the outlier disclosure's
+  // primary reference. The ppsf sample can be smaller than the count above
+  // (a counted sale without a usable price/sqft pair carries no ppsf).
+  // Like the count, this NEVER feeds selection or ranking.
+  const nearPpsf = nearInBandKept
+    .filter((c) => (c.soldPrice ?? 0) > 0 && (c.livingArea ?? 0) > 0)
+    .map((c) => (c.soldPrice as number) / (c.livingArea as number));
+  const nearInBandMedianPpsf = nearPpsf.length > 0 ? median(nearPpsf) : null;
+  const nearInBandPpsfCount = nearPpsf.length;
   // §14.17 truncation honesty: flags describe the COMPS FETCH (the union's
   // 1-mile portion legitimately extends earlier — nearRingCompleteMi is
   // what says so). isWindowTruncated's slack covers the raw→mapped skip.
@@ -260,6 +270,8 @@ function computeFromRaw(
         ? NEIGHBORHOOD_RADIUS_MI
         : null,
     nearInBandSameTypeSales,
+    nearInBandMedianPpsf,
+    nearInBandPpsfCount,
     comps: ranked,
     rejected: tier.rejected,
     fromCache,

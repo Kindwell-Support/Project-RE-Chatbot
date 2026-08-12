@@ -16,10 +16,35 @@
  * (§14.20). 7 = zero lot weight for attached subjects (§14.3 amendment).
  * 8 = the thin-market disclosure (§14.21): CompsResult gains the REQUIRED
  * nearInBandSameTypeSales field, so cached rows recompute into the new
- * shape. v4+ rows RECOMPUTE free — raw payloads sound
- * (RAW_REFETCH_BELOW_VERSION stays 4).
+ * shape. 9 = the price-outlier disclosure (§14.23): two more REQUIRED
+ * fields (nearInBandMedianPpsf / nearInBandPpsfCount). v4+ rows RECOMPUTE
+ * free — raw payloads sound (RAW_REFETCH_BELOW_VERSION stays 4).
  */
-export const ALGO_VERSION = 8;
+export const ALGO_VERSION = 9;
+
+// --- Price-outlier disclosure (CONTRACT §14.23) -----------------------------
+
+/**
+ * Two-sided flag band: a kept comp whose ppsf exceeds reference × this, or
+ * falls below reference / this, gets the per-comp disclosure line. THE VALUE
+ * IS EVIDENCE-DECIDED, not chosen: across the 13 cached rows measured for
+ * the 2026-08-12 outlier report, normal in-set spread topped out at ~1.3
+ * and the true positives (Bellevue 1.94–2.01, Coronado 1.79) started at
+ * 1.79 — 1.6 sits in the gap with headroom in both directions. Adjusting it
+ * means re-running that measurement, not picking a rounder number. The low
+ * side is real coverage, not symmetry theatre: NON_ARMS_LENGTH excludes
+ * below 0.4× and nothing else watches 0.4×–0.625×.
+ */
+export const OUTLIER_PPSF_RATIO = 1.6;
+
+/**
+ * Minimum ppsf sample count for the matched near-pool median to serve as
+ * the outlier reference; below it the renderer falls back to the kept
+ * set's leave-one-out median. Coronado is why the floor exists: its
+ * matched pool of 4 put the "median" at 2.37 while the set's own
+ * leave-one-out read 1.79.
+ */
+export const OUTLIER_REFERENCE_MIN_COUNT = 5;
 
 /**
  * Rows whose raw payload predates this version were fetched under the old
