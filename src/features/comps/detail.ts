@@ -37,9 +37,11 @@ export interface DetailJoin {
   /** Count of comps left without detail. Addresses deliberately NOT included — they must not reach info logs. */
   missing: number;
   /**
-   * §14.14.3 rule 1: batch items REJECTED because their zpid contradicted
-   * the comp's — a wrong-property payload (recorded: the echo for Osborn
-   * "#C" carried Unit D's zpid and Unit D's facts). These count in
+   * §14.14.3 rule 1 (FINDING-017): batch items REJECTED because the join
+   * lacked a POSITIVE zpid match — wrong-property (zpids differ; recorded:
+   * the echo for Osborn "#C" carried Unit D's zpid and Unit D's facts) OR
+   * unidentified (either zpid absent). One counter for both shapes by
+   * deliberate choice (INSPECTOR may rule a split later). These count in
    * `missing` too; surfaced separately so the service can WARN.
    */
   zpidMismatches: number;
@@ -109,19 +111,22 @@ export function attachDetails(
 
     const item = lookup(scored.comp.address);
     if (item?.ok && item.detail) {
-      // §14.14.3 rule 1: the address KEYS the join; the zpid VERIFIES it.
-      // A differing zpid means Zillow resolved the batch address to a
-      // DIFFERENT property (recorded: "#C" answered by Unit D) — attaching
-      // it would render a sibling's facts under the member's comp and
-      // poison the zpid-keyed cache for 90 days. It joins nothing. The
+      // §14.14.3 rule 1 (FINDING-017 shape): the address KEYS the join; the
+      // zpid VERIFIES it — and the join happens ONLY on a POSITIVE match.
+      // Differing zpids are a wrong-property payload (recorded: "#C"
+      // answered by Unit D); a null ITEM zpid is an UNIDENTIFIED payload
+      // (absent identity must not satisfy an identity check — "Zillow
+      // always populates zpid on valid items" is the parkingCapacity bet
+      // one field over); a null COMP zpid has nothing to verify against.
+      // All three join nothing, cache nothing, and are surfaced. The
       // BUG-010 tension (one sale, two zpids) is accepted in the contract:
       // an occasional lost em-dash beats another property's facts.
-      if (item.zpid !== null && scored.comp.zpid && item.zpid !== scored.comp.zpid) {
+      if (item.zpid === null || !scored.comp.zpid || item.zpid !== scored.comp.zpid) {
         zpidMismatches += 1;
         missing += 1;
         return scored;
       }
-      if (scored.comp.zpid) fetched.push({ zpid: scored.comp.zpid, detail: item.detail });
+      fetched.push({ zpid: scored.comp.zpid, detail: item.detail });
       return { ...scored, detail: item.detail };
     }
     missing += 1;

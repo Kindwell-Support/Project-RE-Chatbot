@@ -786,12 +786,13 @@ async function enrichWithDetail(
 
   const join = attachDetails(result.comps, cachedDetails, items);
   if (join.zpidMismatches > 0) {
-    // §14.14.3 rule 1: a batch item answered the comp's address with a
-    // DIFFERENT property's zpid — rejected at the join, loudly. Counts
-    // only; addresses stay out of logs (§3).
+    // §14.14.3 rule 1: a batch item answered the comp's address without a
+    // POSITIVE zpid match — wrong-property or unidentified payload,
+    // rejected at the join, loudly. Counts only; addresses stay out of
+    // logs (§3).
     logger?.warn(
       { cacheKey: key, zpidMismatches: join.zpidMismatches },
-      'detail batch items rejected — zpid contradicts the comp (wrong-property payload)',
+      'detail batch items rejected — zpid missing or contradicting the comp',
     );
   }
   // §14.14.2 rule 2: coverage on EVERY served result — INFO always, WARN on
