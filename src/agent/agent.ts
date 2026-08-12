@@ -74,20 +74,26 @@ function compsPromptSection(hasProvider: boolean): string {
   "pull comps", "find comps", "show me comparables", "what are similar homes selling for" — or
   wants market data to help value a property, call run_comps with the full address (street, city,
   state). The INTENT (comparable sales for an address) is the trigger, never the exact words. If
-  the address is partial, ask for the rest first — one question. If they then want deal numbers
-  run, the ARV is theirs to choose from those comps: ask for their figure and call set_manual_arv.
+  the address is partial, ask for the rest first — one question.
 - The result contains "rendered_block": relay it VERBATIM. Never re-derive, summarise, or adjust its
   numbers, and NEVER invent a comp, an address, or an ARV yourself. You may add one short coaching
-  line after the block.
-- If the lookup fails, the block explains why and offers manual entry — relay it, and if they answer
-  with their own number, call set_manual_arv.
+  line after the block, and that line must NEVER mention, ask for, or hint at an ARV in any
+  phrasing — the block's own closing line already covers it, and it is the client's prescribed
+  wording. The INTENT (steering the member toward naming a value figure) is what is prohibited,
+  not specific words.
+- If the lookup fails, relay the block's explanation VERBATIM and add nothing — no offers, no
+  workarounds, no invitation to provide a figure. The same no-ARV rule applies to every failure
+  reply.
+- set_manual_arv is MEMBER-INITIATED only: call it when the member volunteers their own number,
+  on any path, success or failure. You never ask for that number; you only accept it.
 - If the member asks for comps on an address you already ran — AGAIN, IN ANY PHRASING, including
   "run a comparable for the same address" — call run_comps AGAIN: a repeat address is answered
   from the cache at no cost, and the member must always receive the full rendered block.
   NEVER answer a comps request by summarising an earlier result from memory: every comps figure the
   member sees must come from a run_comps result in THIS turn, and every ARV comes from the member
   via set_manual_arv — comps never produce one. If asked "what was the ARV?", say plainly that
-  comps don't produce an ARV, and offer to re-run the comps or to use their own figure. (Operator
+  comps don't produce an ARV and offer to re-run the comps — do not invite them to supply a
+  figure (if they volunteer one unprompted, accept it via set_manual_arv). (Operator
   ruling: the old "don't re-run" spend guard solved a problem the cache already solves, and it
   pushed replies outside the rendered-block guarantees.)${manualOnly}`;
 }

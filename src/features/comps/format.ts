@@ -35,17 +35,15 @@ const USD = new Intl.NumberFormat('en-US', {
 const FOOTER =
   '_Automated estimate from public sold data, not a formal appraisal. Verify these comps with your agent before you act._';
 
-// Deliberately NO example dollar amount in this offer: a numeric example
-// ("use 450k as the ARV") is itself an ARV-shaped number inside a refusal —
-// the exact anchor a pressured member or model latches onto. Caught by the
-// live social-pressure battery's precondition.
-const MANUAL_OFFER =
-  "If you already have an ARV in mind, just tell me what it is and I'll run the numbers with yours.";
-
 /**
- * §10 failure copy, one entry per code, single source of truth. Every message
- * is plain English, blames the right thing, and ends by offering manual ARV
- * entry. NONE of them contains a number that could be mistaken for an ARV.
+ * §10 failure copy, one entry per code, single source of truth — AMENDED BY
+ * OPERATOR RULING (2026-08-12): a failure message says what went wrong and
+ * what to do next. It does NOT pivot to deal numbers, and NO failure path
+ * names or solicits an ARV — the old MANUAL_OFFER tail is deleted from every
+ * branch. (Manual ARV survives REACTIVELY: a member who volunteers a number
+ * flows through set_manual_arv; we stopped asking, not listening.) The one
+ * member-facing comps line that names ARV is COMPS_ARV_CLOSE below. NONE of
+ * these contains a number that could be mistaken for an ARV.
  */
 export const FAILURE_COPY: Record<CompsFailureCode, (detail?: CompsFailure['detail']) => string> = {
   // Branched on detail.resolution, then on inputHasUnit (operator rulings —
@@ -55,35 +53,35 @@ export const FAILURE_COPY: Record<CompsFailureCode, (detail?: CompsFailure['deta
   ADDRESS_NOT_FOUND: (detail) =>
     detail?.resolution === 'unit_mismatch'
       ? detail.inputHasUnit
-        ? "I found the building but couldn't match that exact unit. Double-check the unit number, or tell me " +
-          "your ARV and I'll run the numbers with it."
+        ? "I found the building but couldn't match that exact unit. Double-check the unit number and " +
+          "I'll try again."
         : "I found the building but Zillow couldn't pin it to a specific property. If it's a condo or " +
-          "apartment, try including the unit number — otherwise tell me your ARV and I'll run the numbers with it."
+          'apartment, try including the unit number.'
       : "I couldn't find that address on Zillow. Double-check the spelling, and include the city and state — " +
-        'e.g. "123 Main St, Phoenix, AZ". ' + MANUAL_OFFER,
+        'e.g. "123 Main St, Phoenix, AZ".',
   SUBJECT_SQFT_UNKNOWN: () =>
     'I found the property, but Zillow has no square footage on record for it — and without the size I ' +
-    "can't do the price-per-square-foot math honestly. " + MANUAL_OFFER,
+    "can't do the price-per-square-foot math honestly, so I can't build a comp set for this one.",
   // Branched on detail.pool (operator ruling): an empty kept set over a pool
   // with ZERO same-type comps means we didn't find the right pool — telling
   // that member "the market is thin" misassigns the blame to their market.
+  // The comp threshold is stated WITHOUT invoking ARV (§10 amendment).
   TOO_FEW_COMPS: (detail) =>
     detail?.pool === 'no_type_match'
       ? "I found sold homes nearby but none of the same property type as yours, so I can't build a " +
-        "reliable comp set here. If you have an ARV in mind, tell me and I'll run the numbers with it."
+        'reliable comp set here.'
       : `Not enough recent sales to work with: I found ${detail?.kept ?? 'fewer than the minimum'} usable ` +
         `sold comp(s) within ${detail?.radiusTierMi ?? 2} mi in the last 12 months, and I need at least ` +
-        `${detail?.needed ?? 3} before an ARV means anything. The market there is too thin for automated comps. ` +
-        MANUAL_OFFER,
+        `${detail?.needed ?? 3} to build a reliable comp set. The market there is too thin for automated comps.`,
   PROVIDER_TIMEOUT: () =>
     "The property data source didn't answer in time. That's on their end, not your address — give it a " +
-    'minute and ask me to run the comps again. ' + MANUAL_OFFER,
+    'minute and ask me to run the comps again.',
   PROVIDER_ERROR: () =>
     'The property data source returned an error — nothing wrong with your input. Try again in a few ' +
-    'minutes. ' + MANUAL_OFFER,
+    'minutes.',
   RATE_LIMITED: () =>
     "Comps lookups are capped for the day (each one costs real money to run), and today's budget is " +
-    'used up. Try again tomorrow. ' + MANUAL_OFFER,
+    'used up. Try again tomorrow.',
 };
 
 /**
@@ -101,6 +99,18 @@ export const COMPS_CLOSING =
   'Evaluate each property carefully. Current quality of home, overall appeal, lot location and ' +
   'usability can drastically impact value. Also consider external factors such as view properties, ' +
   'environmental concerns, powerlines and busy roads.';
+
+/**
+ * §10 amendment (operator ruling, 2026-08-12): THE one member-facing comps
+ * line that names ARV, VERBATIM and STRUCTURAL. It previously existed only
+ * as a prompt-suggested idea the model paraphrased per turn — "choose an ARV
+ * from these comps… let me know if you have a figure in mind!" reached
+ * members. Prescribed copy that lives in a prompt is not fixed, it is
+ * requested; this line now rides the rendered block like every §14.7 string.
+ * Emitted after COMPS_CLOSING, before the footer.
+ */
+export const COMPS_ARV_CLOSE =
+  "If you want to run deal numbers, you'll need to supply your own ARV based on these comps.";
 
 /**
  * The null marker (CONTRACT §14.5). No-fabrication extends to every column: a
@@ -380,6 +390,7 @@ function renderSuccess(result: CompsResult): string {
     renderNeighborhood(result.neighborhood, comps.length),
     renderDemographics(result.demographics),
     COMPS_CLOSING,
+    COMPS_ARV_CLOSE,
     FOOTER,
   ];
   return sections.filter((s): s is string => s !== null).join('\n\n');
@@ -399,7 +410,9 @@ function renderFailure(failure: CompsFailure): string {
   const copy = FAILURE_COPY[failure.code];
   return copy
     ? copy(failure.detail)
-    : "Something went wrong pulling comps — no estimate this time. If you have your own ARV, tell me and I'll run the numbers with it.";
+    : // §10 amendment: even the last-resort unknown-code fallback solicits
+      // nothing — what went wrong, what to do next, and stop.
+      'Something went wrong pulling comps this time. Give it a minute and ask me to run them again.';
 }
 
 export function renderCompsForChat(outcome: CompsOutcome): string {
