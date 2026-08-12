@@ -957,8 +957,19 @@ contribution is 5 — so 5 points is exactly the largest ordering advantage
 one undisclosed field could have concealed. Within it, disclosure wins;
 beyond it, the genuinely better score still wins.
 
-**Mechanism:** an ORDERING KEY (`orderingKey` in rank.ts, exported) =
-`score + missingBedBathFields × 5`, used only in the sort.
+**Mechanism (amended by FINDING-013):** an ORDERING KEY (`orderingKey(scored,
+subject)` in rank.ts, exported) = `score + chargeableMissingFields ×
+(effectiveWeights(subjectType).bedbath / 2)`, used only in the sort. Two
+FINDING-013 corrections: (1) a comp's missing field is CHARGEABLE only if
+the SUBJECT has that field — scoring zeroes the term when either side is
+null, so against a bedless subject nothing is concealable and the charge
+was unearned (a live ordering error at the cap); (2) the margin derives
+from `effectiveWeights`, not `WEIGHT_BEDBATH` — the two agreed only
+because the §14.3 redistribution skipped bedbath, and a future
+branch-specific re-weighting must not desynchronize them silently. The
+5-point bound arithmetic stands: one field conceals at most — and can
+reach — bedbath/2; two compound to exactly bedbath without the clamp
+saturating.
 `ScoredComp.score` and `parts` are UNTOUCHED — rendered and asserted as
 computed. The shadow key is what makes the rule transitive and
 deterministic (a pairwise within-margin comparator is not); tie chain:

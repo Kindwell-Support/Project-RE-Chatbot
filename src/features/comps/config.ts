@@ -134,20 +134,11 @@ export const ATTACHED_REDISTRIBUTION_FACTOR =
   (WEIGHT_DISTANCE + WEIGHT_SQFT + WEIGHT_RECENCY + WEIGHT_LOT) /
   (WEIGHT_DISTANCE + WEIGHT_SQFT + WEIGHT_RECENCY);
 
-/**
- * Completeness tie-breaker (§14.20, operator ruling): null bed/bath diffs
- * still SCORE 0 (the contract pin stands — no invented penalty for missing
- * data), but a comp missing a bed/bath field must not OUTRANK a
- * close-scoring comp that disclosed a mismatch. Each missing field adds
- * this many points to the comp's ORDERING key only — the score and parts
- * are untouched. The value is DERIVED, not chosen: a kept comp with known
- * fields can disclose at most a one-unit mismatch (the gates reject
- * larger), and one field's maximum score contribution is WEIGHT_BEDBATH/2
- * = 5 — so 5 is exactly the largest advantage one undisclosed field could
- * have concealed. Within that margin, disclosure wins; beyond it, the
- * genuinely better comp still ranks first.
- */
-export const COMPLETENESS_TIEBREAK_PER_FIELD = WEIGHT_BEDBATH / 2;
+// §14.20's completeness tie-breaker margin is DERIVED IN rank.ts from
+// effectiveWeights(subjectType).bedbath / 2 (FINDING-013): deriving it here
+// from WEIGHT_BEDBATH agreed with scoring only because the §14.3
+// redistribution happened to skip bedbath, and a future branch-specific
+// re-weighting must not desynchronize the two silently.
 
 /** Distance at which the distance component saturates. */
 export const DISTANCE_NORM_MI = 1.0;

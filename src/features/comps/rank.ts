@@ -8,7 +8,6 @@
 import {
   ATTACHED_REDISTRIBUTION_FACTOR,
   ATTACHED_SUBJECT_TYPES,
-  COMPLETENESS_TIEBREAK_PER_FIELD,
   DISTANCE_NORM_MI,
   LOT_NORM_RATIO,
   MAX_COMPS_KEPT,
@@ -121,17 +120,35 @@ export function effectiveWeights(subjectType: SubjectProperty['propertyType']): 
  * §14.20 (operator ruling): the ORDERING key. Null bed/bath diffs score 0
  * (the pin stands), but "unknown is not a penalty" must not become
  * "unknown is an advantage": a comp that disclosed a mismatch should not
- * lose to one that disclosed nothing. Each missing bed/bath field adds
- * COMPLETENESS_TIEBREAK_PER_FIELD to the comp's ordering key ONLY — the
+ * lose to one that disclosed nothing. Each CHARGEABLE missing bed/bath
+ * field adds the derived margin to the comp's ordering key ONLY — the
  * score and its parts are untouched and still rendered/asserted as
  * computed. The shadow key makes the rule transitive and deterministic
  * (a pairwise within-margin comparator is not), and its effect is exactly
  * the ruling: within the margin, disclosure wins; beyond it, the better
  * score still wins.
  */
-export function orderingKey(scored: ScoredComp): number {
-  const missingFields = (scored.comp.beds === null ? 1 : 0) + (scored.comp.baths === null ? 1 : 0);
-  return scored.score + missingFields * COMPLETENESS_TIEBREAK_PER_FIELD;
+export function orderingKey(scored: ScoredComp, subject: SubjectProperty): number {
+  // FINDING-013: charge the margin only where disclosure COULD have changed
+  // the score. scoreComp zeroes the term when EITHER side is null, so
+  // against a bedless subject a comp's missing beds conceals nothing — an
+  // unconditional charge was an unearned demotion deciding which five
+  // survive the cap. A comp field counts as missing only if the SUBJECT
+  // has that field.
+  //
+  // The margin derives from effectiveWeights (FINDING-013's second half),
+  // not WEIGHT_BEDBATH: the two agree today only because the §14.3
+  // redistribution skipped bedbath, and a future branch-specific
+  // re-weighting must not leave the tie-breaker right for SFR and silently
+  // wrong for CONDO. Same derivation: one disclosed field's maximum
+  // contribution is bedbath/2 (a kept comp's per-field diff is gate-capped
+  // at 1), so one hidden field conceals at most — and can reach — exactly
+  // that; two compound to bedbath without the clamp saturating.
+  const marginPerField = effectiveWeights(subject.propertyType).bedbath / 2;
+  const missingFields =
+    (subject.beds !== null && scored.comp.beds === null ? 1 : 0) +
+    (subject.baths !== null && scored.comp.baths === null ? 1 : 0);
+  return scored.score + missingFields * marginPerField;
 }
 
 /**
@@ -145,7 +162,7 @@ export function rankComps(subject: SubjectProperty, kept: RawComp[], now: Date):
     .map((comp) => scoreComp(subject, comp, now))
     .sort(
       (a, b) =>
-        orderingKey(a) - orderingKey(b) ||
+        orderingKey(a, subject) - orderingKey(b, subject) ||
         a.score - b.score ||
         a.distanceMi - b.distanceMi ||
         a.comp.zpid.localeCompare(b.comp.zpid),
