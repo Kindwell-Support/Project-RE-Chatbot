@@ -778,15 +778,25 @@ facts):**
 
 **Rules, binding:**
 
-1. **The zpid VERIFIES what the address KEYS.** §14.14 rule 1 stands
+1. **The zpid VERIFIES what the address KEYS — and the join requires a
+   POSITIVE match (FINDING-017 amendment).** §14.14 rule 1 stands
    unchanged (join key = `addressOrUrlFromInput`, never position); this
-   adds: a batch item carrying a zpid that differs from the comp's is a
-   WRONG-PROPERTY payload — it joins nothing, caches nothing, counts as
-   missing, and is surfaced (`DetailJoin.zpidMismatches`; service WARNs
-   with the count). **Recorded tension, accepted:** BUG-010 proved one
-   SALE can wear two zpids, so this check may occasionally cost a
-   legitimate comp its decoration — an em-dash. The alternative costs a
-   member another property's facts. Falsehood loses.
+   adds: a batch item ENRICHES a comp only when BOTH zpids are present
+   AND equal. Differing zpids (wrong-property payload), a null ITEM
+   zpid (unidentified payload), and a null/empty COMP zpid all take the
+   same path: joins nothing, caches nothing, counts as missing,
+   surfaced (`DetailJoin.zpidMismatches`; service WARNs with the
+   count). **Absent identity must not satisfy an identity check** — the
+   original guard skipped null item zpids, which was the parkingCapacity
+   bet one field over: "Zillow always populates zpid on valid items" is
+   current behavior, not a guarantee, and the same-day regime shift is
+   the live proof that upstream behavior moves without notice. The
+   null-COMP-zpid case previously attached-but-didn't-cache — safe by
+   accident of the cache guard; now safe by rule. **Recorded tension,
+   accepted:** BUG-010 proved one SALE can wear two zpids, so this
+   check may occasionally cost a legitimate comp its decoration — an
+   em-dash. The alternative costs a member another property's facts.
+   Falsehood loses.
 2. **Parking renders a count ONLY when the payload states one > 0.**
    Zero and absent both map to null (em-dash). This SUPERSEDES the
    §14.14.1 "0 is a value" note FOR PARKING ONLY: the carport row
