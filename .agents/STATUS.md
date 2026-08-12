@@ -418,3 +418,4 @@ Carried as stated known limitations: BUG-015 (defaults disclosure ~2-in-4) and
 the Census reconciliation backstop's uncovered live case.
 
 Handoff 0071. Nothing further opens from my side.
+14:30 MASON — SLICE REOPENED BY OPERATOR (post-GREEN): enrichment reliability. src/ WINDOW OPEN. Daffodil 0/5→5/5 root-caused from durable stores (comps_cache 13:54:27Z write + 8s turn window + ALL detail rows created 13:55:39Z inside run 2 — join and budget excluded; residual = ceiling skip or instant transient, both only ever logged to unkept stdout; Apify ledger 403 to this token). §14.14.2 pinned BEFORE code: bounded retry (1, 2s backoff, headroom-guarded, empty/short/transient only, isValid:false batches are ANSWERS), coverage INFO always + WARN on 0/N, ceiling skip upgraded WARN, battery policy 0/N FAILS / partial WARNS. Register: operator label BUG-014 collides with canonical (recall phrasing) — number requested from INSPECTOR. HANDOFF 0072; highest inbox read 0071
