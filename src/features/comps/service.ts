@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   ALGO_VERSION,
+  ATTACHED_SUBJECT_TYPES,
   RAW_REFETCH_BELOW_VERSION,
   CENSUS_CACHE_TTL_DAYS,
   CENSUS_TIMEOUT_MS,
@@ -37,7 +38,7 @@ import { attachDetails, detailBatchFor } from './detail.js';
 import { SEARCH_RESULTS_LIMIT } from './providers/apifyZillow.js';
 import { FAILURE_COPY } from './format.js';
 import { dedupeSales, haversineMiles, median, monthsBetween, selectTiers, unionCandidatePools } from './filter.js';
-import { cacheKey, hasUnitDesignator, normalizeAddress } from './normalize.js';
+import { cacheKey, hasUnitDesignator, normalizeAddress, stripUnitDesignator } from './normalize.js';
 import { rankComps } from './rank.js';
 import type { CensusCacheLike } from './cache/censusCache.js';
 import type { DetailCacheLike } from './cache/detailCache.js';
@@ -415,21 +416,44 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
     }
   }
 
-  // §14.22 (RULING 1, live path only): a BARE multi-unit address must ASK
-  // for the unit, not silently run one unit of the complex. Evidence of
-  // multi-unit: the pool holds a card with a DIFFERENT zpid, the SAME
-  // normalized street part, and a unit designator. Live-path-only is
-  // deliberate — recompute has no raw input string (normalization strips
-  // "#"), so detection there would false-positive on unit-typed members.
+  // §14.22 (RULING 1 + FINDING-015, live path only): a BARE multi-unit
+  // address must ASK for the unit, not silently run one unit of the
+  // complex. THREE conjunctive conditions — the original build's
+  // one-sibling test let a plain SFR with one stale unit-bearing pool
+  // card receive an ask it could not satisfy (INSPECTOR's demonstrated
+  // failure). Live-path-only is deliberate — recompute has no raw input
+  // string (normalization strips "#"), so detection there would
+  // false-positive on unit-typed members.
   if (!hasUnitDesignator(rawAddress)) {
-    const subjectStreet = normalizeAddress(subject.address.split(',')[0]);
-    const unitSibling = unionCandidatePools(comps, neighborhoodSales).find(
-      (c) =>
-        c.zpid !== subject.zpid &&
-        normalizeAddress(c.address.split(',')[0]).startsWith(subjectStreet) &&
-        hasUnitDesignator(c.address),
+    // Condition 2: the RESOLVED subject shows unit evidence — a unit
+    // designator, OR an attached-type resolution. The attached-type arm
+    // is a flagged deviation from the ruling's literal text (§14.22):
+    // the raw-verified Mesquite card (spike-mesquite-bare-detail.json)
+    // carries NO unit in any field yet IS a silently-picked 804-sqft
+    // CONDO. An SFR/MANUFACTURED resolution is a whole property —
+    // nothing ambiguous to ask about, regardless of the pool.
+    const resolvedShowsUnitEvidence =
+      hasUnitDesignator(subject.address) || ATTACHED_SUBJECT_TYPES.includes(subject.propertyType);
+    // Condition 3: >= 2 DISTINCT unit cards at the subject's street —
+    // distinct by normalized street-part+unit (ZIP variants of one unit
+    // collapse), different zpid. One lone unit-bearing card is not
+    // evidence of a multi-unit building; it is the stale-card false
+    // positive this condition exists to block.
+    // Street BASE, unit stripped: a resolved address carrying its unit must
+    // still prefix-match its sibling cards (stripUnitDesignator shares the
+    // designator regex with hasUnitDesignator).
+    const subjectStreet = normalizeAddress(stripUnitDesignator(subject.address.split(',')[0]));
+    const distinctUnitCards = new Set(
+      unionCandidatePools(comps, neighborhoodSales)
+        .filter(
+          (c) =>
+            c.zpid !== subject.zpid &&
+            normalizeAddress(c.address.split(',')[0]).startsWith(subjectStreet) &&
+            hasUnitDesignator(c.address),
+        )
+        .map((c) => normalizeAddress(c.address.split(',')[0])),
     );
-    if (unitSibling) {
+    if (resolvedShowsUnitEvidence && distinctUnitCards.size >= 2) {
       logger?.info?.(
         { cacheKey: key, guard: 'multi_unit_bare_address' },
         'bare address resolves to one unit of a multi-unit building — asking for the unit',

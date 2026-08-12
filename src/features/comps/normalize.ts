@@ -63,6 +63,23 @@ export function cacheKey(normalized: string): string {
  * them for Zillow's resolution. Deliberately conservative — explicit
  * designators only; a bare trailing number is not treated as a unit.
  */
+const UNIT_DESIGNATOR_RE = /#\s*[0-9a-z]|\b(?:unit|apt|apartment|suite|ste)\s*#?\s*[0-9a-z]/i;
+
 export function hasUnitDesignator(raw: string): boolean {
-  return /#\s*[0-9a-z]|\b(?:unit|apt|apartment|suite|ste)\s*#?\s*[0-9a-z]/i.test(String(raw ?? ''));
+  return UNIT_DESIGNATOR_RE.test(String(raw ?? ''));
+}
+
+/**
+ * The street part with everything from the first unit designator on removed —
+ * "100 Oak St Unit 3" → "100 Oak St ". §14.22's condition-3 street comparison
+ * needs the BUILDING's street base: a resolved address that carries its unit
+ * would otherwise never prefix-match its sibling cards, making the ask
+ * unsatisfiable in exactly the branch where the resolution names a unit.
+ * Shares the one designator regex with hasUnitDesignator so the two can
+ * never drift.
+ */
+export function stripUnitDesignator(raw: string): string {
+  const s = String(raw ?? '');
+  const m = s.match(UNIT_DESIGNATOR_RE);
+  return m ? s.slice(0, m.index) : s;
 }

@@ -1,0 +1,2372 @@
+[
+  {
+    "zpid": 7584173,
+    "maloneId": "2732489909",
+    "city": "Tempe",
+    "state": "AZ",
+    "homeStatus": "OTHER",
+    "address": {
+      "streetAddress": "700 E Mesquite Cir",
+      "city": "Tempe",
+      "state": "AZ",
+      "zipcode": "85281"
+    },
+    "isListingClaimedByCurrentSignedInUser": false,
+    "isCurrentSignedInAgentResponsible": false,
+    "bedrooms": null,
+    "bathrooms": 1,
+    "price": 217000,
+    "yearBuilt": 1983,
+    "streetAddress": "700 E Mesquite Cir",
+    "zipcode": "85281",
+    "isCurrentSignedInUserVerifiedOwner": false,
+    "isVerifiedClaimedByCurrentSignedInUser": false,
+    "listingDataSource": "Legacy",
+    "responsivePhotos": [
+      {
+        "caption": "",
+        "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=400x300&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=boXuO-ffGbtBD2h3JC9uabJVxrw=",
+        "mixedSources": {
+          "jpeg": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=192x144&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=tx5-tomVAJO4v8JOjQ66wpdIhfE=",
+              "width": 192
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=384x288&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=bl7QtzNTjRVnGjsol6nyhpPkT4g=",
+              "width": 384
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=576x432&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=XqLVeIfEe4BZAuMDa_-FcOxrRwQ=",
+              "width": 576
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=768x576&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=7TYl2EWqs7iuLF_9--SCWiFdE2Y=",
+              "width": 768
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=960x720&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ulEegYmiyyHxffq47TPV-wBO8Ww=",
+              "width": 960
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1152x864&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=3k0hXYqUojqJnoHJPmSN375-GIM=",
+              "width": 1152
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=yZApvjVz6L4Oz1ICla4PpWon5bg=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=rMyckUudFiyMY-MIMsWMXBNZbAw=",
+              "width": 1536
+            }
+          ],
+          "webp": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=192x144&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=tx5-tomVAJO4v8JOjQ66wpdIhfE=",
+              "width": 192
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=384x288&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=bl7QtzNTjRVnGjsol6nyhpPkT4g=",
+              "width": 384
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=576x432&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=XqLVeIfEe4BZAuMDa_-FcOxrRwQ=",
+              "width": 576
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=768x576&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=7TYl2EWqs7iuLF_9--SCWiFdE2Y=",
+              "width": 768
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=960x720&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ulEegYmiyyHxffq47TPV-wBO8Ww=",
+              "width": 960
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1152x864&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=3k0hXYqUojqJnoHJPmSN375-GIM=",
+              "width": 1152
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=yZApvjVz6L4Oz1ICla4PpWon5bg=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=rMyckUudFiyMY-MIMsWMXBNZbAw=",
+              "width": 1536
+            }
+          ]
+        }
+      }
+    ],
+    "longitude": -111.92784,
+    "latitude": 33.43873,
+    "hasBadGeocode": false,
+    "listing_sub_type": {
+      "is_FSBA": false,
+      "is_newHome": false,
+      "is_FSBO": false,
+      "is_pending": false,
+      "is_bankOwned": false,
+      "is_openHouse": false,
+      "is_forAuction": false,
+      "is_comingSoon": false,
+      "is_foreclosure": false
+    },
+    "streetViewMetadataUrlMediaWallLatLong": "https://maps.googleapis.com/maps/api/streetview/metadata?location=33.438730,-111.927840&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=_mlg_Sx6roz89xTNAjNb1ZiluqA=",
+    "streetViewMetadataUrlMediaWallAddress": "https://maps.googleapis.com/maps/api/streetview/metadata?location=700+E+Mesquite+Cir%2C+Tempe%2C+AZ+85281&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=xfc7GXDIAlMZAgSKKFIY-3zQewQ=",
+    "streetViewServiceUrl": "https://street-view-url.prod.zgk-partner.zillowapi.com?zpid=7584173&address=700%20E%20Mesquite%20Cir%2C%20Tempe%2C%20AZ%2085281&width=512&height=234&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&maxdistance=16&lat=33.43873&lon=-111.92784&ttloverrides=%7B%22yesAddressSeconds%22:604800%7D&signature=yBUwdHoeeiJ5FO1PIBCCMSZ_w6M=",
+    "streetView": {
+      "addressSources": [
+        {
+          "width": 192,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=700%20E%20Mesquite%20Cir%2C%20Tempe%2C%20AZ%2085281&size=192x72&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=X617wB4ulabPXBCyFMHznVNqzSY="
+        },
+        {
+          "width": 384,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=700%20E%20Mesquite%20Cir%2C%20Tempe%2C%20AZ%2085281&size=384x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=01S5JGd3yLLL357EM0racYIN2kE="
+        },
+        {
+          "width": 768,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=700%20E%20Mesquite%20Cir%2C%20Tempe%2C%20AZ%2085281&size=768x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=Rw2GUGI4z-bjEjqLU8GdL0UNX1I="
+        }
+      ],
+      "latLongSources": [
+        {
+          "width": 192,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=33.43873,-111.92784&size=192x72&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=NjbeEz6-ZuyQ_RmIJ0J8GpfCkok="
+        },
+        {
+          "width": 384,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=33.43873,-111.92784&size=384x144&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=H3BA8mbo246SBda58ixchTIZ1ug="
+        },
+        {
+          "width": 768,
+          "url": "https://maps.googleapis.com/maps/api/streetview?location=33.43873,-111.92784&size=768x288&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=S3Cn3oiACHROjXHdUFg-ykXsGSc="
+        }
+      ]
+    },
+    "staticMap": {
+      "sources": [
+        {
+          "width": 192,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.43873,-111.92784&zoom=13&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=WlACXcAxL3bci8e80BJE9yxgSXI="
+        },
+        {
+          "width": 192,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.43873,-111.92784&zoom=15&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=up56V9KVEbpbgMfOT2egK4aMFxE=",
+          "isHighResolutionStaticMap": true
+        },
+        {
+          "width": 384,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.43873,-111.92784&zoom=14&size=384x288&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=7F0w8YZQCMqUTvpX0kzNitgnxHs="
+        },
+        {
+          "width": 384,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.43873,-111.92784&zoom=15&size=384x288&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=OGlHkcR_GoL9RZjioVn0Uw5OP7M=",
+          "isHighResolutionStaticMap": true
+        },
+        {
+          "width": 768,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.43873,-111.92784&zoom=15&size=768x576&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=Vgss6HIHkuVtc24Uz9eINA6pgCA="
+        },
+        {
+          "width": 768,
+          "url": "https://maps.googleapis.com/maps/api/staticmap?center=33.43873,-111.92784&zoom=15&size=768x576&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&scale=2&signature=EYQ9y2vqkv7lTRwOzFsYsKrfeQk=",
+          "isHighResolutionStaticMap": true
+        }
+      ]
+    },
+    "livingArea": 804,
+    "homeType": "CONDO",
+    "lotSize": 119,
+    "lotAreaValue": 119,
+    "lotAreaUnits": "Square Feet",
+    "livingAreaValue": 804,
+    "livingAreaUnitsShort": "sqft",
+    "resoFacts": {
+      "associations": [
+        {
+          "feeFrequency": "$206 monthly"
+        }
+      ],
+      "appliances": [],
+      "atAGlanceFacts": [
+        {
+          "factLabel": "Type",
+          "factValue": "Condo"
+        },
+        {
+          "factLabel": "Year Built",
+          "factValue": "1983"
+        },
+        {
+          "factLabel": "Heating",
+          "factValue": "Other"
+        },
+        {
+          "factLabel": "Cooling",
+          "factValue": "Refrigerator"
+        },
+        {
+          "factLabel": "Parking",
+          "factValue": "1 Parking space"
+        },
+        {
+          "factLabel": "HOA",
+          "factValue": "$206 monthly"
+        },
+        {
+          "factLabel": "Offer Review Date"
+        }
+      ],
+      "bathrooms": 1,
+      "bathroomsFloat": 1,
+      "canRaiseHorses": false,
+      "cityRegion": "Tempe",
+      "communityFeatures": [],
+      "cooling": [
+        "Refrigerator"
+      ],
+      "feesAndDues": [
+        {
+          "type": "HOA",
+          "fee": "$206 monthly"
+        }
+      ],
+      "flooring": [],
+      "furnished": false,
+      "hasAssociation": true,
+      "hasAttachedProperty": false,
+      "hasCooling": true,
+      "hasGarage": false,
+      "hasHeating": true,
+      "hasLandLease": false,
+      "hasSpa": false,
+      "hasView": false,
+      "heating": [
+        "Other"
+      ],
+      "hoaFee": "$206 monthly",
+      "hoaFeeTotal": "$206 monthly",
+      "homeType": "Condo",
+      "lotSize": "119 sqft",
+      "livingQuarters": [],
+      "otherFacts": [],
+      "parkingCapacity": 1,
+      "parkingFeatures": [
+        "Carport"
+      ],
+      "pricePerSquareFoot": 270,
+      "roofType": "Tile",
+      "rooms": [],
+      "view": [],
+      "waterView": "",
+      "yearBuilt": 1983,
+      "constructionMaterials": [],
+      "exteriorFeatures": [
+        "Wood"
+      ],
+      "foundationDetails": [],
+      "hasAdditionalParcels": false,
+      "hasHomeWarranty": false,
+      "livingArea": "804 sqft",
+      "parcelNumber": "13203168"
+    },
+    "isUndisclosedAddress": false,
+    "formattedChip": {
+      "location": [
+        {
+          "fullValue": "700 E Mesquite Cir"
+        },
+        {
+          "fullValue": "Tempe, AZ 85281"
+        }
+      ]
+    },
+    "zestimate": 217000,
+    "rentZestimate": 1609,
+    "currency": "USD",
+    "hideZestimate": false,
+    "dateSoldString": "2002-07-09",
+    "taxAssessedValue": null,
+    "taxAssessedYear": 2025,
+    "attributionInfo": {
+      "listingOffices": [],
+      "listingAgents": []
+    },
+    "country": "USA",
+    "monthlyHoaFee": 206,
+    "mortgageZHLRates": {
+      "thirtyYearFixedBucket": {
+        "rate": 7.183,
+        "rateSource": "ZGMI",
+        "lastUpdated": 1786538052092
+      }
+    },
+    "propertyTaxRate": 0.41,
+    "listingMetadata": {
+      "FlexibleLayoutAB": true,
+      "mustAttributeOfficeNameBeforeAgentName": false,
+      "mustDisplayAttributionListAgentEmail": false,
+      "mustDisplayAttributionListAgentPhone": false,
+      "mustDisplayAttributionListingOfficePhone": false,
+      "mustDisplayDisclaimerBelowAttribution": false,
+      "mustHighlightListOfficeName": false,
+      "mustMakeListingAgentContactable": false,
+      "FlexibleLayoutB": true,
+      "FlexibleLayoutC": true,
+      "FlexibleLayoutD": true,
+      "FlexibleLayoutE": true,
+      "FlexibleLayoutF": false,
+      "FlexibleLayoutG": false,
+      "FlexibleLayoutH": true,
+      "FlexibleLayoutI": true,
+      "FlexibleLayoutJ": false,
+      "FlexibleLayoutK": false,
+      "FlexibleLayoutL": false,
+      "FlexibleLayoutM": true,
+      "FlexibleLayoutN": true,
+      "FlexibleLayoutO": true,
+      "FlexibleLayoutP": false,
+      "FlexibleLayoutQ": false,
+      "FlexibleLayoutR": false,
+      "FlexibleLayoutS": false,
+      "FlexibleLayoutT": false,
+      "FlexibleLayoutU": false,
+      "FlexibleLayoutV": false,
+      "FlexibleLayoutW": false,
+      "FlexibleLayoutX": false,
+      "FlexibleLayoutY": false,
+      "FlexibleLayoutZ": false,
+      "FlexibleLayoutAA": true,
+      "passwordRequiredForZestimateMarketAnalysis": false,
+      "canShowAutomatedValuationDisplay": true,
+      "canShowTaxHistory": true,
+      "canShowPriceHistory": true,
+      "canShowUserGeneratedContent": true,
+      "isAdsRestricted": false,
+      "hidePriceAdjustmentFlexField": false,
+      "canCommingleComparables": true,
+      "canShowComparables": true,
+      "isSuperTrafficOptimized": false,
+      "mustDisplayFeedLogoInContactBox": false,
+      "canShowCroppedPhotos": true,
+      "canShowNonIDXMedia": true,
+      "canShowOnMap": true,
+      "comminglingCategory": true,
+      "mustDisplayAttributionAboveLocalFacts": false,
+      "mustDisplayAuctionStatusAsSold": false,
+      "mustHighlightMlsStatus": false,
+      "mustHighlightMarketingType": false,
+      "canShowZillowLogoInHeader": true,
+      "canShowPrequalifiedLinkInChip": true,
+      "comminglingCategoryIsRulesApplicable": false,
+      "mustPreferMlsPhotos": false
+    },
+    "photoCount": 1,
+    "isPremierBuilder": false,
+    "isShowcaseListing": false,
+    "listingSubType": {
+      "isFSBA": false,
+      "isPending": false,
+      "isNewHome": false,
+      "isForeclosure": false,
+      "isBankOwned": false,
+      "isForAuction": false,
+      "isOpenHouse": false,
+      "isComingSoon": false,
+      "isFSBO": false
+    },
+    "hdpUrl": "/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85281/7584173_zpid/",
+    "tourViewCount": 0,
+    "postingContact": {},
+    "vrModel": {},
+    "isZillowOwned": false,
+    "hasPublicVideo": false,
+    "lastSoldPrice": 75500,
+    "livingAreaUnits": "Square Feet",
+    "isHousingConnector": false,
+    "responsivePhotosOriginalRatio": [
+      {
+        "caption": "",
+        "mixedSources": {
+          "jpeg": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=800x600&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=QWiflUJY1QDa0jKPa0m9pBZI2vY=",
+              "width": 800
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1024x768&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=QEWyD8MuXtnuTkyu6OWOb4_GVv8=",
+              "width": 1024
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=yZApvjVz6L4Oz1ICla4PpWon5bg=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=rMyckUudFiyMY-MIMsWMXBNZbAw=",
+              "width": 1536
+            }
+          ],
+          "webp": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=800x600&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=QWiflUJY1QDa0jKPa0m9pBZI2vY=",
+              "width": 800
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1024x768&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=QEWyD8MuXtnuTkyu6OWOb4_GVv8=",
+              "width": 1024
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=yZApvjVz6L4Oz1ICla4PpWon5bg=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=rMyckUudFiyMY-MIMsWMXBNZbAw=",
+              "width": 1536
+            }
+          ]
+        }
+      }
+    ],
+    "streetViewTileImageUrlMediumLatLong": "https://maps.googleapis.com/maps/api/streetview?location=33.438730,-111.927840&size=400x250&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=fwq7Br1H5GFgpbWZOiX_MuyhdBQ=",
+    "streetViewTileImageUrlMediumAddress": "https://maps.googleapis.com/maps/api/streetview?location=700+E+Mesquite+Cir%2C+Tempe%2C+AZ+85281&size=400x250&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&source=outdoor&signature=oQ_v_lKHxRMBOhpw6k5HJo3ER3s=",
+    "streetViewMetadataUrlMapLightboxAddress": "https://maps.googleapis.com/maps/api/streetview/metadata?location=700+E+Mesquite+Cir%2C+Tempe%2C+AZ+85281&key=AIzaSyBV4lXhV-qzQOegyA3m0_AvGy9F21HIyOQ&source=outdoor&signature=O3TR34JfTrVs6iHrUqW6UFBrU-0=",
+    "thumb": [
+      {
+        "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=46x46&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=CuewqrJI3D1Ivf0bC8js6zXunoo="
+      }
+    ],
+    "neighborhoodMapThumb": [
+      {
+        "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=K2XszjKbt7CTheeaadbrDVVc58o="
+      }
+    ],
+    "stateId": 8,
+    "countyId": 2402,
+    "cityId": 47958,
+    "isNonOwnerOccupied": false,
+    "zestimateMinus30": "212500",
+    "restimateMinus30": "1448",
+    "zestimateLowPercent": "7",
+    "zestimateHighPercent": "7",
+    "restimateLowPercent": "6",
+    "restimateHighPercent": "7",
+    "adTargets": {
+      "listtp": "not_for_sale",
+      "proptp": "cnd",
+      "dma": "24",
+      "cnty": "Maricopa",
+      "hood": "West_Rio",
+      "price_band": "z200",
+      "zestimate": "217000",
+      "zestibuck": "200-249k",
+      "price": "217000",
+      "lot": "1",
+      "bd": "0",
+      "ba": "1",
+      "sqft": "804",
+      "sqftrange": "500-999",
+      "yrblt": "1980-1989",
+      "aamgnrc1": "700 E Mesquite Cir",
+      "city": "Tempe",
+      "state": "AZ",
+      "zip": "85281",
+      "pid": "7584173",
+      "premieragent": "no",
+      "service_version": "9d5f2ce5",
+      "env": "prod",
+      "guid": "7cb7aa3a-b7b1-4fa6-ba15-aafe7c4ba28a"
+    },
+    "description": "This is a 804 square foot, 1.0 bathroom, condo home. This home is located at 700 E Mesquite Cir, Tempe, AZ 85281.",
+    "pals": [],
+    "listedBy": [],
+    "countyFIPS": "04013",
+    "parcelId": "13203168",
+    "taxHistory": [
+      {
+        "time": 1755002052076,
+        "taxPaid": 1122.82,
+        "taxIncreaseRate": 0.07010649,
+        "value": 19800,
+        "valueIncreaseRate": -0.07390084
+      },
+      {
+        "time": 1723466052076,
+        "taxPaid": 1049.26,
+        "taxIncreaseRate": 0.011978747,
+        "value": 21380,
+        "valueIncreaseRate": 1.5055666
+      },
+      {
+        "time": 1691843652076,
+        "taxPaid": 1036.84,
+        "taxIncreaseRate": 0.038314354,
+        "value": 8533,
+        "valueIncreaseRate": -0.35986498
+      },
+      {
+        "time": 1660307652076,
+        "taxPaid": 998.58,
+        "taxIncreaseRate": 0.024184633,
+        "value": 13330,
+        "valueIncreaseRate": 0.10898502
+      },
+      {
+        "time": 1628771652076,
+        "taxPaid": 975,
+        "taxIncreaseRate": 0.019298745,
+        "value": 12020,
+        "valueIncreaseRate": 0.106814
+      },
+      {
+        "time": 1597235652076,
+        "taxPaid": 956.54,
+        "taxIncreaseRate": 0.025560165,
+        "value": 10860,
+        "valueIncreaseRate": 0.090361446
+      },
+      {
+        "time": 1565613252076,
+        "taxPaid": 932.7,
+        "taxIncreaseRate": 0,
+        "value": 9960,
+        "valueIncreaseRate": 0.073275864
+      },
+      {
+        "time": 1534077252076,
+        "taxPaid": 932.7,
+        "taxIncreaseRate": 0.030653277,
+        "value": 9280,
+        "valueIncreaseRate": 0.10083037
+      },
+      {
+        "time": 1502541252076,
+        "taxPaid": 904.96,
+        "taxIncreaseRate": 0.04857254,
+        "value": 8430,
+        "valueIncreaseRate": -0.03436426
+      },
+      {
+        "time": 1471005252076,
+        "taxPaid": 863.04,
+        "taxIncreaseRate": -0.0069041704,
+        "value": 8730,
+        "valueIncreaseRate": 0.13671875
+      },
+      {
+        "time": 1439382852076,
+        "taxPaid": 869.04,
+        "taxIncreaseRate": 0,
+        "value": 7680,
+        "valueIncreaseRate": 0.25285482
+      },
+      {
+        "time": 1407846852076,
+        "taxIncreaseRate": 0,
+        "value": 6130,
+        "valueIncreaseRate": 0.226
+      },
+      {
+        "time": 1376310852076,
+        "taxIncreaseRate": 0,
+        "value": 5000,
+        "valueIncreaseRate": -0.14529915
+      },
+      {
+        "time": 1344774852076,
+        "taxIncreaseRate": 0,
+        "value": 5850,
+        "valueIncreaseRate": -0.16428572
+      },
+      {
+        "time": 1313152452076,
+        "taxIncreaseRate": 0,
+        "value": 7000,
+        "valueIncreaseRate": -0.2893401
+      },
+      {
+        "time": 1281616452076,
+        "taxIncreaseRate": 0,
+        "value": 9850,
+        "valueIncreaseRate": -0.12053572
+      },
+      {
+        "time": 1250080452076,
+        "taxIncreaseRate": 0,
+        "value": 11200,
+        "valueIncreaseRate": -0.0044444446
+      },
+      {
+        "time": 1218544452076,
+        "taxIncreaseRate": 0,
+        "value": 11250,
+        "valueIncreaseRate": 0.2228261
+      },
+      {
+        "time": 1186922052076,
+        "taxIncreaseRate": 0,
+        "value": 9200,
+        "valueIncreaseRate": 0.31428573
+      },
+      {
+        "time": 1155386052076,
+        "taxIncreaseRate": 0,
+        "value": 7000,
+        "valueIncreaseRate": 0
+      },
+      {
+        "time": 1123850052076,
+        "taxIncreaseRate": 0,
+        "value": 7000,
+        "valueIncreaseRate": 0.029411765
+      },
+      {
+        "time": 1092314052076,
+        "taxIncreaseRate": 0,
+        "value": 6800,
+        "valueIncreaseRate": 0
+      },
+      {
+        "time": 1060691652076,
+        "taxIncreaseRate": 0,
+        "value": 6800,
+        "valueIncreaseRate": 0.22522523
+      },
+      {
+        "time": 1029155652076,
+        "taxIncreaseRate": 0,
+        "value": 5550,
+        "valueIncreaseRate": 0
+      }
+    ],
+    "priceHistory": [
+      {
+        "date": "2002-07-09",
+        "time": 1026172800000,
+        "price": 75500,
+        "pricePerSquareFoot": 94,
+        "priceChangeRate": 0.24081713149374662,
+        "event": "Sold",
+        "source": "Public Record",
+        "showCountyLink": false,
+        "postingIsRental": false,
+        "attributeSource": {
+          "infoString2": "Public Record"
+        }
+      },
+      {
+        "date": "1993-12-13",
+        "time": 755740800000,
+        "price": 60847,
+        "pricePerSquareFoot": 76,
+        "priceChangeRate": 0,
+        "event": "Sold",
+        "source": "Public Record",
+        "showCountyLink": false,
+        "postingIsRental": false,
+        "attributeSource": {
+          "infoString2": "Public Record"
+        }
+      }
+    ],
+    "parentRegion": {
+      "name": "West Rio"
+    },
+    "nearbyHomes": [
+      {
+        "zpid": 7584169,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/86537987d8c7cf91a5e2bf9cf30395d6-p_c.jpg"
+          }
+        ],
+        "price": 243400,
+        "currency": "USD",
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 934,
+        "livingAreaValue": 934,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 1264,
+        "lotAreaValue": 1264,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipcode": "85288"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "700 E Mesquite Cir"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.43873,
+        "longitude": -111.92784,
+        "homeStatus": "OTHER",
+        "homeType": "CONDO",
+        "hdpUrl": "/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85288/7584169_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Condo",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 7584170,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/d9ed07555a6f27f3537c1d3cc4eeb9f2-p_c.jpg"
+          }
+        ],
+        "price": 286400,
+        "currency": "USD",
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "livingAreaValue": 1084,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 148,
+        "lotAreaValue": 148,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "700 E Mesquite Cir UNIT J134",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipcode": "85281"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "700 E Mesquite Cir UNIT J134"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.43873,
+        "longitude": -111.92784,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/700-E-Mesquite-Cir-UNIT-J134-Tempe-AZ-85281/7584170_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 7584172,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/f2d851b36d2bac3e49fa4e12c0aff749-p_c.jpg"
+          }
+        ],
+        "price": 274200,
+        "currency": "USD",
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "livingAreaValue": 1084,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 143,
+        "lotAreaValue": 143,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipcode": "85288"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "700 E Mesquite Cir"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.43873,
+        "longitude": -111.92784,
+        "homeStatus": "OTHER",
+        "homeType": "CONDO",
+        "hdpUrl": "/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85288/7584172_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Condo",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 7584174,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/e00af9253f048dc37d28ff9f681780f1-p_c.jpg"
+          }
+        ],
+        "price": 272600,
+        "currency": "USD",
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "livingAreaValue": 1084,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 148,
+        "lotAreaValue": 148,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipcode": "85281"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "700 E Mesquite Cir"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.43873,
+        "longitude": -111.92784,
+        "homeStatus": "OTHER",
+        "homeType": "CONDO",
+        "hdpUrl": "/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85281/7584174_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Condo",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 7584175,
+        "miniCardPhotos": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=K2XszjKbt7CTheeaadbrDVVc58o="
+          }
+        ],
+        "price": 241200,
+        "currency": "USD",
+        "bathrooms": 1.33,
+        "livingArea": 934,
+        "livingAreaValue": 934,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 127,
+        "lotAreaValue": 127,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipcode": "85281"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "700 E Mesquite Cir"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.43873,
+        "longitude": -111.92784,
+        "homeStatus": "OTHER",
+        "homeType": "CONDO",
+        "hdpUrl": "/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85281/7584175_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Condo",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 7584176,
+        "miniCardPhotos": [
+          {
+            "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=K2XszjKbt7CTheeaadbrDVVc58o="
+          }
+        ],
+        "price": 243300,
+        "currency": "USD",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 804,
+        "livingAreaValue": 804,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 116,
+        "lotAreaValue": 116,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "700 E Mesquite Cir UNIT L105",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipcode": "85281"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "700 E Mesquite Cir UNIT L105"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.43873,
+        "longitude": -111.92784,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/700-E-Mesquite-Cir-UNIT-L105-Tempe-AZ-85281/7584176_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 7584177,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/ec412294c05c7b5535a059d9c2f13693-p_c.jpg"
+          }
+        ],
+        "price": 282400,
+        "currency": "USD",
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "livingAreaValue": 1084,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 1454,
+        "lotAreaValue": 1454,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipcode": "85281"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "700 E Mesquite Cir"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.43873,
+        "longitude": -111.92784,
+        "homeStatus": "OTHER",
+        "homeType": "CONDO",
+        "hdpUrl": "/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85281/7584177_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Condo",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      },
+      {
+        "zpid": 7584179,
+        "miniCardPhotos": [
+          {
+            "url": "https://photos.zillowstatic.com/fp/4d0c1f3f76eb0714383309306ba9cf68-p_c.jpg"
+          }
+        ],
+        "price": 282300,
+        "currency": "USD",
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "livingAreaValue": 1084,
+        "livingAreaUnits": "Square Feet",
+        "livingAreaUnitsShort": "sqft",
+        "listingMetadata": {
+          "comminglingCategoryIsRulesApplicable": false
+        },
+        "lotSize": 143,
+        "lotAreaValue": 143,
+        "lotAreaUnits": "Square Feet",
+        "address": {
+          "streetAddress": "700 E Mesquite Cir UNIT L108",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipcode": "85281"
+        },
+        "formattedChip": {
+          "location": [
+            {
+              "fullValue": "700 E Mesquite Cir UNIT L108"
+            },
+            {}
+          ]
+        },
+        "latitude": 33.43873,
+        "longitude": -111.92784,
+        "homeStatus": "OTHER",
+        "homeType": "APARTMENT",
+        "hdpUrl": "/homedetails/700-E-Mesquite-Cir-UNIT-L108-Tempe-AZ-85281/7584179_zpid/",
+        "hdpTypeDimension": "Zestimate",
+        "propertyTypeDimension": "Apartment",
+        "listingTypeDimension": "Unknown Listed By",
+        "listing_sub_type": {
+          "is_newHome": false,
+          "is_forAuction": false,
+          "is_bankOwned": false,
+          "is_foreclosure": false,
+          "is_FSBO": false,
+          "is_comingSoon": false,
+          "is_FSBA": false
+        },
+        "attributionInfo": {},
+        "isShowcaseListing": false,
+        "isPremierBuilder": false,
+        "state": "AZ"
+      }
+    ],
+    "schools": [
+      {
+        "distance": 0.7,
+        "name": "Cecil Shamley School",
+        "rating": 4,
+        "level": "Primary",
+        "grades": "PK-8",
+        "link": "https://www.greatschools.org/arizona/tempe/884-Laird-School/",
+        "type": "Public"
+      },
+      {
+        "distance": 3,
+        "name": "McClintock High School",
+        "rating": 8,
+        "level": "High",
+        "grades": "9-12",
+        "link": "https://www.greatschools.org/arizona/tempe/965-McClintock-High-School/",
+        "type": "Public"
+      }
+    ],
+    "citySearchUrl": {
+      "text": "Homes in Tempe",
+      "path": "/tempe-az/"
+    },
+    "hoaFee": 206,
+    "mortgageRates": {
+      "thirtyYearFixedRate": 7.183
+    },
+    "isInstantOfferEnabled": false,
+    "dateSold": "2002-07-09T00:00:00.000Z",
+    "county": "Maricopa County",
+    "isRentalListingOffMarket": false,
+    "nearbyCities": [
+      {
+        "regionUrl": {
+          "path": "/chandler-az/"
+        },
+        "name": "Chandler"
+      },
+      {
+        "regionUrl": {
+          "path": "/gilbert-az/"
+        },
+        "name": "Gilbert"
+      },
+      {
+        "regionUrl": {
+          "path": "/glendale-az/"
+        },
+        "name": "Glendale"
+      },
+      {
+        "regionUrl": {
+          "path": "/goodyear-az/"
+        },
+        "name": "Goodyear"
+      },
+      {
+        "regionUrl": {
+          "path": "/mesa-az/"
+        },
+        "name": "Mesa"
+      },
+      {
+        "regionUrl": {
+          "path": "/peoria-az/"
+        },
+        "name": "Peoria"
+      },
+      {
+        "regionUrl": {
+          "path": "/phoenix-az/"
+        },
+        "name": "Phoenix"
+      },
+      {
+        "regionUrl": {
+          "path": "/scottsdale-az/"
+        },
+        "name": "Scottsdale"
+      },
+      {
+        "regionUrl": {
+          "path": "/surprise-az/"
+        },
+        "name": "Surprise"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az/"
+        },
+        "name": "Tempe"
+      }
+    ],
+    "nearbyNeighborhoods": [
+      {
+        "regionUrl": {
+          "path": "/alegre-community-tempe-az/"
+        },
+        "name": "Alegre Community"
+      },
+      {
+        "regionUrl": {
+          "path": "/date-palm-manor-tempe-az/"
+        },
+        "name": "Date Palm Manor"
+      },
+      {
+        "regionUrl": {
+          "path": "/escalante-tempe-az/"
+        },
+        "name": "Escalante"
+      },
+      {
+        "regionUrl": {
+          "path": "/jen-tilly-terrace-tempe-az/"
+        },
+        "name": "Jen Tilly Terrace"
+      },
+      {
+        "regionUrl": {
+          "path": "/meyer-park-tempe-az/"
+        },
+        "name": "Meyer Park"
+      },
+      {
+        "regionUrl": {
+          "path": "/pepperwood-tempe-az/"
+        },
+        "name": "Pepperwood"
+      },
+      {
+        "regionUrl": {
+          "path": "/sunset-tempe-az/"
+        },
+        "name": "Sunset"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-royal-estates-tempe-az/"
+        },
+        "name": "Tempe Royal Estates"
+      },
+      {
+        "regionUrl": {
+          "path": "/the-lakes-tempe-az/"
+        },
+        "name": "The Lakes"
+      },
+      {
+        "regionUrl": {
+          "path": "/warner-ranch-tempe-az/"
+        },
+        "name": "Warner Ranch"
+      }
+    ],
+    "nearbyZipcodes": [
+      {
+        "regionUrl": {
+          "path": "/tempe-az-85280/"
+        },
+        "name": "85280"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az-85281/"
+        },
+        "name": "85281"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az-85282/"
+        },
+        "name": "85282"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az-85283/"
+        },
+        "name": "85283"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az-85284/"
+        },
+        "name": "85284"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az-85285/"
+        },
+        "name": "85285"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az-85287/"
+        },
+        "name": "85287"
+      },
+      {
+        "regionUrl": {
+          "path": "/tempe-az-85288/"
+        },
+        "name": "85288"
+      }
+    ],
+    "zipcodeSearchUrl": {
+      "path": "/tempe-az-85281/"
+    },
+    "apartmentsForRentInZipcodeSearchUrl": {
+      "path": "/tempe-az-85281/apartments/"
+    },
+    "housesForRentInZipcodeSearchUrl": {
+      "path": "/tempe-az-85281/rent-houses/"
+    },
+    "abbreviatedAddress": "700 E Mesquite Cir",
+    "neighborhoodRegion": {
+      "name": "West Rio"
+    },
+    "neighborhoodSearchUrl": {
+      "path": "/west-rio-tempe-az/"
+    },
+    "stateSearchUrl": {
+      "path": "/az/"
+    },
+    "countySearchUrl": {
+      "text": "Homes in Maricopa County",
+      "path": "/maricopa-county-az/"
+    },
+    "homeValuation": {
+      "comparables": {
+        "comps": [
+          {
+            "property": {
+              "zestimate": 245800,
+              "lastSoldPrice": 245000,
+              "price": 245000,
+              "daysOnZillow": 148,
+              "dateSold": 1773619200000,
+              "currency": "USD",
+              "bedrooms": 2,
+              "bathrooms": 1,
+              "livingAreaValue": 934,
+              "livingAreaUnits": "Square Feet",
+              "livingAreaUnitsShort": "sqft",
+              "lotAreaValue": 127,
+              "lotAreaUnits": "Square Feet",
+              "address": {
+                "streetAddress": "700 E MESQUITE Circle #L107",
+                "city": "Tempe",
+                "state": "AZ",
+                "zipcode": "85281"
+              },
+              "latitude": 33.43855,
+              "longitude": -111.92817,
+              "zpid": 7584178,
+              "homeStatus": "RECENTLY_SOLD",
+              "homeType": "CONDO",
+              "hdpUrl": "/homedetails/700-E-Mesquite-Cir-UNIT-L107-Tempe-AZ-85281/7584178_zpid/",
+              "listing_sub_type": {
+                "is_newHome": false,
+                "is_forAuction": false,
+                "is_bankOwned": false,
+                "is_foreclosure": false,
+                "is_FSBO": false,
+                "is_comingSoon": false
+              },
+              "isUndisclosedAddress": false,
+              "attributionInfo": {
+                "mlsId": "6955236",
+                "mlsName": "ARMLS",
+                "agentName": "Christine Schroedel",
+                "brokerName": "CMS Properties & Real Estate LLC"
+              },
+              "compsCarouselPropertyPhotos": [
+                {
+                  "mixedSources": {
+                    "jpeg": [
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/5ef2a9865204bf5abbc0612089814632-cc_ft_192.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/5ef2a9865204bf5abbc0612089814632-cc_ft_384.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/5ef2a9865204bf5abbc0612089814632-cc_ft_576.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/5ef2a9865204bf5abbc0612089814632-cc_ft_768.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/5ef2a9865204bf5abbc0612089814632-cc_ft_960.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/5ef2a9865204bf5abbc0612089814632-cc_ft_1152.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/5ef2a9865204bf5abbc0612089814632-cc_ft_1344.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/5ef2a9865204bf5abbc0612089814632-cc_ft_1536.jpg"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "property": {
+              "zestimate": 230500,
+              "lastSoldPrice": 230000,
+              "price": 230000,
+              "daysOnZillow": 118,
+              "dateSold": 1776211200000,
+              "currency": "USD",
+              "bedrooms": 2,
+              "bathrooms": 1,
+              "livingAreaValue": 900,
+              "livingAreaUnits": "Square Feet",
+              "livingAreaUnitsShort": "sqft",
+              "lotAreaValue": 883,
+              "lotAreaUnits": "Square Feet",
+              "address": {
+                "streetAddress": "1245 W 1st St",
+                "city": "Tempe",
+                "state": "AZ",
+                "zipcode": "85281"
+              },
+              "latitude": 33.428806,
+              "longitude": -111.958664,
+              "zpid": 7555888,
+              "homeStatus": "RECENTLY_SOLD",
+              "homeType": "APARTMENT",
+              "hdpUrl": "/homedetails/1245-W-1st-St-Tempe-AZ-85281/7555888_zpid/",
+              "listing_sub_type": {
+                "is_newHome": false,
+                "is_forAuction": false,
+                "is_bankOwned": false,
+                "is_foreclosure": false,
+                "is_FSBO": false,
+                "is_comingSoon": false
+              },
+              "isUndisclosedAddress": false,
+              "attributionInfo": {},
+              "compsCarouselPropertyPhotos": [
+                {
+                  "mixedSources": {
+                    "jpeg": [
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/bca4a6b14988983f5e67365e930d365e-cc_ft_192.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/bca4a6b14988983f5e67365e930d365e-cc_ft_384.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/bca4a6b14988983f5e67365e930d365e-cc_ft_576.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/bca4a6b14988983f5e67365e930d365e-cc_ft_768.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/bca4a6b14988983f5e67365e930d365e-cc_ft_960.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/bca4a6b14988983f5e67365e930d365e-cc_ft_1152.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/bca4a6b14988983f5e67365e930d365e-cc_ft_1344.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/bca4a6b14988983f5e67365e930d365e-cc_ft_1536.jpg"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "property": {
+              "zestimate": 210100,
+              "lastSoldPrice": 210000,
+              "price": 210000,
+              "daysOnZillow": 42,
+              "dateSold": 1782777600000,
+              "currency": "USD",
+              "bedrooms": 1,
+              "bathrooms": 1,
+              "livingAreaValue": 714,
+              "livingAreaUnits": "Square Feet",
+              "livingAreaUnitsShort": "sqft",
+              "lotAreaValue": 725,
+              "lotAreaUnits": "Square Feet",
+              "address": {
+                "streetAddress": "8155 E ROOSEVELT Street #124",
+                "city": "Scottsdale",
+                "state": "AZ",
+                "zipcode": "85257"
+              },
+              "latitude": 33.457798,
+              "longitude": -111.90712,
+              "zpid": 67770741,
+              "homeStatus": "RECENTLY_SOLD",
+              "homeType": "APARTMENT",
+              "hdpUrl": "/homedetails/8155-E-Roosevelt-St-UNIT-124-Scottsdale-AZ-85257/67770741_zpid/",
+              "listing_sub_type": {
+                "is_newHome": false,
+                "is_forAuction": false,
+                "is_bankOwned": false,
+                "is_foreclosure": false,
+                "is_FSBO": false,
+                "is_comingSoon": false
+              },
+              "isUndisclosedAddress": false,
+              "attributionInfo": {
+                "mlsId": "7004800",
+                "mlsName": "ARMLS",
+                "agentName": "Heidi Kory",
+                "brokerName": "The Arrow Agency"
+              },
+              "compsCarouselPropertyPhotos": [
+                {
+                  "mixedSources": {
+                    "jpeg": [
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/73cae8628ba407865cb288550f629468-cc_ft_192.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/73cae8628ba407865cb288550f629468-cc_ft_384.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/73cae8628ba407865cb288550f629468-cc_ft_576.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/73cae8628ba407865cb288550f629468-cc_ft_768.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/73cae8628ba407865cb288550f629468-cc_ft_960.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/73cae8628ba407865cb288550f629468-cc_ft_1152.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/73cae8628ba407865cb288550f629468-cc_ft_1344.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/73cae8628ba407865cb288550f629468-cc_ft_1536.jpg"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "property": {
+              "zestimate": 260100,
+              "lastSoldPrice": 260000,
+              "price": 260000,
+              "daysOnZillow": 22,
+              "dateSold": 1784505600000,
+              "currency": "USD",
+              "bedrooms": 2,
+              "bathrooms": 2,
+              "livingAreaValue": 1084,
+              "livingAreaUnits": "Square Feet",
+              "livingAreaUnitsShort": "sqft",
+              "lotAreaValue": 143,
+              "lotAreaUnits": "Square Feet",
+              "address": {
+                "streetAddress": "925 N College Ave",
+                "city": "Tempe",
+                "state": "AZ",
+                "zipcode": "85281"
+              },
+              "latitude": 33.439816,
+              "longitude": -111.92976,
+              "zpid": 7584029,
+              "homeStatus": "RECENTLY_SOLD",
+              "homeType": "APARTMENT",
+              "hdpUrl": "/homedetails/925-N-College-Ave-Tempe-AZ-85281/7584029_zpid/",
+              "listing_sub_type": {
+                "is_newHome": false,
+                "is_forAuction": false,
+                "is_bankOwned": false,
+                "is_foreclosure": false,
+                "is_FSBO": false,
+                "is_comingSoon": false
+              },
+              "isUndisclosedAddress": false,
+              "attributionInfo": {},
+              "compsCarouselPropertyPhotos": [
+                {
+                  "mixedSources": {
+                    "jpeg": [
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/6d84a9de25061391c79fac849be1f63d-cc_ft_192.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/6d84a9de25061391c79fac849be1f63d-cc_ft_384.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/6d84a9de25061391c79fac849be1f63d-cc_ft_576.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/6d84a9de25061391c79fac849be1f63d-cc_ft_768.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/6d84a9de25061391c79fac849be1f63d-cc_ft_960.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/6d84a9de25061391c79fac849be1f63d-cc_ft_1152.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/6d84a9de25061391c79fac849be1f63d-cc_ft_1344.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/6d84a9de25061391c79fac849be1f63d-cc_ft_1536.jpg"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "property": {
+              "zestimate": 245600,
+              "lastSoldPrice": 247000,
+              "price": 247000,
+              "daysOnZillow": 363,
+              "dateSold": 1755043200000,
+              "currency": "USD",
+              "bedrooms": 1,
+              "bathrooms": 1,
+              "livingAreaValue": 804,
+              "livingAreaUnits": "Square Feet",
+              "livingAreaUnitsShort": "sqft",
+              "lotAreaValue": 117,
+              "lotAreaUnits": "Square Feet",
+              "address": {
+                "streetAddress": "700 E MESQUITE Circle #J135",
+                "city": "Tempe",
+                "state": "AZ",
+                "zipcode": "85281"
+              },
+              "latitude": 33.439117,
+              "longitude": -111.92891,
+              "zpid": 7584171,
+              "homeStatus": "RECENTLY_SOLD",
+              "homeType": "APARTMENT",
+              "hdpUrl": "/homedetails/700-E-Mesquite-Cir-UNIT-J135-Tempe-AZ-85281/7584171_zpid/",
+              "listing_sub_type": {
+                "is_newHome": false,
+                "is_forAuction": false,
+                "is_bankOwned": false,
+                "is_foreclosure": false,
+                "is_FSBO": false,
+                "is_comingSoon": false
+              },
+              "isUndisclosedAddress": false,
+              "attributionInfo": {
+                "mlsId": "6877267",
+                "mlsName": "ARMLS",
+                "agentName": "Victoria Noreide",
+                "brokerName": "Berkshire Hathaway HomeServices Arizona Properties"
+              },
+              "compsCarouselPropertyPhotos": [
+                {
+                  "mixedSources": {
+                    "jpeg": [
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/d3d449e71ea6010cd806d983a62e4425-cc_ft_192.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/d3d449e71ea6010cd806d983a62e4425-cc_ft_384.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/d3d449e71ea6010cd806d983a62e4425-cc_ft_576.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/d3d449e71ea6010cd806d983a62e4425-cc_ft_768.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/d3d449e71ea6010cd806d983a62e4425-cc_ft_960.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/d3d449e71ea6010cd806d983a62e4425-cc_ft_1152.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/d3d449e71ea6010cd806d983a62e4425-cc_ft_1344.jpg"
+                      },
+                      {
+                        "url": "https://photos.zillowstatic.com/fp/d3d449e71ea6010cd806d983a62e4425-cc_ft_1536.jpg"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "daysOnZillow": 8799,
+    "compsCarouselPropertyPhotos": [
+      {
+        "mixedSources": {
+          "jpeg": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=192x144&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=tx5-tomVAJO4v8JOjQ66wpdIhfE="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=384x288&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=bl7QtzNTjRVnGjsol6nyhpPkT4g="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=576x432&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=XqLVeIfEe4BZAuMDa_-FcOxrRwQ="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=768x576&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=7TYl2EWqs7iuLF_9--SCWiFdE2Y="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=960x720&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=ulEegYmiyyHxffq47TPV-wBO8Ww="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1152x864&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=3k0hXYqUojqJnoHJPmSN375-GIM="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=yZApvjVz6L4Oz1ICla4PpWon5bg="
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=rMyckUudFiyMY-MIMsWMXBNZbAw="
+            }
+          ]
+        }
+      }
+    ],
+    "isConfirmedClaimedByCurrentSignedInUser": false,
+    "isRecentStatusChange": false,
+    "buildingId": "2750978529",
+    "foreclosureTypes": {
+      "isBankOwned": false,
+      "wasNonRetailAuction": false
+    },
+    "isFeatured": false,
+    "rentalApplicationsAcceptedType": "REQUEST_TO_APPLY",
+    "propertyTypeDimension": "Condo",
+    "hdpTypeDimension": "Zestimate",
+    "listingTypeDimension": "Unknown Listed By",
+    "featuredListingTypeDimension": "organic",
+    "brokerIdDimension": "Unknown Listed By",
+    "keystoneHomeStatus": "NotForSale",
+    "pageUrlFragment": "Zestimate",
+    "isRentalsLeadCapMet": false,
+    "isPaidMultiFamilyBrokerId": false,
+    "timeZone": "America/Phoenix",
+    "tourEligibility": {
+      "isPropertyTourEligible": false
+    },
+    "virtualTourUrl": null,
+    "selfTour": {
+      "hasSelfTour": false
+    },
+    "originalPhotos": [
+      {
+        "caption": "",
+        "mixedSources": {
+          "jpeg": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=800x600&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=QWiflUJY1QDa0jKPa0m9pBZI2vY=",
+              "width": 800
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1024x768&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=QEWyD8MuXtnuTkyu6OWOb4_GVv8=",
+              "width": 1024
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=yZApvjVz6L4Oz1ICla4PpWon5bg=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=rMyckUudFiyMY-MIMsWMXBNZbAw=",
+              "width": 1536
+            }
+          ],
+          "webp": [
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=800x600&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=QWiflUJY1QDa0jKPa0m9pBZI2vY=",
+              "width": 800
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1024x768&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=QEWyD8MuXtnuTkyu6OWOb4_GVv8=",
+              "width": 1024
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1344x1008&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=yZApvjVz6L4Oz1ICla4PpWon5bg=",
+              "width": 1344
+            },
+            {
+              "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=rMyckUudFiyMY-MIMsWMXBNZbAw=",
+              "width": 1536
+            }
+          ]
+        }
+      }
+    ],
+    "addressOrUrlFromInput": "700 E Mesquite Cir, Tempe, AZ 85288",
+    "priceChange": null,
+    "pageViewCount": null,
+    "favoriteCount": null,
+    "annualHomeownersInsurance": null,
+    "listingProvider": null,
+    "buildingAttributes": null,
+    "listingPrice": {
+      "amount": 217000,
+      "currency": "USD",
+      "formatted": "$217,000"
+    },
+    "listingAddress": {
+      "street": "700 E Mesquite Cir",
+      "unit": null,
+      "city": "Tempe",
+      "state": "AZ",
+      "zipCode": "85281",
+      "county": "Maricopa County",
+      "country": "USA",
+      "neighborhood": "West Rio",
+      "subdivision": null,
+      "communityName": null,
+      "timeZone": "America/Phoenix",
+      "full": "700 E Mesquite Cir, Tempe, AZ 85281"
+    },
+    "coordinates": {
+      "latitude": 33.43873,
+      "longitude": -111.92784
+    },
+    "listingStatus": "other",
+    "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85281/7584173_zpid/",
+    "listingType": {
+      "isFSBA": false,
+      "isFSBO": false,
+      "isComingSoon": false,
+      "isPending": false,
+      "isOpenHouse": false,
+      "isNewHome": false,
+      "isForAuction": false,
+      "isForeclosure": false,
+      "isBankOwned": false,
+      "contingencyType": null
+    },
+    "bathroomsDetail": null,
+    "lotArea": {
+      "value": 119,
+      "unit": "Square Feet",
+      "formatted": "119 Square Feet"
+    },
+    "pricePerSquareFoot": 270,
+    "datePosted": null,
+    "onMarketDate": null,
+    "priceChangedAt": null,
+    "taxAnnualAmount": null,
+    "parking": {
+      "totalSpaces": 1,
+      "garageSpaces": null,
+      "hasGarage": false,
+      "hasAttachedGarage": null,
+      "features": [
+        "Carport"
+      ]
+    },
+    "agent": null,
+    "broker": null,
+    "mls": null,
+    "mainImage": {
+      "thumbnail": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=46x46&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=CuewqrJI3D1Ivf0bC8js6zXunoo=",
+      "medium": null,
+      "hiRes": null
+    },
+    "staticMapUrl": "https://maps.googleapis.com/maps/api/staticmap?center=33.43873,-111.92784&zoom=13&size=192x144&maptype=roadmap&key=AIzaSyARFMLB1na-BBWf7_R3-5YOQQaHqEJf6RQ&signature=WlACXcAxL3bci8e80BJE9yxgSXI=",
+    "propertyFeatures": {
+      "appliances": [],
+      "heating": [
+        "Other"
+      ],
+      "cooling": [
+        "Refrigerator"
+      ],
+      "flooring": [],
+      "exteriorFeatures": [
+        "Wood"
+      ],
+      "interiorFeatures": [],
+      "view": [],
+      "waterSource": [],
+      "sewer": [],
+      "utilities": [],
+      "constructionMaterials": [],
+      "roofType": "Tile",
+      "architecturalStyle": null,
+      "basement": null,
+      "levels": null,
+      "stories": null
+    },
+    "atAGlanceFacts": [
+      {
+        "factLabel": "Type",
+        "factValue": "Condo"
+      },
+      {
+        "factLabel": "Year Built",
+        "factValue": "1983"
+      },
+      {
+        "factLabel": "Heating",
+        "factValue": "Other"
+      },
+      {
+        "factLabel": "Cooling",
+        "factValue": "Refrigerator"
+      },
+      {
+        "factLabel": "Parking",
+        "factValue": "1 Parking space"
+      },
+      {
+        "factLabel": "HOA",
+        "factValue": "$206 monthly"
+      },
+      {
+        "factLabel": "Offer Review Date",
+        "factValue": null
+      }
+    ],
+    "schoolDistricts": null,
+    "hoa": {
+      "hasAssociation": true,
+      "fee": 206,
+      "feeFrequency": "$206 monthly",
+      "associationName": null,
+      "associationPhone": null,
+      "additionalFees": null
+    },
+    "listingPriceHistory": [
+      {
+        "date": "2002-07-09T00:00:00.000Z",
+        "event": "Sold",
+        "price": 75500,
+        "pricePerSquareFoot": 94,
+        "priceChangeRate": 0.24081713149374662,
+        "source": "Public Record",
+        "sellerAgent": null,
+        "buyerAgent": null
+      },
+      {
+        "date": "1993-12-13T00:00:00.000Z",
+        "event": "Sold",
+        "price": 60847,
+        "pricePerSquareFoot": 76,
+        "priceChangeRate": 0,
+        "source": "Public Record",
+        "sellerAgent": null,
+        "buyerAgent": null
+      }
+    ],
+    "listingTaxHistory": [
+      {
+        "year": 2025,
+        "taxPaid": 1122.82,
+        "value": 19800,
+        "taxIncreaseRate": 0.07010649,
+        "valueIncreaseRate": -0.07390084
+      },
+      {
+        "year": 2024,
+        "taxPaid": 1049.26,
+        "value": 21380,
+        "taxIncreaseRate": 0.011978747,
+        "valueIncreaseRate": 1.5055666
+      },
+      {
+        "year": 2023,
+        "taxPaid": 1036.84,
+        "value": 8533,
+        "taxIncreaseRate": 0.038314354,
+        "valueIncreaseRate": -0.35986498
+      },
+      {
+        "year": 2022,
+        "taxPaid": 998.58,
+        "value": 13330,
+        "taxIncreaseRate": 0.024184633,
+        "valueIncreaseRate": 0.10898502
+      },
+      {
+        "year": 2021,
+        "taxPaid": 975,
+        "value": 12020,
+        "taxIncreaseRate": 0.019298745,
+        "valueIncreaseRate": 0.106814
+      },
+      {
+        "year": 2020,
+        "taxPaid": 956.54,
+        "value": 10860,
+        "taxIncreaseRate": 0.025560165,
+        "valueIncreaseRate": 0.090361446
+      },
+      {
+        "year": 2019,
+        "taxPaid": 932.7,
+        "value": 9960,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0.073275864
+      },
+      {
+        "year": 2018,
+        "taxPaid": 932.7,
+        "value": 9280,
+        "taxIncreaseRate": 0.030653277,
+        "valueIncreaseRate": 0.10083037
+      },
+      {
+        "year": 2017,
+        "taxPaid": 904.96,
+        "value": 8430,
+        "taxIncreaseRate": 0.04857254,
+        "valueIncreaseRate": -0.03436426
+      },
+      {
+        "year": 2016,
+        "taxPaid": 863.04,
+        "value": 8730,
+        "taxIncreaseRate": -0.0069041704,
+        "valueIncreaseRate": 0.13671875
+      },
+      {
+        "year": 2015,
+        "taxPaid": 869.04,
+        "value": 7680,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0.25285482
+      },
+      {
+        "year": 2014,
+        "taxPaid": null,
+        "value": 6130,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0.226
+      },
+      {
+        "year": 2013,
+        "taxPaid": null,
+        "value": 5000,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": -0.14529915
+      },
+      {
+        "year": 2012,
+        "taxPaid": null,
+        "value": 5850,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": -0.16428572
+      },
+      {
+        "year": 2011,
+        "taxPaid": null,
+        "value": 7000,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": -0.2893401
+      },
+      {
+        "year": 2010,
+        "taxPaid": null,
+        "value": 9850,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": -0.12053572
+      },
+      {
+        "year": 2009,
+        "taxPaid": null,
+        "value": 11200,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": -0.0044444446
+      },
+      {
+        "year": 2008,
+        "taxPaid": null,
+        "value": 11250,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0.2228261
+      },
+      {
+        "year": 2007,
+        "taxPaid": null,
+        "value": 9200,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0.31428573
+      },
+      {
+        "year": 2006,
+        "taxPaid": null,
+        "value": 7000,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0
+      },
+      {
+        "year": 2005,
+        "taxPaid": null,
+        "value": 7000,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0.029411765
+      },
+      {
+        "year": 2004,
+        "taxPaid": null,
+        "value": 6800,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0
+      },
+      {
+        "year": 2003,
+        "taxPaid": null,
+        "value": 6800,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0.22522523
+      },
+      {
+        "year": 2002,
+        "taxPaid": null,
+        "value": 5550,
+        "taxIncreaseRate": 0,
+        "valueIncreaseRate": 0
+      }
+    ],
+    "nearbySchools": [
+      {
+        "name": "Cecil Shamley School",
+        "rating": 4,
+        "distance": 0.7,
+        "level": "Primary",
+        "type": "Public",
+        "grades": "PK-8",
+        "link": "https://www.greatschools.org/arizona/tempe/884-Laird-School/"
+      },
+      {
+        "name": "McClintock High School",
+        "rating": 8,
+        "distance": 3,
+        "level": "High",
+        "type": "Public",
+        "grades": "9-12",
+        "link": "https://www.greatschools.org/arizona/tempe/965-McClintock-High-School/"
+      }
+    ],
+    "nearbyProperties": [
+      {
+        "zpid": 7584169,
+        "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85288/7584169_zpid/",
+        "address": {
+          "street": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipCode": "85288"
+        },
+        "coordinates": {
+          "latitude": 33.43873,
+          "longitude": -111.92784
+        },
+        "price": 243400,
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 934,
+        "homeType": "CONDO",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/86537987d8c7cf91a5e2bf9cf30395d6-p_c.jpg"
+      },
+      {
+        "zpid": 7584170,
+        "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-UNIT-J134-Tempe-AZ-85281/7584170_zpid/",
+        "address": {
+          "street": "700 E Mesquite Cir UNIT J134",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipCode": "85281"
+        },
+        "coordinates": {
+          "latitude": 33.43873,
+          "longitude": -111.92784
+        },
+        "price": 286400,
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/d9ed07555a6f27f3537c1d3cc4eeb9f2-p_c.jpg"
+      },
+      {
+        "zpid": 7584172,
+        "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85288/7584172_zpid/",
+        "address": {
+          "street": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipCode": "85288"
+        },
+        "coordinates": {
+          "latitude": 33.43873,
+          "longitude": -111.92784
+        },
+        "price": 274200,
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "homeType": "CONDO",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/f2d851b36d2bac3e49fa4e12c0aff749-p_c.jpg"
+      },
+      {
+        "zpid": 7584174,
+        "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85281/7584174_zpid/",
+        "address": {
+          "street": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipCode": "85281"
+        },
+        "coordinates": {
+          "latitude": 33.43873,
+          "longitude": -111.92784
+        },
+        "price": 272600,
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "homeType": "CONDO",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/e00af9253f048dc37d28ff9f681780f1-p_c.jpg"
+      },
+      {
+        "zpid": 7584175,
+        "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85281/7584175_zpid/",
+        "address": {
+          "street": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipCode": "85281"
+        },
+        "coordinates": {
+          "latitude": 33.43873,
+          "longitude": -111.92784
+        },
+        "price": 241200,
+        "bedrooms": null,
+        "bathrooms": 1.33,
+        "livingArea": 934,
+        "homeType": "CONDO",
+        "homeStatus": "other",
+        "mainImage": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=K2XszjKbt7CTheeaadbrDVVc58o="
+      },
+      {
+        "zpid": 7584176,
+        "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-UNIT-L105-Tempe-AZ-85281/7584176_zpid/",
+        "address": {
+          "street": "700 E Mesquite Cir UNIT L105",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipCode": "85281"
+        },
+        "coordinates": {
+          "latitude": 33.43873,
+          "longitude": -111.92784
+        },
+        "price": 243300,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "livingArea": 804,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=316x234&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=K2XszjKbt7CTheeaadbrDVVc58o="
+      },
+      {
+        "zpid": 7584177,
+        "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-Tempe-AZ-85281/7584177_zpid/",
+        "address": {
+          "street": "700 E Mesquite Cir",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipCode": "85281"
+        },
+        "coordinates": {
+          "latitude": 33.43873,
+          "longitude": -111.92784
+        },
+        "price": 282400,
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "homeType": "CONDO",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/ec412294c05c7b5535a059d9c2f13693-p_c.jpg"
+      },
+      {
+        "zpid": 7584179,
+        "propertyUrl": "https://www.zillow.com/homedetails/700-E-Mesquite-Cir-UNIT-L108-Tempe-AZ-85281/7584179_zpid/",
+        "address": {
+          "street": "700 E Mesquite Cir UNIT L108",
+          "city": "Tempe",
+          "state": "AZ",
+          "zipCode": "85281"
+        },
+        "coordinates": {
+          "latitude": 33.43873,
+          "longitude": -111.92784
+        },
+        "price": 282300,
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "livingArea": 1084,
+        "homeType": "APARTMENT",
+        "homeStatus": "other",
+        "mainImage": "https://photos.zillowstatic.com/fp/4d0c1f3f76eb0714383309306ba9cf68-p_c.jpg"
+      }
+    ],
+    "listingMortgageRates": {
+      "thirtyYearFixed": 7.183,
+      "fifteenYearFixed": null,
+      "fiveYearArm": null
+    },
+    "listingPhotos": [
+      {
+        "url": "https://maps.googleapis.com/maps/api/staticmap?mobile=false&sensor=true&maptype=satellite&size=1536x1152&zoom=17&center=33.43872833251953,-111.92784118652344&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&&signature=rMyckUudFiyMY-MIMsWMXBNZbAw=",
+        "caption": null
+      }
+    ],
+    "isValid": true,
+    "scrapedAt": "2026-08-12T12:34:12.348Z"
+  }
+]
