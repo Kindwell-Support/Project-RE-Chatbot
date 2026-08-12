@@ -1,12 +1,18 @@
-# CONTRACT — Comps Lookup + ARV (`feat/comps-lookup`)
+# CONTRACT — Comps Lookup (`feat/comps-client-spec`; formerly "Comps Lookup + ARV" on `feat/comps-lookup` — the computed ARV is REMOVED, §14.8, and the branch moved with the client-spec alignment)
 
 Owner: MASON. INSPECTOR tests from this file. If code and contract disagree, the
 contract wins until a `CONTRACT_CHANGE` is agreed.
 
-- `ALGO_VERSION = 3` (1 → 2 client-spec alignment §14; 2 → 3 ARV removal §14.8)
-- Status: **token available; full module in scope for tonight.** Pure logic
-  stays offline-testable against the stub + fixtures; the Apify provider is
-  being built against a recorded spike payload.
+- `ALGO_VERSION = 9` (1→2 client-spec alignment §14; 2→3 ARV removal §14.8;
+  3→4 truncation fix §14.17; 4→5 the union §14.19; 5→6 completeness
+  tie-breaker §14.20; 6→7 attached lot weights §14.3 amendment; 7→8
+  thin-market disclosure §14.21; 8→9 price-outlier disclosure §14.23.
+  `RAW_REFETCH_BELOW_VERSION = 4`: rows below it REFETCH on touch — their
+  raw was fetched under the 40-cap regime; v4+ raw is sound and recomputes
+  free.)
+- Status: **feature-complete; development CLOSED (operator, 2026-08-12).**
+  §14.23 was the final slice. INSPECTOR verifies, issues GREEN, the module
+  ships. Nothing new starts without a fresh operator ruling.
 
 ## 0. Change log (operator-directed, 2026-08-05 evening)
 
@@ -113,7 +119,13 @@ Three rules now govern scoring/ordering beyond the base weights:**
    either — ordering (not score) demotes missing bed/bath fields by
    5/field within the concealment margin.
 
-### 14.4 Confidence, rebased (operator ruling — a consequence, not a choice)
+### 14.4 Confidence, rebased — **REMOVED WITH THE ARV (§14.8). PRESERVED SPEC, not live.**
+
+Nothing in this subsection describes shipping code: the confidence grade
+died with `arv.ts` and no tier is computed or rendered anywhere. Kept,
+like §5.5, solely because §14.8 defines reinstatement as a rebuild from
+this contract. (Coherence pass, 2026-08-12: this banner was missing while
+§5.5 had one — the same removal, inconsistently marked.)
 
 `high` required n ≥ 6; with the cap at 5 that is structurally unreachable and
 every run would return medium or low forever. Rebased:
@@ -195,9 +207,12 @@ model-authored, not prompt-dependent), on every SUCCESSFUL comps render:
   for that location and home type. Please note responses are for education and
   based on available public data. Investors are encouraged to review each
   address for additional information."*
-- `COMPS_CLOSING` (emitted after the comps table, always the LAST content
-  before the footer — the emit order is opening → header → table → closing →
-  footer with no gap, §14.8): evaluate each property carefully;
+- `COMPS_CLOSING` (always the LAST content before the footer — the FULL
+  emit order as of §14.23 is opening → header → table → [thin-market
+  §14.21] → [outlier §14.23] → [neighborhood §14.16.1] → [demographics
+  §14.10] → closing → footer; the bracketed sections are conditional and
+  their insertion never displaced the closing's position): evaluate each
+  property carefully;
   current quality of home, overall appeal, lot location and usability can
   drastically impact value; consider external factors such as view properties,
   environmental concerns, powerlines, busy roads.
@@ -425,7 +440,7 @@ rule by default; rendering one bare is a bug without needing a new ruling.
   the sales-aggregate half is now scoped and ruled (§14.16); Census
   demographics were already in scope (§14.10).
 
-### 14.16 Neighbourhood sales aggregates — RULED, NOT BUILT (operator, 2026-08-10)
+### 14.16 Neighbourhood sales aggregates — RULED 2026-08-10, BUILT per §14.16.1
 
 Client spec: per lookup, 1-mile radius, past 12 months — total sales, avg
 price, avg $/sqft, avg bed/bath, avg DOM. Scoping evidence in
@@ -798,7 +813,9 @@ Dense markets flag `truncated=true` (honest label); Wickenburg exhausts
 (`truncated=false`) — both exactly as the model predicts. The deeper pool
 surfaces nearer sales the 40-cap had displaced; every set moved closer.
 
-### 14.18 PRESENTATION (operator-directed; the module's LAST change)
+### 14.18 PRESENTATION (operator-directed. Coherence note: "the module's
+LAST change" as originally issued — §14.19–§14.23 were each subsequently
+ruled; §14.23 is the actual final slice)
 
 The block was correct but dense — members scan, not read. Goals in ruled
 priority order: (1) sold price / $/sqft / distance findable per comp
@@ -848,6 +865,11 @@ Rules carried over UNCHANGED and re-affirmed against the reflow:
 - The §14.17 truncated header (`sales since {date} (older sales exceeded
   the data limit)`) SURVIVES: the window clause is a variable of the
   template, not prose a reflow can drop.
+- **Post-template addition (coherence note, 2026-08-12):** the disclosure
+  slot — §14.21's thin-market line, then §14.23's per-comp outlier
+  line(s) — sits between the last comp entry and the Neighborhood sales
+  header. Both are conditional; the template above predates them and
+  §14.21/§14.23 pin their placement.
 
 **Date rendering (goal 4):** ISO dates become `Mon D, YYYY` (e.g. `Aug 5,
 2026`) EVERYWHERE member-visible — per-comp sold dates and the
@@ -859,7 +881,9 @@ BUG-006's lesson stays honoured). Null date ⇒ `—`.
 null/unbuildable ⇒ the literal text `link unavailable` (§14.9 unchanged —
 never an empty or dead control).
 
-**Widget button rule (presentational, general — no comps coupling):** a
+**Widget button rule (BUG-017 in INSPECTOR's register — the fix MASON's
+commit c8f29fe provisionally labelled 015; §12.5 records the mapping)
+(presentational, general — no comps coupling):** a
 line consisting ONLY of a link (markdown link or bare http(s) URL) renders
 as a BUTTON; the existing http(s)-only href gate now also gates the button
 — a model-authored `javascript:` URL stays inert literal text and never
@@ -874,7 +898,9 @@ anything hard to reproduce exactly is banned. Token cost is real
 growth is ~9s member latency) — the before/after token count of a full
 rendered block is REPORTED with the build.
 
-### 14.19 THE UNION (operator ruling; ALGO_VERSION 5; the LAST slice)
+### 14.19 THE UNION (operator ruling; ALGO_VERSION 5. Coherence note: "the
+LAST slice" as issued at the time — superseded by later rulings; §14.23 is
+the actual final slice)
 
 **Ruling + rationale, on record:** the 1-mile `doz=12m` aggregate fetch is
 already paid for, already cached on the same row, and it is an EXHAUSTED
@@ -986,7 +1012,8 @@ the ruling's shape.
 raw.
 
 **Operator principle pinned from the same session (the recall-phrasing
-lesson):** any guarantee keyed to NATURAL LANGUAGE must have its test
+lesson — BUG-019 in INSPECTOR's register):** any guarantee keyed to
+NATURAL LANGUAGE must have its test
 parametrized across phrasings — a fix verified against the one wording
 that already worked is unverified. (INSPECTOR parametrizes the recall
 case; the principle applies to every prompt-enforced rule.)
@@ -1017,8 +1044,12 @@ regime-dependent) — it appears in the copy as a quoted fact only.
 
 Verification rows (operator-named): **Mesquite triggers** (3mi served, 2
 near in-band same-type — both in the subject's own complex), **Grandview
-must not** (1mi/3mo, five), **Don Frank is the rural control** (1mi serve
-⇒ signal 1 already holds it silent).
+must not** (1mi/3mo, five), **Don Frank is the rural control** — it
+serves WIDE (3mi, signal 1 TRUE) and stays silent because its near
+in-band count ≥ 3 holds signal 2 false; that is precisely what makes it
+the control for "a wide serve is normal in rural markets". (Coherence
+fix, 2026-08-12: this line originally claimed a 1mi serve/signal-1
+silence, contradicting both the ruling's intent and the measured run.)
 
 ### 14.22 The multi-unit ask (RULING 1; live path only)
 
@@ -1108,6 +1139,45 @@ peers, matched pool n=4 — the case that justifies the fallback
 existing); **Grandview, Evergreen, 10th Place, Sierra Vista and Don
 Frank all stay silent** (maxima 1.09–1.27, inside the band).
 
+### 14.24 DECLINED OPTIONS — recorded with reasons (operator close-out, 2026-08-12)
+
+Things that look like easy wins and were considered and DECLINED. A
+future reader proposing one of these is not discovering something we
+missed; they are reopening a decision, and the reason it was closed is
+recorded here.
+
+1. **Direct `rendered_block`-to-widget delivery (skip the model relay) —
+   DECLINED.** The honesty architecture RESTS on the relay: format.ts
+   renders structurally, the model re-types the block verbatim, and every
+   prompt-enforced guarantee (no ARV from memory, recall re-runs, the
+   echo rules) attaches at that seam. Piping the block straight to the
+   widget would remove the drift surface AND the enforcement surface with
+   it — the model could then author comp-shaped claims in its
+   surrounding prose with nothing structural to anchor them to, and the
+   §14.18 relay-fidelity constraint (token cost, reported per build)
+   would become unmeasurable. Faster, cheaper, and it dismantles the
+   thing the guarantees hang from. If revisited, it needs a replacement
+   enforcement design FIRST, not a wiring change.
+2. **Building-aware condo fetching (resolve the building, enumerate
+   units, pick or ask) — DECLINED AS UNMEASURED.** The Mesquite anatomy
+   made it tempting; §14.22's ask ships instead because it needs no new
+   data. The building-aware version rests on unverified assumptions
+   about how Zillow models buildings (`isBuilding` cards carry no unit
+   enumeration in any recorded payload). The gate, pinned: measure
+   FIRST — run 5–10 real multi-unit condo addresses through the detail
+   scraper and record what a building actually returns — then rule on
+   the evidence. Nothing here authorizes the spike; it costs real actor
+   runs.
+3. **The computed ARV — REMOVED as a ONE-WAY DOOR (§14.8, client
+   decision, final).** Restated in this list for completeness because it
+   is the likeliest "easy win" of all: the trimmed mean, confidence
+   tiers, and calculator pre-fill wiring are all specified (struck) in
+   §5.5/§14.4 and would take an afternoon to revive. §14.8 defines
+   reinstatement as a REBUILD from this contract requiring a new client
+   ruling; the removal also took the only price-outlier mechanism, which
+   is why §14.23 exists. An afternoon to revive; a client decision to
+   authorize.
+
 ### 14.12 Blast radius
 
 Every golden expected value, every mapped fixture, and all three live
@@ -1148,7 +1218,7 @@ sql/add_comps_detail_cache.sql
 
 | Export | Default | Meaning |
 | --- | --- | --- |
-| `ALGO_VERSION` | `3` | stamped on every result; cache recompute trigger. **3 as of the ARV removal (§14.8)** — cached v2 blobs carry a dead `arv` key that no longer deserializes into `CompsResult`; the bump forces recompute-from-raw (zero provider calls, verified by spy) rather than trusting the deserializer to tolerate the dead field. The same mechanism retired v1 rows at the 1→2 bump: until the constant advances, stale rows keep serving old-parameter results for 14 days, indistinguishable from fresh. |
+| `ALGO_VERSION` | `9` | stamped on every result; cache recompute trigger. Full 1→9 history in the document header. The recompute mechanism: until the constant advances, stale rows keep serving old-parameter results for 14 days, indistinguishable from fresh; a bump recomputes from raw (zero provider calls) EXCEPT rows below `RAW_REFETCH_BELOW_VERSION = 4`, whose 40-cap-era raw is unsound and REFETCHES (§14.17 item 4). |
 | `MAX_COMP_AGE_MONTHS` | `12` | hard filter |
 | `SQFT_TOLERANCE` | `0.20` | subject sqft ±20% — hard gate (§14.1) |
 | `MAX_BED_DIFF` | `1` | hard filter |
@@ -1180,6 +1250,20 @@ Token absent ⇒ `run_comps` is not registered in `TOOL_DEFINITIONS` at all
 (change log #11); `set_manual_arv` is always registered.
 
 ## 4. Types — `src/features/comps/types.ts` (exported signatures; no `any`)
+
+> **Coherence note (2026-08-12): the snippets below are the ORIGINAL v2/v3
+> base shapes and are SUPERSEDED where §14 extended them.** The live
+> `CompsResult` additionally carries (all §-pinned, all in types.ts with
+> doc comments): `searchTruncated` + `searchEarliestSoldDate` (§14.17),
+> `nearRingCompleteMi` (§14.19), `nearInBandSameTypeSales` (§14.21),
+> `nearInBandMedianPpsf` + `nearInBandPpsfCount` (§14.23), and the
+> three-state decorations `demographics?` (§14.10) and `neighborhood?`
+> (§14.16.1). `ScoredComp` gained `detail?: CompDetail` (§14.14.1). The
+> pure-function list below likewise predates `dedupeSales`, `median`,
+> `monthsBetween`, `unionCandidatePools` (filter.ts), `effectiveWeights`,
+> `orderingKey` (rank.ts), and the aggregates/detail modules — §14's
+> sub-sections name each seam. types.ts itself is the authority on the
+> full current shapes; this section remains as the base-spec record.
 
 ```ts
 export interface CompsRequest { address: string; sessionId: string }
@@ -1411,6 +1495,14 @@ export interface PropertyDataProvider {
   fetchSoldComps(subject: SubjectProperty, radiusMi: number): Promise<RawComp[]>;
 }
 ```
+
+> **Coherence note (2026-08-12), superseded where §14 extended it:**
+> `fetchSoldComps` gained an optional `windowMonths` third parameter
+> (§14.17 — the server-side `doz` window rides the seam), and the
+> interface gained OPTIONAL `fetchDetailBatch` (§14.14) and
+> `fetchNeighborhoodSales` (§14.16.1) — a provider lacking an optional
+> fetch renders no corresponding section. providers/types.ts is the
+> authority on the full current seam.
 Errors: providers throw `ProviderTimeoutError` / `ProviderHttpError(status)` /
 `ProviderNetworkError`; `service.ts` maps them to failure codes (a leaked
 `SyntaxError` from a malformed body maps to `PROVIDER_ERROR` too). **The retry
@@ -1716,8 +1808,11 @@ work; cache hits bypass it entirely; breach ⇒ `RATE_LIMITED`.
 ## 11. Rendered chat block (`format.ts`, pure)
 
 Success (v2/v3 — the ARV block, trim narrative and confidence line are GONE,
-§14.8): emit order is `COMPS_OPENING` → header → table → `COMPS_CLOSING` →
-footer, with no gap where the ARV used to sit. The header names the subject
+§14.8): the base emit order was `COMPS_OPENING` → header → table →
+`COMPS_CLOSING` → footer, with no gap where the ARV used to sit; the FULL
+current order including the conditional sections added since is pinned in
+§14.7 (coherence pass, 2026-08-12 — the closing's last-before-footer
+position never moved). The header names the subject
 (beds/baths/sqft/type), BOTH tiers used (`radiusTierMi`,
 `recencyTierMonths`) and the rejected count. Per comp: address, sold price,
 sold date, sqft, $/sqft, beds, baths, lot size, distance, and the
