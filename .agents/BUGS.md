@@ -101,6 +101,47 @@ Searchable phrasings: *migrate probe says table exists when it does not*,
 
 ---
 
+## FINDING-015 — §14.22's ask is LOOSER than RULING 1; one stale card false-asks
+
+- **Status**: OPEN. Reported to MASON and the operator. Not a merge blocker.
+- **Severity**: moderate, and in the direction the ruling explicitly weighted.
+
+RULING 1 gave three conjunctive conditions. The build checks one:
+
+| ruling condition | in `service.ts` |
+| --- | --- |
+| member supplied no unit | checked (`!hasUnitDesignator(rawAddress)`) |
+| the RESOLVED CARD has a unit | **not checked** |
+| 2+ DISTINCT unit cards at that street | **not checked** — one sibling suffices |
+
+Both missing conditions loosen the trigger, and the ruling's emphasis was the
+opposite: *"a false ask is worse than the guess it replaces, because it makes
+the tool look broken on ordinary addresses."*
+
+**Demonstrated, not argued** (`tests/comps/multiUnitAsk.test.ts`): a plain SFR
+subject whose pool contains a SINGLE unit-bearing card sharing the street
+prefix — a stale Zillow record, a converted garage apartment, a neighbouring
+duplex — is answered with an ask. The member cannot satisfy it: their house has
+no unit number to give. That is the false ask, reachable with one bad row.
+
+**What the build gets right**, and it is the important half: a plain SFR with
+no unit cards never asks, and a member who supplied a unit is never asked
+again. So the ask is genuinely keyed to what the member left out; it is the
+evidence threshold for "this building has units" that is too low.
+
+**Suggested shape** (MASON's call, and it may be the operator's): require two
+distinct unit-bearing siblings, or require the resolved subject card to carry a
+unit itself. Either restores a condition the ruling named.
+
+Recorded as probes rather than as failing tests: the cases assert what the build
+DOES, each with a message saying to delete it if the trigger tightens, so the
+gap stays visible without reddening the suite over a decision that is not mine.
+
+Searchable: *false unit ask*, *single sibling triggers ask*, *ruling 1
+conditions not conjunctive*.
+
+---
+
 ## FINDING-014 — every multi-turn LIVE case ran with EMPTY history, and passed
 
 - **Status**: FIXED in both fakes. The live battery must be re-run; its prior
