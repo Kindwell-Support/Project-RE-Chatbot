@@ -101,6 +101,49 @@ Searchable phrasings: *migrate probe says table exists when it does not*,
 
 ---
 
+## FINDING-017 — a cache row that cannot be checked against the property it describes
+
+- **Status**: OPEN. Schema gap; MASON post-green backlog. Operator ruled the
+  targeted purge (~19 of 57 rows) on this basis.
+- **Severity**: the finding is the unauditability, not the row count.
+
+`comps_detail_cache` stores `zpid`, `detail`, `created_at`, `expires_at`, and
+the `detail` jsonb is a bare `CompDetail` — `daysOnMarket`, `parkingSpaces`,
+`yearBuilt`, `architecturalStyle`, `propertyCondition`. **No source zpid. No
+source address.**
+
+So when BUG-022 showed that address-keyed joins could write Unit D payloads
+under Unit C zpids, there was no way to ask the store which rows were affected.
+A poisoned row and a clean row are byte-indistinguishable. The scope had to be
+estimated from three indirect signatures:
+
+| signature | rows |
+| --- | --- |
+| `parkingSpaces = 0` and `yearBuilt` null — the Unit-D shape | 2 |
+| `parkingSpaces = 0` — written under the old rule, wrong now regardless | 6 |
+| zpid belongs to a comp at a unit-token address — the join-risk set | 15 |
+| orphaned (the comps row that created it has aged out) | 3 |
+
+**The signature DECAYS**, which is the part that made this urgent rather than
+tidy: comps rows expire at 14 days, detail rows live 90. Every day, more detail
+rows lose the comps row that would identify their address, and the risk set
+becomes unverifiable. Three rows had already crossed that line.
+
+**Same family as [FINDING-016] and BUG-021**: we keep meeting things we cannot
+verify after the fact. BUG-021 was a batch outcome with no durable log;
+FINDING-016 was a measurement that silently described the wrong subject; this is
+a stored fact with no provenance. The pattern is that verification has to be
+designed in — it is never available retroactively.
+
+**The fix is one column**: record the address (or the item zpid actually
+answered) alongside the detail. That turns this class of question from an
+estimate into a query.
+
+Searchable: *detail cache has no provenance*, *cannot identify poisoned rows*,
+*unauditable cache row*, *purge scope estimate*.
+
+---
+
 ## BUG-022 — the detail mapper renders "0 parking spaces" for units that HAVE parking
 
 - **Status**: OPEN — MASON fixing at time of writing. Verification written from
