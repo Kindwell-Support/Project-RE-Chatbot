@@ -174,7 +174,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       // The recorded reordering, reproduced exactly: input 1,2,3,4,5 returns
       // as 1,4,5,2,3. Under an index join, comps 2/3/4/5 silently swap their
       // year built and parking — and the output looks perfect.
-      const comps = BATCH5.map((i, n) => comp(i.addressOrUrlFromInput, `Z${n}`));
+      const comps = BATCH5.map((i) => comp(i.addressOrUrlFromInput, String(i.zpid)));
       const returned = [BATCH5[0], BATCH5[3], BATCH5[4], BATCH5[1], BATCH5[2]];
 
       // PRECONDITION: the fixture is genuinely shuffled. If input and returned
@@ -207,7 +207,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       // The silent-shift failure: drop one item and an index join slides every
       // later comp up by one. Every comp still gets detail; four of them get
       // the wrong detail.
-      const comps = BATCH5.map((i, n) => comp(i.addressOrUrlFromInput, `Z${n}`));
+      const comps = BATCH5.map((i) => comp(i.addressOrUrlFromInput, String(i.zpid)));
       const returned = BATCH5.filter((_, idx) => idx !== 1); // the actor dropped #2
 
       const { detailFor, missing } = joinByAddress(comps, returned);
@@ -226,7 +226,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
     it('an item returned for an address nobody asked for is ignored', () => {
       // Defensive: the actor echoing an unexpected key must not create a comp
       // or overwrite one. Failure direction is "no detail", never "wrong comp".
-      const comps = [comp(BATCH5[0].addressOrUrlFromInput, 'Z0')];
+      const comps = [comp(BATCH5[0].addressOrUrlFromInput, String(BATCH5[0].zpid))];
       const returned = [
         { ...BATCH5[1], addressOrUrlFromInput: '999 Nobody Asked Ln, Phoenix, AZ' },
         BATCH5[0],
@@ -245,7 +245,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       // an actor that changes "St," to "Street" should not cost the member
       // their detail. The risk it introduces is the one worth pinning — five
       // distinct comps must still land on five distinct details.
-      const comps = BATCH5.map((i, n) => comp(i.addressOrUrlFromInput, `Z${n}`));
+      const comps = BATCH5.map((i) => comp(i.addressOrUrlFromInput, String(i.zpid)));
       const reformatted = BATCH5.map((i) => ({
         ...i,
         addressOrUrlFromInput: i.addressOrUrlFromInput.toUpperCase().replace(/,/g, ' '),
@@ -283,20 +283,41 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       ).toHaveLength(0);
     });
 
-    it('the cache-write set is keyed by the COMP zpid, not the batch item zpid', () => {
-      // The BUG-010 lesson applied to caching: the batch item can carry a
-      // different zpid for the same sale. Writing the item's zpid would store
-      // a key no future lookup ever probes — a cache that silently never hits.
+    it('REVERSED by §14.14.3: a differing zpid joins NOTHING and caches NOTHING', () => {
+      // THIS PIN IS DELIBERATELY INVERTED, and the inversion is the fix.
+      //
+      // It used to assert that a batch item carrying a DIFFERENT zpid still
+      // joined, cached under the comp's zpid, and that the difference was
+      // benign — the BUG-010 reading, where one sale legitimately wears two
+      // zpids and writing the item's key would store something no lookup
+      // probes.
+      //
+      // BUG-022 showed the other face of the same shape: Zillow answered
+      // "6953 E OSBORN Road #C" with zpid 7573110, which is Unit D. Under the
+      // old rule Unit D's facts rendered under Unit C's comp AND were cached
+      // under Unit C's zpid for ninety days. The address keyed the join and
+      // nothing verified identity.
+      //
+      // The contract now rules the trade explicitly: a lost em-dash beats
+      // another property's facts. So the assertion flips — and the CACHE half
+      // is the one that matters, because a render is transient and a poisoned
+      // row is not.
       const comps = [comp(BATCH5[0].addressOrUrlFromInput, 'COMP-ZPID')];
       const out = attachDetails(comps, {}, mapDetailBatchItems([BATCH5[0]] as never));
 
-      expect(out.fetched, 'nothing was queued for the cache').toHaveLength(1);
       expect(
-        out.fetched[0].zpid,
-        'the cache key is the BATCH item zpid — future lookups probe the comp zpid ' +
-          'and will never hit it',
-      ).toBe('COMP-ZPID');
-      expect(String(out.fetched[0].zpid)).not.toBe(String(BATCH5[0].zpid));
+        out.fetched,
+        'a wrong-property payload was queued for the cache. This is the ' +
+          'BUG-022 mechanism exactly: it persists under the zpid of the ' +
+          'member comp, and every later serve reads a sibling unit facts ' +
+          'as fact for ninety days.',
+      ).toHaveLength(0);
+      expect(
+        out.comps[0].detail,
+        'a wrong-property payload was attached to the render',
+      ).toBeUndefined();
+      expect(out.zpidMismatches, 'the mismatch was not counted').toBe(1);
+      expect(out.missing, 'a rejected join must count as MISSING, not as covered').toBe(1);
     });
   });
 
@@ -305,7 +326,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
   // =========================================================================
   describe.skipIf(pendingSlice(...MODS))('a failed detail item is non-fatal', () => {
     it('an invalid item yields NO detail while its neighbours keep theirs', () => {
-      const comps = MIXED.map((i, n) => comp(i.addressOrUrlFromInput, `M${n}`));
+      const comps = MIXED.map((i, n) => comp(i.addressOrUrlFromInput, i.zpid === null ? `M${n}` : String(i.zpid)));
       const { detailFor, missing } = joinByAddress(comps, MIXED);
 
       const bad = MIXED.find((i) => !i.isValid)!;
@@ -341,7 +362,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       // because property facts barely change — would pin the em-dashes in
       // place for every future lookup of that comp. A transient actor miss
       // must not become a durable one.
-      const comps = MIXED.map((i, n) => comp(i.addressOrUrlFromInput, `M${n}`));
+      const comps = MIXED.map((i, n) => comp(i.addressOrUrlFromInput, i.zpid === null ? `M${n}` : String(i.zpid)));
       const out = attachDetails(comps, {}, mapDetailBatchItems(MIXED as never));
       const bad = MIXED.find((i) => !i.isValid)!;
       const badIndex = MIXED.indexOf(bad);
@@ -362,7 +383,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         resoFacts: { ...(BATCH5[0].resoFacts ?? {}), parkingCapacity: null },
         parking: null,
       };
-      const got = joinByAddress([comp(sparse.addressOrUrlFromInput, 'S0')], [sparse])
+      const got = joinByAddress([comp(sparse.addressOrUrlFromInput, String(sparse.zpid))], [sparse])
         .detailFor(sparse.addressOrUrlFromInput);
 
       expect(got, 'a sparse item did not join at all').toBeDefined();
@@ -382,10 +403,15 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         parking: { totalSpaces: 0 },
       };
       expect(
-        joinByAddress([comp(noParking.addressOrUrlFromInput, 'P0')], [noParking])
+        joinByAddress([comp(noParking.addressOrUrlFromInput, String(noParking.zpid))], [noParking])
           .detailFor(noParking.addressOrUrlFromInput)!.parkingSpaces,
-        'zero parking spaces was treated as unknown',
-      ).toBe(0);
+        'SUPERSEDED by §14.14.3: a 0 must now render as UNKNOWN. The Zillow ' +
+          'payload carries parkingCapacity 0 and totalSpaces 0 beside ' +
+          'features ["Carport"] — their unfilled default, which the old rule ' +
+          'trusted into member-facing copy as "0 parking spaces" for a house ' +
+          'that has a carport. Absence and zero are indistinguishable at this ' +
+          'source, so the only truthful render is the em-dash.',
+      ).toBeNull();
     });
 
     it('a ZERO from the FALLBACK source is also a value', () => {
@@ -398,10 +424,13 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         parking: { totalSpaces: 4 },
       };
       expect(
-        joinByAddress([comp(zeroPrimary.addressOrUrlFromInput, 'P1')], [zeroPrimary])
+        joinByAddress([comp(zeroPrimary.addressOrUrlFromInput, String(zeroPrimary.zpid))], [zeroPrimary])
           .detailFor(zeroPrimary.addressOrUrlFromInput)!.parkingSpaces,
-        'a primary value of 0 fell through to the fallback',
-      ).toBe(0);
+        'SUPERSEDED by §14.14.3: a 0 from EITHER source is now unknown. The ' +
+          'old pin protected ?? over || so a legitimate 0 would not defer to ' +
+          'the fallback; the ruling is that no 0 from this source is ' +
+          'legitimate, so both paths yield null.',
+      ).toBeNull();
     });
 
     it('parking falls back to parking.totalSpaces when resoFacts has none', () => {
@@ -411,7 +440,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         parking: { totalSpaces: 3 },
       };
       expect(
-        joinByAddress([comp(fallbackOnly.addressOrUrlFromInput, 'P2')], [fallbackOnly])
+        joinByAddress([comp(fallbackOnly.addressOrUrlFromInput, String(fallbackOnly.zpid))], [fallbackOnly])
           .detailFor(fallbackOnly.addressOrUrlFromInput)!.parkingSpaces,
       ).toBe(3);
     });
@@ -421,14 +450,14 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       // market" is worse than no answer: it is a confident wrong fact.
       const sentinel = { ...BATCH5[0], daysOnZillow: -1 };
       expect(
-        joinByAddress([comp(sentinel.addressOrUrlFromInput, 'D0')], [sentinel])
+        joinByAddress([comp(sentinel.addressOrUrlFromInput, String(sentinel.zpid))], [sentinel])
           .detailFor(sentinel.addressOrUrlFromInput)!.daysOnMarket,
         'the -1 sentinel was carried through as a real DOM',
       ).toBeNull();
       // ...but a genuine 0 (listed and sold same day) survives.
       const sameDay = { ...BATCH5[0], daysOnZillow: 0 };
       expect(
-        joinByAddress([comp(sameDay.addressOrUrlFromInput, 'D1')], [sameDay])
+        joinByAddress([comp(sameDay.addressOrUrlFromInput, String(sameDay.zpid))], [sameDay])
           .detailFor(sameDay.addressOrUrlFromInput)!.daysOnMarket,
         'a same-day sale was treated as the sentinel',
       ).toBe(0);
@@ -438,7 +467,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       // §14.14 rule 1 taken to its conclusion: an unjoinable item is useless,
       // and the only way to "use" it is positionally, which is the banned bug.
       const keyless = { ...BATCH5[1], addressOrUrlFromInput: '' };
-      const comps = [comp(BATCH5[0].addressOrUrlFromInput, 'K0')];
+      const comps = [comp(BATCH5[0].addressOrUrlFromInput, String(BATCH5[0].zpid))];
       const { detailFor } = joinByAddress(comps, [keyless, BATCH5[0]]);
       expect(
         detailFor(BATCH5[0].addressOrUrlFromInput)!.yearBuilt,
@@ -468,7 +497,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
       // "≤ 5" and "≤ MAX_COMPS_KEPT" are the same assertion today and diverge
       // the moment the cap moves. §14.14 rule 2 pins the RELATIONSHIP, so a
       // literal 5 here would go quiet exactly when the cap changed.
-      const comps = BATCH5.map((i, n) => comp(i.addressOrUrlFromInput, `Z${n}`));
+      const comps = BATCH5.map((i) => comp(i.addressOrUrlFromInput, String(i.zpid)));
       expect(comps.length, 'the recorded batch no longer matches the cap')
         .toBeLessThanOrEqual(MAX_COMPS_KEPT);
       const out = attachDetails(comps, {}, mapDetailBatchItems(BATCH5 as never));
@@ -538,18 +567,20 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         // only the FIRST address, so the rest miss — which is the realistic
         // shape (a batch where some items come back unusable) and the one that
         // would expose a half-join if the code ever merged field-by-field.
-        const addresses = (golden01.comps as Array<{ address: string }>).map((c) => c.address);
-        const item = (a: string, i: number) => [
-          a,
+        // §14.14.3: the item must answer with the identity it was asked about,
+        // or the join rejects it. Keyed off the COMP rather than an index, so
+        // the bank models a healthy Zillow answer instead of the wrong-property
+        // shape the rule now catches.
+        const source = golden01.comps as Array<{ address: string; zpid: string }>;
+        const item = (c: { address: string; zpid: string }, i: number) => [
+          c.address,
           {
-            zpid: `D${i}`, isValid: true, daysOnZillow: 19 + i, yearBuilt: 1998,
+            zpid: c.zpid, isValid: true, daysOnZillow: 19 + i, yearBuilt: 1998,
             resoFacts: { parkingCapacity: 2 },
           },
         ] as const;
         const bank = Object.fromEntries(
-          mode === 'partial'
-            ? [item(addresses[0], 0)]
-            : addresses.map((a, i) => item(a, i)),
+          mode === 'partial' ? [item(source[0], 0)] : source.map((c, i) => item(c, i)),
         );
 
         const spy = makeProviderSpy({
@@ -603,7 +634,7 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         golden01.comps.map((c, i) => [
           c.address,
           {
-            zpid: `D${i}`, isValid: true, daysOnZillow: 20 + i, yearBuilt: 1990 + i,
+            zpid: c.zpid, isValid: true, daysOnZillow: 20 + i, yearBuilt: 1990 + i,
             resoFacts: { parkingCapacity: 2 },
           },
         ]),
@@ -783,5 +814,140 @@ describe(`per-comp detail enrichment${sliceNote(...MODS)}`, () => {
         ).toBe(true);
       }
     });
+  });
+});
+
+/**
+ * §14.14.3 rule 1 — ATTACKING the zpid verification rather than confirming it.
+ *
+ * The parking half of BUG-022 was one wrong field. This half is data
+ * contamination: a sibling unit's facts rendered under a member's comp AND
+ * persisted at 90-day TTL, silent because per-comp coverage counts a detail
+ * object as present regardless of WHOSE property it describes.
+ */
+describe(`§14.14.3 zpid verification — adversarial${sliceNote('detail')}`, () => {
+  const item = (over: Partial<RawDetailItem> = {}): RawDetailItem => ({
+    ...(BATCH5[0] as RawDetailItem), ...over,
+  });
+  const join = (compZpid: string | null, over: Partial<RawDetailItem> = {}) => {
+    const it0 = item(over);
+    const c = comp(it0.addressOrUrlFromInput, compZpid as string);
+    return attachDetails([c], {}, mapDetailBatchItems([it0] as never));
+  };
+
+  it('a NEAR-MISS zpid is rejected — one digit is a different property', () => {
+    // The Osborn shape exactly: 7573110 vs 7573111, adjacent units in one
+    // building. Nothing about the number looks wrong.
+    const real = String(BATCH5[0].zpid);
+    const nearMiss = real.slice(0, -1) + (real.endsWith('0') ? '1' : '0');
+    const out = join(nearMiss);
+    expect(out.zpidMismatches, 'a one-digit difference was accepted').toBe(1);
+    expect(out.fetched, 'the wrong property was cached').toHaveLength(0);
+    expect(out.comps[0].detail, 'the wrong property was rendered').toBeUndefined();
+  });
+
+  it('an item zpid matching a DIFFERENT comp in the same batch attaches to NEITHER', () => {
+    // The cross-attachment case. Item is found by ADDRESS for comp A while
+    // carrying comp B's identity — the shape that would put B's facts on A.
+    const a = comp(BATCH5[0].addressOrUrlFromInput, 'AAA');
+    const b = comp(BATCH5[1].addressOrUrlFromInput, 'BBB');
+    const crossed = item({ addressOrUrlFromInput: BATCH5[0].addressOrUrlFromInput, zpid: 999 });
+    const bItem = { ...(BATCH5[1] as RawDetailItem), zpid: 999 };
+    const out = attachDetails([a, b], {}, mapDetailBatchItems([crossed, bItem] as never));
+    expect(out.comps[0].detail, 'comp A wears an item carrying another identity').toBeUndefined();
+    expect(out.comps[1].detail, 'comp B wears an item carrying another identity').toBeUndefined();
+    expect(out.fetched, 'a crossed identity reached the cache').toHaveLength(0);
+  });
+
+  it('the failure direction is always the EM-DASH, never another property', () => {
+    // The BUG-010 trade, stated as a property rather than an anecdote: one
+    // sale legitimately wearing two zpids now DEGRADES. That costs a member
+    // three fields; the alternative costs them the truth.
+    const out = join('LEGIT-BUT-DIFFERENT');
+    expect(out.comps[0].detail, 'a double-zpid sale corrupted instead of degrading')
+      .toBeUndefined();
+    expect(out.missing, 'a degraded join must count as missing').toBe(1);
+  });
+
+  it('THE SENTINEL FLIPPED: a null ITEM zpid is now counted and caches nothing', () => {
+    // This case pinned a HOLE. It read: the check is
+    // `item.zpid !== null && comp.zpid && differ`, so an item with no
+    // identity was attached AND queued for the cache under the comp zpid —
+    // BUG-022 again with nothing to catch it, reachable in principle though
+    // unobserved in the recordings.
+    //
+    // MASON closed it at 02b3e53 by inverting the rule: the join now requires
+    // a POSITIVE match, both zpids present and equal. So the pin flips from
+    // recording the gap to proving it stays shut, which is the whole point of
+    // writing it as a sentinel rather than a comment.
+    const out = join('COMP-ZPID', { zpid: null });
+    expect(out.zpidMismatches, 'an unidentified item is no longer counted').toBe(1);
+    expect(
+      out.fetched,
+      'an item with NO identity was cached under the comp zpid. Absence of ' +
+        'identity must never satisfy an identity check — that is the whole ' +
+        'inversion, and this is the path it was reachable on.',
+    ).toHaveLength(0);
+    expect(out.comps[0].detail, 'an unidentified payload reached the render').toBeUndefined();
+    expect(out.missing, 'an unidentified join must count as missing').toBe(1);
+  });
+
+  it('a NULL comp zpid is now safe BY RULE, not by accident of the cache guard', () => {
+    // Previously this degraded correctly only because `if (scored.comp.zpid)`
+    // happened to gate the cache write — the payload still ATTACHED and could
+    // render another property. Under the inversion it takes the same path as
+    // every other non-match.
+    const out = join(null);
+    expect(out.fetched, 'a detail was cached with no verified identity').toHaveLength(0);
+    expect(out.comps[0].detail, 'an unverified payload still renders').toBeUndefined();
+    expect(out.zpidMismatches, 'a missing comp identity is not surfaced').toBe(1);
+  });
+
+  it.each([
+    ['empty string comp zpid', ''],
+    ['whitespace comp zpid', '   '],
+  ])('ABSENCE OF IDENTITY: %s never satisfies the check', (_label, compZpid) => {
+    // The falsy-vs-absent seam. '' is falsy so the old guard skipped it; '   '
+    // is TRUTHY and would compare unequal, which happens to reject — but for
+    // the wrong reason, and a future trim() would flip it silently.
+    const out = join(compZpid);
+    expect(out.fetched, 'a blank identity was treated as an identity').toHaveLength(0);
+    expect(out.comps[0].detail, 'a blank identity attached a payload').toBeUndefined();
+  });
+
+  it('BOTH null is a non-match, not a vacuous match', () => {
+    // The equality trap: null === null is true. A rule written as "reject when
+    // they differ" accepts two absences as agreement, which is the most
+    // confident possible way to be wrong about identity.
+    const out = join(null, { zpid: null });
+    expect(out.fetched, 'two absences were treated as agreement').toHaveLength(0);
+    expect(out.comps[0].detail, 'two absences produced a join').toBeUndefined();
+  });
+
+  it('TYPE COERCION: a numeric item zpid and a string comp zpid still match', () => {
+    // The other direction, and the one that would cause a FALSE rejection:
+    // the payload carries zpid as a number, the comp as a string. If the
+    // comparison is strict without normalising, every legitimate join breaks
+    // and every comp renders em-dashes — a silent total-coverage loss that
+    // looks like an Apify problem.
+    const numeric = Number(BATCH5[0].zpid);
+    const out = join(String(numeric));
+    expect(
+      out.comps[0].detail,
+      'a numeric payload zpid failed to match its string comp zpid. This is ' +
+        'not a security failure, it is a total enrichment outage that reads ' +
+        'as a provider fault.',
+    ).toBeDefined();
+    expect(out.zpidMismatches, 'a legitimate match was counted as a mismatch').toBe(0);
+  });
+
+  it('an item present but the COMP ROW absent joins nothing and throws nothing', () => {
+    // Degenerate input: a batch answering for an address no comp holds. It
+    // must be inert rather than an exception on the enrichment path, which
+    // rule 3 makes non-fatal.
+    const orphanItem = item({ addressOrUrlFromInput: 'NOWHERE AT ALL, PHOENIX, AZ' });
+    const out = attachDetails([], {}, mapDetailBatchItems([orphanItem] as never));
+    expect(out.comps, 'comps appeared from nowhere').toHaveLength(0);
+    expect(out.fetched, 'an orphan item was cached').toHaveLength(0);
   });
 });

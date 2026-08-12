@@ -101,6 +101,161 @@ Searchable phrasings: *migrate probe says table exists when it does not*,
 
 ---
 
+## FINDING-017 — a cache row that cannot be checked against the property it describes
+
+- **Status**: OPEN. Schema gap; MASON post-green backlog. Operator ruled the
+  targeted purge (~19 of 57 rows) on this basis.
+- **Severity**: the finding is the unauditability, not the row count.
+
+`comps_detail_cache` stores `zpid`, `detail`, `created_at`, `expires_at`, and
+the `detail` jsonb is a bare `CompDetail` — `daysOnMarket`, `parkingSpaces`,
+`yearBuilt`, `architecturalStyle`, `propertyCondition`. **No source zpid. No
+source address.**
+
+So when BUG-022 showed that address-keyed joins could write Unit D payloads
+under Unit C zpids, there was no way to ask the store which rows were affected.
+A poisoned row and a clean row are byte-indistinguishable. The scope had to be
+estimated from three indirect signatures:
+
+| signature | rows |
+| --- | --- |
+| `parkingSpaces = 0` and `yearBuilt` null — the Unit-D shape | 2 |
+| `parkingSpaces = 0` — written under the old rule, wrong now regardless | 6 |
+| zpid belongs to a comp at a unit-token address — the join-risk set | 15 |
+| orphaned (the comps row that created it has aged out) | 3 |
+
+**The signature DECAYS**, which is the part that made this urgent rather than
+tidy: comps rows expire at 14 days, detail rows live 90. Every day, more detail
+rows lose the comps row that would identify their address, and the risk set
+becomes unverifiable. Three rows had already crossed that line.
+
+**Same family as [FINDING-016] and BUG-021**: we keep meeting things we cannot
+verify after the fact. BUG-021 was a batch outcome with no durable log;
+FINDING-016 was a measurement that silently described the wrong subject; this is
+a stored fact with no provenance. The pattern is that verification has to be
+designed in — it is never available retroactively.
+
+**The fix is one column**: record the address (or the item zpid actually
+answered) alongside the detail. That turns this class of question from an
+estimate into a query.
+
+Searchable: *detail cache has no provenance*, *cannot identify poisoned rows*,
+*unauditable cache row*, *purge scope estimate*.
+
+---
+
+## BUG-022 — the detail mapper renders "0 parking spaces" for units that HAVE parking
+
+- **Status**: OPEN — MASON fixing at time of writing. Verification written from
+  the contract first, as always.
+- **Severity**: WRONG OUTPUT, not degraded output. This is the distinction that
+  matters and it is why this entry exists in the shape it does.
+- **Found**: by the operator, in the field.
+
+Two shapes, both observed on prod:
+
+| row | zpid | truth | rendered |
+| --- | --- | --- | --- |
+| Osborn comp 3 | 7573111 | 2 spaces | `0 parking spaces` |
+| Cypress comp 5 | 92353100 | a carport, no numeric count | `0 parking spaces` |
+
+**Why "wrong" and not "degraded" is the whole point.** Every other failure this
+module has shipped declines to answer: an em dash, an unavailable line, a
+refusal. Those cost a member information. This one asserts a falsehood — it
+tells someone a house has no parking when it has two spaces or a carport — and
+a member acting on it is acting on a fact we invented. The em-dash convention
+exists exactly so that unknown and zero are never confused, and here a null was
+coerced into the most confusable value available.
+
+**THE OPERATOR'S FRAMING IS CORRECTED, at their instruction.** "Degraded output,
+not wrong output" was used three times to justify not hotfixing, and it was
+false for this bug. The posture — no hotfix — still holds, but on a different
+and honest rationale: **parking is low-materiality beside sold price and
+$/sqft, and those are correct.** Recorded so nobody inherits the void reason and
+reapplies it to a bug where it does not hold.
+
+**Root cause is upstream of both symptoms**: two null strategies coexist in the
+detail mapper. The two rows above are downstream instances, not independent
+bugs, and a fix that patches parking alone leaves the class open.
+
+Searchable: *0 parking spaces wrong*, *carport renders zero*, *null coerced to
+zero detail field*, *parkingCapacity fallback*.
+
+---
+
+## FINDING-016 — two wrong-subject errors in one day: the confident answer about the wrong thing
+
+- **Status**: standing rule adopted.
+- **Severity**: process. Both were caught by me, NEITHER by a test.
+
+Two instances, hours apart, same class:
+
+1. **A loose `/ceiling/` assertion** matched the NEIGHBOURHOOD skip line, which
+   also carries `remainingMs` and also fires in that scenario. The case passed
+   while saying nothing about the detail-path branch it was written for.
+2. **A store query attributed run 2's detail rows to run 1's comps write** via a
+   90-second window, and reported Daffodil's batch as `72.65s`. Run 1 wrote no
+   detail rows at all. The number was confident, precise, and about a different
+   run.
+
+Both return a plausible answer about the wrong subject, and neither announces
+itself — a passing test and a clean number look identical to correct ones. This
+is the family that also contains the DOM row slicer that matched a sibling comp
+and the unscoped `/days on market/i`.
+
+**Standing rules, both directions:**
+
+- **Any store-derived timing pins the RUN, never a time window.** Join on a key
+  that identifies the run; a window will silently annex a neighbour's rows.
+- **Any WARN or log assertion scopes to its MESSAGE, never a shared field.**
+  `remainingMs` appears on at least two lines today and will appear on more; a
+  field-only matcher is satisfied by whichever line fires first.
+
+Searchable: *wrong-subject assertion*, *window join annexed another run*,
+*shared log field matched the wrong line*.
+
+---
+
+## BUG-021 — Daffodil served 0/5 enrichment, cause unrecoverable (slice label "BUG-014")
+
+- **Status**: OPEN — fix built at `f33f43e`, under verification this slice.
+- **Severity**: major as an OBSERVABILITY failure. The served block was
+  degraded but honest (em-dashes, "across 0 of the 5"), so no member saw a
+  false figure. What makes it major is that the cause could not be recovered
+  afterwards at all.
+
+**NUMBERING — read this before searching.** The operator's slice brief, MASON's
+0072/0073 and CONTRACT §14.14.2 all call this **"BUG-014"**. That number is
+already taken by the system-prompt-still-promises-an-ARV bug, closed at
+`a6e98c5` and verified at 0047. Per the register header rule the canonical
+register wins and the incident is **BUG-021**; both labels are recorded here so
+a reader arriving from the contract, the mailbox or the commit history lands on
+this entry either way.
+
+Searchable: *Daffodil 0/5*, *enrichment coverage zero*, *BUG-014 enrichment*,
+*detail batch silent failure*, *1646 N Daffodil*.
+
+**The incident.** Two consecutive live runs on 1646 N Daffodil St (2026-08-12):
+run 1 served 0/5 enrichment, run 2 served 5/5 with DOM 51. Same inputs, 72
+seconds apart.
+
+**Why it was unrecoverable**, which is the actual defect: the only records of
+the batch outcome were stdout lines nobody kept, and the Apify run ledger 403s
+for this token (the §14.14 rule 7 scope finding). Two candidate causes survive
+the forensics — a CEILING SKIP or an instant transient HTTP failure — and
+nothing distinguishes them after the fact.
+
+**Excluded by evidence, not by argument**: the zpid/address join (run 2 joined
+5/5 on identical inputs) and budget denial (the live path pre-consumes its
+unit).
+
+§14.14.2 is the fix: bounded retry, coverage logging on every serve, the ceiling
+skip upgraded to a WARN carrying `remainingMs`, and no swallowed exceptions.
+Closes when the cold live run exercises the retry path — MASON's three runs all
+rode cache and never reached it.
+
+---
+
 ## FINDING-015 — §14.22's ask is LOOSER than RULING 1; one stale card false-asks
 
 - **Status**: OPEN. Reported to MASON and the operator. Not a merge blocker.

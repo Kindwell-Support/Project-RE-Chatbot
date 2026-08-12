@@ -46,6 +46,21 @@ export const OUTLIER_PPSF_RATIO = 1.6;
  */
 export const OUTLIER_REFERENCE_MIN_COUNT = 5;
 
+// --- Enrichment reliability (CONTRACT §14.14.2) -----------------------------
+
+/**
+ * Bounded retries for the detail batch — SUPERSEDES §14.14.1's no-retry pin
+ * (operator ruling 2026-08-12, the Daffodil 0/5 incident). Fires ONLY on a
+ * transient throw (timeout/5xx/network, never 4xx) or an EMPTY/SHORT batch
+ * (fewer total items than addresses requested); a complete batch carrying
+ * isValid:false items is an ANSWER and never retries. Each retry still
+ * requires remaining pipeline headroom >= DETAIL_MIN_REMAINING_MS.
+ */
+export const DETAIL_BATCH_MAX_RETRIES = 1;
+
+/** Explicit backoff before a detail-batch retry (§14.14.2 rule 1). */
+export const DETAIL_RETRY_BACKOFF_MS = 2_000;
+
 /**
  * Rows whose raw payload predates this version were fetched under the old
  * 40-item/uncapped-window regime and MUST REFETCH rather than
@@ -194,9 +209,21 @@ export const DETAIL_CACHE_TTL_DAYS = 90;
 
 /**
  * Skip the live detail batch when less than this remains of the whole-pipeline
- * ceiling (CONTRACT §14.14 rule 5). A batch of 5 measured ~16s in the spike;
- * starting one with less headroom than that mostly buys a timeout we still
- * paid Apify for. Comps render without detail — degradation, never failure.
+ * ceiling (CONTRACT §14.14 rule 5). Comps render without detail — degradation,
+ * never failure.
+ *
+ * FROZEN BY OPERATOR RULING (2026-08-12): NO observed maximum can derive this
+ * constant. The batch is always <= MAX_COMPS_KEPT zpids regardless of pool
+ * size, yet measured durations moved from a 9.9-12.8s cluster to three
+ * consecutive ~30s runs (28.3 / 32.6 / 30.3) in ONE DAY with nothing changed
+ * on our side — the tail belongs to Apify's scheduling regime, not our
+ * workload, so any ceil(k x measured-max) formula ships whichever regime it
+ * happened to sample (a 1.33x on the stale 12.8s max would have ADMITTED runs
+ * that today's ~30s batches cannot finish: a started batch, a timeout, and an
+ * actor bill for nothing). The floor errs LOW deliberately — its failure mode
+ * is a skipped decoration (WARN, §14.14.2), not a wasted bill. INSPECTOR's
+ * duration-characterization test is the companion record; change neither
+ * without the other.
  */
 export const DETAIL_MIN_REMAINING_MS = 20_000;
 

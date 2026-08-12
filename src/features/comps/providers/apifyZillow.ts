@@ -79,6 +79,11 @@ function asFiniteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** §14.14.3 rule 2 helper: a count is only a claim when it is > 0. */
+function positiveCount(value: number | null): number | null {
+  return value !== null && value > 0 ? value : null;
+}
+
 /**
  * Lot arrives as sqft or acres depending on actor and row; normalize to
  * WHOLE sqft. Rounding is BUG-018's class (BUG-012's sibling): an acreage
@@ -272,7 +277,12 @@ export function mapDetailBatchItems(items: Array<Record<string, unknown>>): Deta
     const parking = (item.parking ?? {}) as Record<string, unknown>;
     const detail: CompDetail = {
       daysOnMarket: mapDaysOnMarket(item.daysOnZillow),
-      parkingSpaces: asFiniteNumber(resoFacts.parkingCapacity) ?? asFiniteNumber(parking.totalSpaces),
+      // §14.14.3 rule 2: a parking COUNT renders only when the payload
+      // states one > 0. Zillow emits 0 as an unfilled DEFAULT — recorded:
+      // parkingCapacity 0 + totalSpaces 0 on a card whose own features say
+      // ["Carport"] — so a 0 here is indistinguishable from absence and
+      // must map to null (em-dash), never to a rendered "0 parking spaces".
+      parkingSpaces: positiveCount(asFiniteNumber(resoFacts.parkingCapacity) ?? asFiniteNumber(parking.totalSpaces)),
       yearBuilt: asFiniteNumber(item.yearBuilt),
       architecturalStyle: nonEmptyString(resoFacts.architecturalStyle),
       propertyCondition: nonEmptyString(resoFacts.propertyCondition),

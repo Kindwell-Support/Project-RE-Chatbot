@@ -21,7 +21,9 @@ import {
   CENSUS_CACHE_TTL_DAYS,
   CENSUS_TIMEOUT_MS,
   DETAIL_CACHE_TTL_DAYS,
+  DETAIL_BATCH_MAX_RETRIES,
   DETAIL_MIN_REMAINING_MS,
+  DETAIL_RETRY_BACKOFF_MS,
   MAX_COMP_AGE_MONTHS,
   MIN_COMPS_TO_COMPUTE,
   SQFT_TOLERANCE,
@@ -143,6 +145,12 @@ export interface RunCompsDeps {
   logger?: LoggerLike;
   /** Injectable clock — pure code below never reads it directly. */
   now?: () => Date;
+  /**
+   * Injectable delay for the §14.14.2 retry backoff — defaults to a real
+   * setTimeout; tests inject an instant resolve so the bounded-retry cases
+   * do not sleep for real.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -723,34 +731,81 @@ async function enrichWithDetail(
   const missing = result.comps.filter((c) => !cachedDetails[c.comp.zpid]);
   let items: DetailBatchItem[] = [];
   if (missing.length > 0 && deps.provider.fetchDetailBatch) {
-    const remainingMs = PROVIDER_TIMEOUT_MS - (now().getTime() - startedAtMs);
-    if (remainingMs < DETAIL_MIN_REMAINING_MS) {
-      logger?.info?.(
-        { cacheKey: key, remainingMs },
-        'detail batch skipped — whole-pipeline ceiling; comps render without detail',
-      );
-    } else if (!budgetState.consumed && deps.budget && !deps.budget.tryConsume(now())) {
-      logger?.info?.({ cacheKey: key }, 'detail batch skipped — daily cap; comps render without detail');
-    } else {
+    // Batch size = the final kept set — already capped through ranking, and
+    // clamped again by detailBatchFor (§14.14 rule 2: bounded by
+    // MAX_COMPS_KEPT, never an independent constant).
+    const addresses = detailBatchFor(missing.map((c) => c.comp.address));
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    // §14.14.2: ONE bounded retry on transient throw or EMPTY/SHORT batch
+    // (fewer TOTAL items than addresses asked — the actor dropped work). A
+    // complete batch carrying isValid:false items is an ANSWER: retrying it
+    // re-bills for addresses Zillow already said are invalid. Every attempt
+    // re-checks the ceiling — the retry never eats it.
+    for (let attempt = 0; attempt <= DETAIL_BATCH_MAX_RETRIES; attempt++) {
+      const remainingMs = PROVIDER_TIMEOUT_MS - (now().getTime() - startedAtMs);
+      if (remainingMs < DETAIL_MIN_REMAINING_MS) {
+        // WARN, not info (§14.14.2 rule 2): this branch produces a 0/N and
+        // was one of the two silent candidates in the Daffodil incident.
+        logger?.warn(
+          { cacheKey: key, remainingMs, attempt },
+          'detail batch skipped — whole-pipeline ceiling; comps render without detail',
+        );
+        break;
+      }
+      if (!budgetState.consumed && deps.budget && !deps.budget.tryConsume(now())) {
+        logger?.info?.({ cacheKey: key }, 'detail batch skipped — daily cap; comps render without detail');
+        break;
+      }
       budgetState.consumed = true;
       try {
-        // Batch size = the final kept set — already capped through ranking,
-        // and clamped again by detailBatchFor (§14.14 rule 2: bounded by
-        // MAX_COMPS_KEPT, never an independent constant).
-        items = await deps.provider.fetchDetailBatch(
-          detailBatchFor(missing.map((c) => c.comp.address)),
-          { timeoutMs: remainingMs },
+        const got = await deps.provider.fetchDetailBatch(addresses, { timeoutMs: remainingMs });
+        // Keep the best answer seen — a short retry never discards a fuller
+        // first attempt.
+        if (got.length > items.length) items = got;
+        if (got.length >= addresses.length) break;
+        logger?.warn(
+          { cacheKey: key, requested: addresses.length, received: got.length, attempt },
+          'detail batch returned short — §14.14.2 bounded retry',
         );
       } catch (err) {
+        // §14.14.2 rule 3: no swallowed exceptions — class + message, always.
         logger?.warn(
-          { err: err instanceof Error ? err.message : String(err), cacheKey: key },
+          {
+            err: err instanceof Error ? err.message : String(err),
+            errClass: err instanceof Error ? err.constructor.name : typeof err,
+            cacheKey: key,
+            attempt,
+          },
           'detail batch failed — comps render without detail',
         );
+        if (!isTransient(err)) break; // 4xx / non-transient: same bill for the same mistake
       }
+      if (attempt < DETAIL_BATCH_MAX_RETRIES) await sleep(DETAIL_RETRY_BACKOFF_MS);
     }
   }
 
   const join = attachDetails(result.comps, cachedDetails, items);
+  if (join.zpidMismatches > 0) {
+    // §14.14.3 rule 1: a batch item answered the comp's address without a
+    // POSITIVE zpid match — wrong-property or unidentified payload,
+    // rejected at the join, loudly. Counts only; addresses stay out of
+    // logs (§3).
+    logger?.warn(
+      { cacheKey: key, zpidMismatches: join.zpidMismatches },
+      'detail batch items rejected — zpid missing or contradicting the comp',
+    );
+  }
+  // §14.14.2 rule 2: coverage on EVERY served result — INFO always, WARN on
+  // 0/N. The line the Daffodil incident never got to write.
+  {
+    const covered = join.comps.filter((c) => c.detail !== undefined).length;
+    const total = join.comps.length;
+    if (covered === 0 && total > 0) {
+      logger?.warn({ cacheKey: key, covered, total }, 'enrichment coverage 0/N — every comp served without detail');
+    } else {
+      logger?.info?.({ cacheKey: key, covered, total }, 'enrichment coverage');
+    }
+  }
   if (join.fetched.length > 0 && deps.detailCache) {
     try {
       await deps.detailCache.setMany(
