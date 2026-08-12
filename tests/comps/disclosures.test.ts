@@ -229,6 +229,61 @@ describe(`disclosure slices${sliceNote(...MODS)}`, () => {
       ).toMatch(/Comp 1 sold at/);
     });
 
+    it.each([
+      [OUTLIER_REFERENCE_MIN_COUNT - 1, 'fallback'],
+      [OUTLIER_REFERENCE_MIN_COUNT, 'pool'],
+      [OUTLIER_REFERENCE_MIN_COUNT + 1, 'pool'],
+    ])('THE REFERENCE FLOOR at n=%i selects the %s reference', (count, which) => {
+      // Boundary pinned at exactly 4, 5 and 6 because two REAL rows now sit on
+      // it: Don Frank at n=5 and Sierra Vista at n=7. A floor one off sends
+      // Don Frank to the leave-one-out median instead of the matched pool —
+      // a different number, a different sentence, and nothing in the output
+      // that says which reference produced it. The error would be invisible
+      // precisely on the rows close enough for it to matter.
+      //
+      // The two references are distinguishable ONLY by their provenance
+      // clause, which is why §14.23's honest naming is load-bearing rather
+      // than decorative: it is also the only observable that tells these two
+      // code paths apart from outside.
+      const base = resultFor(golden01, {
+        nearInBandPpsfCount: count,
+        nearInBandMedianPpsf: 50,
+      }) as { comps: Array<{ pricePerSqft: number }> };
+      const others = base.comps.slice(1).map((c) => c.pricePerSqft);
+      // Comp 1 is extreme against BOTH references, so a line fires either way
+      // and the case discriminates on WORDING rather than on presence.
+      const withOutlier = {
+        ...base,
+        comps: base.comps.map((c, i) =>
+          i === 0 ? { ...c, pricePerSqft: Math.max(...others) * 5 } : c,
+        ),
+      };
+      const line =
+        String(renderCompsForChat(withOutlier as never))
+          .split('\n')
+          .find((l) => /^_Comp 1 sold at/.test(l)) ?? '';
+      expect(line, `no line fired at n=${count}, so the boundary is untested here`)
+        .not.toBe('');
+
+      if (which === 'pool') {
+        expect(
+          line,
+          `at n=${count} the matched pool has enough sample to be the ` +
+            'reference, but the copy names the other-comps median. Don Frank ' +
+            'sits at exactly 5 — an off-by-one here silently repoints a real row.',
+        ).toMatch(/neighbourhood median of/);
+      } else {
+        expect(
+          line,
+          `at n=${count} the pool is BELOW the floor and must not be used, but ` +
+            'the copy claims a neighbourhood median — a figure with a sample ' +
+            'too thin to carry that name',
+        ).toMatch(/for the other comps in this set/);
+        expect(line, 'a sub-floor reference was named as a neighbourhood figure')
+          .not.toMatch(/neighbourhood/i);
+      }
+    });
+
     it('DISCLOSURE ONLY: byte-identical with the lines stripped', () => {
       const on = render({ nearInBandPpsfCount: OUTLIER_REFERENCE_MIN_COUNT, nearInBandMedianPpsf: 50 });
       const off = render();
