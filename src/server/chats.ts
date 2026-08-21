@@ -243,11 +243,21 @@ export async function touchChat(
       id: chatId,
       owner_key: ownerKey,
       last_message_at: stamp,
-      // adopted_legacy is SERVER-INFERRED, never client-asserted: this session
-      // carried messages before it had a chat row, which is exactly the W1
-      // legacy-adoption signature (a genuinely new chat has none). Phase 3
-      // skips these rows when it rewrites owner_key to email:<verified>, so a
-      // planted session id can never be laundered into a verified account.
+      // adopted_legacy is SERVER-INFERRED, never client-asserted: a
+      // self-declared flag would simply be omitted by whoever planted the
+      // session id, and Phase 3 would then migrate that row into their
+      // verified account.
+      //
+      // WHAT THIS FLAG ACTUALLY MEANS — read before adding a caller: it means
+      // "this session ALREADY HAD HISTORY when its first chat row was
+      // written". It does NOT mean "was adopted". Today those coincide,
+      // because W1 legacy adoption is the only way a row is created for a
+      // session that already holds messages. If any future path ever creates
+      // a row for a session with prior history — a merge, a repair script, an
+      // import, a Phase 3 backfill — those rows are flagged silently, Phase 3
+      // skips them in the owner_key rewrite, and a member loses a REAL chat.
+      // Any such path must either pass hadPriorHistory:false deliberately or
+      // this flag must stop being inferred.
       adopted_legacy: options.hadPriorHistory === true,
     });
     if (insertError) throw insertError;
