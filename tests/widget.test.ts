@@ -348,10 +348,26 @@ describe('markdown rendering (the model replies in markdown)', () => {
 });
 
 describe('history restore (memory is server-side; repaint what the bot remembers)', () => {
+  const STORED_CHAT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  // /chats must RESOLVE now. The boot rule is that the chat list decides which
+  // chat is active and decides first, so a stalled list means no transcript is
+  // fetched at all — by design (tests/multiChat.bootOrder.test.ts owns that
+  // rule). This harness previously hung every non-/history call, which used to
+  // be harmless because the widget fetched history ahead of the list.
   function mountWithHistory(messages: Array<{ role: string; content: string }>) {
     const fetchMock = vi.fn((url: string) => {
       if (String(url).includes('/history')) {
         return Promise.resolve({ ok: true, json: async () => ({ messages }) });
+      }
+      if (String(url).endsWith('/chats')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            { id: STORED_CHAT, title: null, created_at: 'x', last_message_at: 'x' },
+          ],
+        });
       }
       return new Promise(() => {});
     });
@@ -362,11 +378,15 @@ describe('history restore (memory is server-side; repaint what the bot remembers
     return fetchMock;
   }
 
-  it('requests /history for the stored session id', () => {
+  it('requests /history for the chat the list named', async () => {
     const fetchMock = mountWithHistory([]);
+    // Necessarily async now: the request waits on the chat list resolving.
+    await new Promise((r) => setTimeout(r, 20));
     const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/history'));
     expect(call, '/history was never requested').toBeDefined();
     expect(String(call![0])).toMatch(/\/history\?session_id=.+/);
+    expect(String(call![0]), 'history was fetched for a chat the list did not name')
+      .toContain(STORED_CHAT);
   });
 
   it('repaints prior turns, with markdown, after mount', async () => {

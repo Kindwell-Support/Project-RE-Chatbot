@@ -1271,19 +1271,18 @@
       function bootChats() {
         var op = beginOp();
 
-        // OPTIMISTIC REPAINT — real chats only. The stored active id always
-        // names a chat the server has listed before (placeholders are never
-        // persisted), so painting it early costs nothing and saves the member
-        // a round trip. A legacy session is NOT eligible: deciding whether to
-        // adopt it is exactly what has to wait for the list.
-        var remembered = storageGet(ACTIVE_KEY);
-        if (remembered && UUID_RE.test(remembered)) {
-          persistActive(remembered);
-          chats = [{ id: remembered, title: null }];
-          renderSidebar();
-          loadHistory();
-        }
-
+        // NOTHING HAPPENS BEFORE THE LIST RESOLVES. No repaint of the
+        // remembered chat, no placeholder, no /history — the chat list is the
+        // only thing that may decide which chat is active.
+        //
+        // There WAS an optimistic repaint here: it painted the stored
+        // ACTIVE_KEY chat immediately to save a round trip. It is removed
+        // because it was the last surviving racer of BUG-020's shape — a
+        // first-chat decision taken before the list could contradict it. It
+        // could paint (and fetch /history for) a chat deleted on another
+        // device, then yank it away when the list arrived. The cost is one
+        // serial round trip on a returning member's first paint; the price of
+        // keeping it is a rule that holds "except here".
         chatsApi('/chats', { method: 'GET' })
           .then(function (rows) {
             if (stale(op)) return;
@@ -1316,16 +1315,9 @@
               }
               // Newest activity first, so chats[0] is where a returning member
               // most likely left off.
-              var target = (chosen || chats[0]).id;
-              if (target === sessionId) {
-                renderSidebar(); // already painted optimistically
-                return;
-              }
-              if (sessionId) {
-                switchToChat(target); // the remembered chat is gone
-                return;
-              }
-              persistActive(target);
+              // Nothing was painted before this point, so there is no prior
+              // state to reconcile against — the list simply decides.
+              persistActive((chosen || chats[0]).id);
               renderSidebar();
               loadHistory();
               return;
