@@ -363,16 +363,30 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       expect(text).not.toMatch(/NaN|Infinity|undefined|\bnull\b/);
     });
 
-    it.each(BRANCHES)('%s: offers manual ARV entry', (_label, code, detail) => {
+    // RE-POINTED to the §10 amendment (operator ruling, 2026-08-12), which
+    // REVERSED the original "all end by offering manual ARV entry" rule: no
+    // failure path names or solicits an ARV. A failure says what went wrong
+    // and what to do next, and stops.
+    //
+    // Confirmed against live production, which returns the amended copy — the
+    // old assertions were testing pre-amendment behaviour, so the suite was
+    // red while the product was correct. That is how a real failure gets
+    // ignored.
+    //
+    // The word lists are the ORIGINAL ones, inverted rather than softened: a
+    // weaker check here would pass on copy that still solicits in a phrasing
+    // nobody enumerated.
+    it.each(BRANCHES)('%s: solicits nothing — no ARV named, no invitation', (_label, code, detail) => {
       const text = renderCompsForChat(
         failure(code, detail as Record<string, number> | undefined) as never,
       );
+      expect(text.trim().length, 'rendered empty').toBeGreaterThan(0);
       const t = text.toLowerCase();
       const mentionsArv = t.includes('arv') || t.includes('after-repair') || t.includes('after repair');
       const invites = ['tell me', 'give me', 'your own', 'you have', 'already have',
         'manual', 'supply', 'enter', 'provide', 'with yours', 'with it'].some((p) => t.includes(p));
-      expect(mentionsArv, `no ARV offer in:\n${text}`).toBe(true);
-      expect(invites, `no invitation to supply one in:\n${text}`).toBe(true);
+      expect(mentionsArv, `a failure path still names an ARV:\n${text}`).toBe(false);
+      expect(invites, `a failure path still invites a figure:\n${text}`).toBe(false);
     });
 
     it('the two ADDRESS_NOT_FOUND branches say genuinely different things', () => {
@@ -926,12 +940,16 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       expect(close, 'the closing is missing').toBeGreaterThan(open);
       expect(footer, 'the footer is missing').toBeGreaterThan(close);
 
-      // Nothing but whitespace and the footer line may follow the closing.
+      // RE-POINTED to the §10 amendment: exactly ONE line may now sit between
+      // the closing copy and the footer — the prescribed ARV close, emitted
+      // structurally. Anything ELSE appearing there is still the failure this
+      // case exists to catch, so the slice is compared to that one line rather
+      // than loosened to "some content is allowed".
       const after = text.slice(close + COMPS_CLOSING.length, footer);
       expect(
         after.trim(),
-        `content was inserted between the closing copy and the footer: ${after.trim()}`,
-      ).toBe('');
+        `unexpected content between the closing copy and the footer: ${after.trim()}`,
+      ).toBe("If you want to run deal numbers, you'll need to supply your own ARV based on these comps.");
     });
 
     it('the closing stays last even with every optional section attached', () => {
@@ -966,9 +984,19 @@ describe(`format.ts renders only from data${sliceNote(...MODS)}`, () => {
       ).toBeLessThan(close);
     });
 
-    it('NO ARV anywhere, including anything shaped like one', () => {
-      const text = String(renderCompsForChat(resultFor(golden01) as never)).toLowerCase();
-      expect(text, 'an ARV is named').not.toMatch(/\barv\b|after.repair value/);
+    it('no ARV FIGURE anywhere — only the one prescribed instruction', () => {
+      // RE-POINTED to the §10 amendment. The rule was never "the letters ARV
+      // must not appear"; it is that this module produces no VALUATION. The
+      // client's prescribed close names an ARV precisely to tell the member
+      // that supplying one is THEIR job, and it carries no number.
+      const raw = String(renderCompsForChat(resultFor(golden01) as never));
+      const text = raw.toLowerCase();
+      const arvLines = raw.split('\n').filter((line) => /\barv\b/i.test(line));
+      expect(arvLines, 'an ARV is named outside the prescribed close').toEqual([
+        "If you want to run deal numbers, you'll need to supply your own ARV based on these comps.",
+      ]);
+      expect(arvLines[0], 'the prescribed close carries a figure').not.toMatch(/\$\s?[\d,]*\d/);
+      expect(text, 'an after-repair VALUE is named').not.toMatch(/after.repair value/);
       expect(text, 'a value estimate is named').not.toMatch(/estimated value|value range|worth about/);
       expect(text, 'a confidence grade survived').not.toMatch(/confidence/);
     });

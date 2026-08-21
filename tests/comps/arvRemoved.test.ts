@@ -120,7 +120,17 @@ describe(`the computed ARV is gone${sliceNote(...MODS)}`, () => {
       expect(text.toLowerCase(), 'precondition: this is not a comps table').toMatch(/sold|sq ?ft|\$\/sf|per sq/);
 
       const t = text.toLowerCase();
-      expect(t, 'the rendered block still names an ARV').not.toMatch(/\barv\b|after.repair value/);
+      // RE-POINTED to the §10 amendment: the block now carries EXACTLY ONE
+      // line naming an ARV — the client's prescribed close, emitted
+      // structurally so the model cannot paraphrase it. The guarantee is
+      // unchanged in substance: nothing ARV-SHAPED (a computed figure, a
+      // range, a confidence grade) reaches the member, and the one permitted
+      // mention is an instruction carrying no number.
+      const arvLines = text.split('\n').filter((line) => /\barv\b/i.test(line));
+      expect(arvLines, 'an ARV is named outside the prescribed close').toEqual([
+        "If you want to run deal numbers, you'll need to supply your own ARV based on these comps.",
+      ]);
+      expect(t, 'an ARV FIGURE survived').not.toMatch(/after.repair value/);
       expect(t, 'a value RANGE survived').not.toMatch(/\brange\b|estimated value|value range/);
       expect(t, 'a confidence grade survived').not.toMatch(/confidence/);
       expect(t, 'the trimmed-mean line survived').not.toMatch(/trimmed|trim(med)? (mean|average)|outlier/);
