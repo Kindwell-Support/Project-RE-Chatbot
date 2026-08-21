@@ -20,7 +20,7 @@ const OWNER_A = 'device:11111111-1111-4111-8111-111111111111';
 const OWNER_B = 'device:22222222-2222-4222-8222-222222222222';
 const CHAT_A = '33333333-3333-4333-8333-333333333333';
 
-describe('BUG-016 — touchChat writes across ownership and into archived rows', () => {
+describe('BUG-016 — FIXED: the probes flipped, so they now verify the fix', () => {
   it('POST /chat to ANOTHER owner chat id mutates their row (no owner_key filter)', async () => {
     // touchChat updates on `.eq('id', chatId)` alone. The owner key is read
     // and then used ONLY for the self-heal insert; the update path never
@@ -32,10 +32,13 @@ describe('BUG-016 — touchChat writes across ownership and into archived rows',
     await touchChat(fake.client as never, CHAT_A, OWNER_B, undefined, new Date('2026-08-20T00:00:00.000Z'));
     const row = fake.rows.find((r) => r.id === CHAT_A);
     expect(row?.owner_key, 'ownership itself changed').toBe(OWNER_A);
+    // FLIPPED. This pinned the defect: the update ran on .eq('id') alone, so a
+    // caller holding a uuid they did not own reordered the victim sidebar. The
+    // update is now owner-filtered, so the write must NOT land.
     expect(
       row?.last_message_at,
-      'a caller who does not own this chat updated its ordering timestamp',
-    ).toBe('2026-08-20T00:00:00.000Z');
+      'a caller who does not own this chat still updated its ordering timestamp',
+    ).toBe('2020-01-01T00:00:00.000Z');
   });
 
   it('a SOFT-DELETED chat still accepts the write — it is hidden, not inert', async () => {
@@ -52,11 +55,11 @@ describe('BUG-016 — touchChat writes across ownership and into archived rows',
     await touchChat(fake.client as never, CHAT_A, OWNER_A, undefined, new Date('2026-08-20T00:00:00.000Z'));
     const row = fake.rows.find((r) => r.id === CHAT_A);
     expect(row?.archived_at, 'the delete was reversed').not.toBeNull();
+    // FLIPPED for the same reason: the update now carries .is('archived_at', null).
     expect(
       row?.last_message_at,
-      'an archived chat took a write. It cannot resurface in the list, but the ' +
-        'member believes it is gone while it still moves and still bills.',
-    ).toBe('2026-08-20T00:00:00.000Z');
+      'an archived chat still took a write — the member believes it is gone',
+    ).toBe('2020-01-01T00:00:00.000Z');
     const visible = await listChats(fake.client as never, OWNER_A);
     expect(visible.map((c) => c.id), 'the archived chat resurfaced').not.toContain(CHAT_A);
   });
@@ -188,5 +191,53 @@ describe('D1 — R5 auto-create has no concurrency guard', () => {
       'if this is 1, R5 now serialises and this probe should become the real ' +
         'assertion: exactly one chat per fresh owner',
     ).toBeGreaterThan(1);
+  });
+});
+
+describe('J1/J3 — the self-heal insert fires ONLY on genuine absence', () => {
+  const stamp = new Date('2026-08-20T00:00:00.000Z');
+
+  it.each([
+    ['exists, NOT yours', { owner_key: OWNER_A, archived_at: null }, OWNER_B],
+    ['exists, ARCHIVED', { owner_key: OWNER_A, archived_at: '2026-08-01T00:00:00.000Z' }, OWNER_A],
+  ])('%s: zero-rows-updated must NOT trigger an insert (PK collision)', async (_l, over, caller) => {
+    // The trap the owner filter created: once the update is scoped, "0 rows
+    // changed" stops meaning "no such row". A blind insert on that signal
+    // collides on the primary key every time.
+    const fake = makeChatsSupabase([chatRecord({ id: CHAT_A, ...over })]);
+    const before = fake.rows.length;
+    await touchChat(fake.client as never, CHAT_A, caller, undefined, stamp);
+    expect(fake.rows.length, 'a duplicate row was inserted for an id that exists')
+      .toBe(before);
+  });
+
+  it('genuine absence DOES self-heal — the fix did not disable the branch', async () => {
+    // The control. A narrow fix could satisfy both cases above by never
+    // inserting at all, silently removing legacy self-heal.
+    const fake = makeChatsSupabase([]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, undefined, stamp);
+    expect(fake.rows.length, 'a genuinely absent chat was not self-healed').toBe(1);
+    expect(fake.rows[0].owner_key).toBe(OWNER_A);
+  });
+
+  it('J3: only last_message_at is ever in scope — never title/owner/archived', async () => {
+    const fake = makeChatsSupabase([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_A, title: 'mine', archived_at: null }),
+    ]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, undefined, stamp);
+    const row = fake.rows.find((r) => r.id === CHAT_A);
+    expect(row?.title, 'touchChat rewrote the title').toBe('mine');
+    expect(row?.owner_key, 'touchChat rewrote ownership').toBe(OWNER_A);
+    expect(row?.archived_at, 'touchChat cleared the archive flag').toBeNull();
+  });
+
+  it('F5: a failing touch is swallowed — the member turn is unaffected', async () => {
+    // Fire-and-forget must never reject. A DB outage during the ordering
+    // update is a cosmetic problem; it must not surface as an unhandled
+    // rejection or a failed reply.
+    const fake = makeChatsSupabase([], { failChats: true });
+    await expect(
+      touchChat(fake.client as never, CHAT_A, OWNER_A, undefined, stamp),
+    ).resolves.toBeUndefined();
   });
 });
