@@ -30,20 +30,14 @@ create table if not exists chats (
 create index if not exists chats_owner_active_idx
   on chats (owner_key, last_message_at desc) where archived_at is null;
 
--- Phase 1 remediation. Set TRUE only on a row that materialised from a W1
--- legacy adoption — a session that already carried messages when its first
--- chat row was written. It is SERVER-INFERRED (from the pre-turn history
--- length), never client-asserted, because a self-declared flag would simply
--- be omitted by anyone planting a session id.
---
--- PURPOSE CHANGED (operator ruling, N1): all three phases now ship together,
--- so owner_key is 'email:<verified-addr>' from the first write and there is
--- no Phase 3 rewrite pass for this flag to gate. It is now an AUDIT column —
--- the only record of which rows were written over a session that already held
--- a transcript. Kept deliberately: the inference is cheap, and which rows
--- those were is unknowable retroactively.
-alter table chats add column if not exists adopted_legacy boolean not null
-  default false;
+-- NOTE: an `adopted_legacy` column existed here briefly. It was added to
+-- quarantine rows created by W1 legacy adoption from Phase 3's owner_key
+-- rewrite. Both are gone: adoption is dropped (a client asserting ownership of
+-- a transcript must not land in a verified account), and all three phases ship
+-- together so there is no rewrite pass. Post-drop the flag would have meant
+-- "the first write was skipped and the row was created later" under a name
+-- saying "adopted" — a misleading boolean outlives every comment explaining
+-- it. Dropped by:  alter table chats drop column if exists adopted_legacy;
 
 -- Same posture as chat_messages / comps_cache / session_state: RLS on, NO anon
 -- policies on purpose. The backend's only Supabase client is the SERVICE ROLE

@@ -17,6 +17,28 @@
  * Authorization-style credential), so the transport does not change under it.
  */
 
+/**
+ * PHASE 3 DESTINATION — ruled, not yet built. Do not build toward the old
+ * shape:
+ *
+ *   - The client STOPS asserting an owner. There is no owner header from the
+ *     widget at all.
+ *   - After email verification against GHL, the server issues a SIGNED token
+ *     bound to the verified email. This function verifies that signature and
+ *     returns `email:<verified>`. Forgery then requires the signing key, not
+ *     just a guessed string.
+ *   - The token lives in sessionStorage and rides a header — deliberately not
+ *     a cookie: the widget is third-party to the API origin, and cookie
+ *     blocking would break it outright. sessionStorage survives a refresh and
+ *     dies on tab close, which is the intended lifetime.
+ *   - DEVICE_KEY_RE and `device:<uuid>` survive ONLY as the local/dev
+ *     fallback, never as a production owner.
+ *
+ * Nothing in the current implementation fights that: the seam already has one
+ * caller-facing shape (`resolveOwnerKey(request): string`), every route reads
+ * the owner only through it, and `chats.owner_key` is unconstrained TEXT.
+ */
+
 /** Thrown when a request carries no usable owner key. Handlers map this to 400. */
 export class OwnerKeyError extends Error {
   constructor(message: string) {

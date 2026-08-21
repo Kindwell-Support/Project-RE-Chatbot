@@ -116,8 +116,10 @@ export async function findChatById(
 }
 
 /**
- * Create a chat. `id` is honoured only for legacy adoption; a collision cannot
- * overwrite anything — the primary key rejects it and the caller surfaces 409.
+ * Create a chat. The id is ALWAYS server-generated: the client-supplied `id`
+ * option existed only for W1 legacy adoption, which is gone (a client naming
+ * the id of a chat is a client asserting ownership of whatever transcript
+ * already sits under it). Removing it closes that by construction.
  *
  * NOTE (R6): the widget no longer calls this on any path. First-chat decisions
  * are client-side placeholders now, and the row materialises through
@@ -127,13 +129,11 @@ export async function findChatById(
 export async function createChat(
   supabase: SupabaseClient,
   ownerKey: string,
-  options: { id?: string; title?: string | null; adoptedLegacy?: boolean } = {},
+  options: { title?: string | null } = {},
 ): Promise<ChatRow> {
   if ((await countActiveChats(supabase, ownerKey)) >= MAX_ACTIVE_CHATS) throw new ChatLimitError();
   const row: Record<string, unknown> = { owner_key: ownerKey };
-  if (options.id) row.id = options.id;
   if (options.title) row.title = options.title;
-  if (options.adoptedLegacy) row.adopted_legacy = true;
   const { data, error } = await supabase.from('chats').insert(row).select(CHAT_COLUMNS).single();
   if (error) throw error;
   return data as unknown as ChatRow;
@@ -201,7 +201,6 @@ export async function touchChat(
   ownerKey: string | undefined,
   logger: Logger = consoleLogger,
   now: Date = new Date(),
-  options: { hadPriorHistory?: boolean } = {},
 ): Promise<void> {
   if (!isChatId(chatId)) return;
   // BUG-016: without an owner there is no way to scope the write, and an
@@ -243,28 +242,6 @@ export async function touchChat(
       id: chatId,
       owner_key: ownerKey,
       last_message_at: stamp,
-      // adopted_legacy is SERVER-INFERRED, never client-asserted: a
-      // self-declared flag would simply be omitted by whoever planted the
-      // session id, and Phase 3 would then migrate that row into their
-      // verified account.
-      //
-      // WHAT THIS FLAG ACTUALLY MEANS — read before adding a caller: it means
-      // "this session ALREADY HAD HISTORY when its first chat row was
-      // written". It does NOT mean "was adopted". W1 legacy adoption is the
-      // usual way those coincide, but INSPECTOR proved they can come apart:
-      // a NEW chat whose first write is skipped (the C1 cap, a transient
-      // insert failure) acquires history and is then flagged on turn 2.
-      //
-      // PURPOSE CHANGED (operator ruling, N1): all three phases now ship
-      // together, so owner_key is 'email:<verified>' from the very first
-      // write and there is no Phase 3 rewrite pass for this flag to gate.
-      // That retires the failure the flag was defending against — a
-      // false positive no longer costs a member a real chat — and demotes
-      // it to an AUDIT column. Keep it, keep the inference: it is the only
-      // record of which rows were written over a session that already had
-      // a transcript, which is exactly what an audit of the migration will
-      // want. Do not read it as "adopted" in any new code.
-      adopted_legacy: options.hadPriorHistory === true,
     });
     if (insertError) throw insertError;
   } catch (err) {

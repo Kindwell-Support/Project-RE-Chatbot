@@ -146,6 +146,14 @@ export function makeChatsSupabase(seed: ChatRecord[] = [], options: { failChats?
         for (const row of list) {
           inserts.push(row);
           if (table === 'chats') {
+            // FINDING-025: owner_key is NOT NULL in Postgres. String(undefined)
+            // is the literal "undefined", so a fake that coerced would ACCEPT
+            // an insert the real database rejects — the worst kind of fake,
+            // one that is more permissive than production.
+            if (row.owner_key === undefined || row.owner_key === null) {
+              pendingError = { code: '23502', message: 'null value in column "owner_key" violates not-null constraint' };
+              return chain;
+            }
             const id = String(row.id ?? fakeUuid());
             if (rows.some((existing) => existing.id === id)) {
               // Primary-key conflict, exactly as Postgres reports it.

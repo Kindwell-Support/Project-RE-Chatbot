@@ -157,7 +157,12 @@ describe('POST /chats', () => {
     await app.close();
   });
 
-  it('W1 legacy adoption: an explicit id is honoured, so old history stays reachable', async () => {
+  it('a client-supplied id is IGNORED — ids are always server-generated', async () => {
+    // The `id` option existed only for W1 legacy adoption. A client naming the
+    // id of a chat is a client asserting ownership of whatever transcript
+    // already sits under that session, which with day-one gating would bind it
+    // into a VERIFIED account. Ignoring the field closes that structurally —
+    // there is no longer a request shape that can express the attack.
     const { app, fake } = appWith([]);
     const res = await app.inject({
       method: 'POST',
@@ -165,34 +170,27 @@ describe('POST /chats', () => {
       headers: auth(OWNER_A),
       payload: { id: CHAT_A },
     });
-    expect(res.statusCode).toBe(201);
-    expect(res.json().id).toBe(CHAT_A);
-    expect(fake.rows[0].id).toBe(CHAT_A);
+    expect(res.statusCode, 'a client id was rejected rather than ignored').toBe(201);
+    expect(res.json().id, 'the client chose the chat id').not.toBe(CHAT_A);
+    expect(fake.rows[0].id, 'the client id reached the database').not.toBe(CHAT_A);
     await app.close();
   });
 
-  it('adoption cannot steal: a colliding id is a 409, never an overwrite', async () => {
-    const { app, fake } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_B, title: 'B owns this' })]);
+  it("a client cannot bind a create onto someone else's existing chat", async () => {
+    const { app, fake } = appWith([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_B, title: 'B owns this' }),
+    ]);
     const res = await app.inject({
       method: 'POST',
       url: '/chats',
       headers: auth(OWNER_A),
       payload: { id: CHAT_A },
     });
-    expect(res.statusCode).toBe(409);
-    expect(fake.rows[0].owner_key, 'ownership was reassigned by a create').toBe(OWNER_B);
-    await app.close();
-  });
-
-  it('a non-uuid id is rejected before it reaches Postgres', async () => {
-    const { app } = appWith([]);
-    const res = await app.inject({
-      method: 'POST',
-      url: '/chats',
-      headers: auth(OWNER_A),
-      payload: { id: 'sess-1723-abc' },
-    });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(201);
+    expect(fake.rows.length, 'the existing row was touched instead of a new one created').toBe(2);
+    const victim = fake.rows.find((r) => r.id === CHAT_A)!;
+    expect(victim.owner_key, 'ownership was reassigned by a create').toBe(OWNER_B);
+    expect(victim.title, "the victim's chat was modified").toBe('B owns this');
     await app.close();
   });
 });
@@ -545,43 +543,5 @@ describe('C1: the active-chat cap', () => {
     });
     expect(fake.rows, 'the self-heal insert walked past the cap').toHaveLength(MAX_ACTIVE_CHATS);
     expect(logger.warn, 'the refusal was silent').toHaveBeenCalled();
-  });
-});
-
-describe('adopted_legacy — the Phase 3 quarantine flag', () => {
-  const logger = { warn: vi.fn(), error: vi.fn() };
-
-  it('is TRUE when a session had messages before it had a row (W1 adoption)', async () => {
-    const fake = makeChatsSupabase([]);
-    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date(), {
-      hadPriorHistory: true,
-    });
-    expect(fake.inserts[0].adopted_legacy, 'an adopted row was not flagged for Phase 3').toBe(true);
-  });
-
-  it('is FALSE on a brand-new chat', async () => {
-    const fake = makeChatsSupabase([]);
-    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date(), {
-      hadPriorHistory: false,
-    });
-    expect(fake.inserts[0].adopted_legacy, 'a new chat was quarantined as adopted').toBe(false);
-  });
-
-  it('is FALSE on the explicit POST /chats path', async () => {
-    const { app, fake } = appWith([]);
-    await app.inject({ method: 'POST', url: '/chats', headers: auth(OWNER_A), payload: {} });
-    expect(fake.inserts[0].adopted_legacy).toBeUndefined();
-    await app.close();
-  });
-
-  it('is SERVER-INFERRED, so a planted session cannot omit the flag to escape it', async () => {
-    // The whole point: a client-asserted flag would simply be left off by an
-    // attacker planting a victim's session id, and Phase 3 would then rewrite
-    // that row into their verified account.
-    const fake = makeChatsSupabase([]);
-    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date(), {
-      hadPriorHistory: true,
-    });
-    expect(fake.inserts[0].adopted_legacy).toBe(true);
   });
 });

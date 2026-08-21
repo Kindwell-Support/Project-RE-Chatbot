@@ -352,14 +352,11 @@
   //   james-bot-device            'device:<uuid>' — the owner key (see below)
   //   james-bot-active-chat       last active chat id, so a reload lands back
   //   james-bot-sidebar-collapsed '1' when the rail is shut
-  //   james-bot-legacy-adopted    '1' once the pre-multi-chat session has been
-  //                               claimed, so adoption runs exactly ONCE
-  //   james-bot-session           LEGACY. Read once, at adoption. Never written
-  //                               again by this build.
+  //   james-bot-session           RETIRED. Never read, never written — ERASED
+  //                               on mount (see clearRetiredKeys).
   var DEVICE_KEY = 'james-bot-device';
   var ACTIVE_KEY = 'james-bot-active-chat';
   var COLLAPSE_KEY = 'james-bot-sidebar-collapsed';
-  var ADOPTED_KEY = 'james-bot-legacy-adopted';
   var LEGACY_KEY = 'james-bot-session';
   var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -399,17 +396,24 @@
   }
 
   /**
-   * The pre-multi-chat session id, read ONCE (W1). Returns null when there is
-   * nothing to adopt, when it has already been claimed, or when the stored id
-   * is one of the old non-uuid fallbacks ('sess-...'), which cannot be a uuid
-   * primary key. The flag is set by the caller once the attempt has been made,
-   * successful or not, so a failing server cannot cause repeat adoption.
+   * W1 LEGACY ADOPTION IS GONE (operator ruling). Adoption necessarily meant a
+   * CLIENT asserting ownership of a transcript, and with gating live from day
+   * one that assertion would land directly in a VERIFIED email account with no
+   * later rewrite step able to refuse it. Dropping it makes the attack
+   * structurally impossible instead of merely checked: the widget never reads
+   * a session id out of storage, so planting one cannot surface a chat.
+   *
+   * The retired key is ERASED rather than ignored. Leaving a live-looking
+   * 'james-bot-session' in every member's browser invites the next reader to
+   * build a wrong model on it; deleting a key we have decided never to honour
+   * says what we decided.
    */
-  function readLegacySessionOnce() {
-    if (storageGet(ADOPTED_KEY) === '1') return null;
-    var legacy = storageGet(LEGACY_KEY);
-    if (!legacy || !UUID_RE.test(legacy)) return null;
-    return legacy;
+  function clearRetiredKeys() {
+    try {
+      window.localStorage.removeItem(LEGACY_KEY);
+    } catch (e) {
+      /* storage disabled — nothing to erase, and nothing depends on it */
+    }
   }
 
   /**
@@ -997,16 +1001,15 @@
       }
 
       /**
-       * R6b: the ONE first-chat mechanism. An empty list, "+ New chat" and
-       * legacy adoption all land here — the only difference is whether an id
-       * is supplied (adoption reuses the legacy session_id so its transcript
-       * comes with it).
+       * R6b: the ONE first-chat mechanism. An empty list and "+ New chat"
+       * both land here. It takes no id: a placeholder is always a NEW chat,
+       * never an adopted one.
        *
        * No row is written. R6: nothing is persisted until a message is sent.
        */
-      function startPlaceholder(id) {
+      function startPlaceholder() {
         resetChatState(); // clears placeholderId; we set the new one after
-        placeholderId = id || uuid();
+        placeholderId = uuid();
         sessionId = placeholderId; // NOT persistActive — placeholders are ephemeral
         renderSidebar();
       }
@@ -1247,15 +1250,6 @@
           });
       }
 
-      /** Paint a fetched transcript. Shared by the history load and adoption. */
-      function paintMessages(messages) {
-        messages.forEach(function (m, idx) {
-          var handle = addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
-          handle.row.style.animationDelay = Math.min(idx * 40, 320) + 'ms';
-        });
-        list.scrollTop = list.scrollHeight;
-      }
-
       /**
        * R6c: the boot sequence, with its ordering now EXPLICIT.
        *
@@ -1323,15 +1317,10 @@
               return;
             }
 
-            // Empty list. Adopt the legacy session, or start clean — one
-            // decision, taken in one place.
+            // Empty list: start clean. There is no second decision to race
+            // any more — the widget never adopts a session id from storage.
             chats = [];
-            var legacyId = readLegacySessionOnce();
-            if (!legacyId) {
-              startPlaceholder();
-              return;
-            }
-            probeLegacy(legacyId, op);
+            startPlaceholder();
           })
           .catch(function () {
             // No list: still give the member somewhere to type. Nothing is
@@ -1340,39 +1329,6 @@
           })
           .then(function () {
             endOp(op);
-          });
-      }
-
-      /**
-       * R6c narrowing of B4: adopt a legacy session ONLY if it actually holds
-       * a conversation. Planting an arbitrary UUID in localStorage must not
-       * conjure a chat, and an empty legacy key is just noise — discard it so
-       * this probe never runs again.
-       */
-      function probeLegacy(legacyId, op) {
-        return safeFetch(apiUrl + '/history?session_id=' + encodeURIComponent(legacyId), {
-          headers: { accept: 'application/json' },
-        })
-          .then(function (res) {
-            return res.ok ? res.json() : null;
-          })
-          .then(function (data) {
-            if (stale(op) || started || sessionId) return;
-            var messages = (data && data.messages) || [];
-            if (!messages.length) {
-              storageSet(ADOPTED_KEY, '1'); // nothing to adopt; stop asking
-              startPlaceholder();
-              return;
-            }
-            // Adopt as a PLACEHOLDER (R6c): the transcript is shown, the row
-            // self-heals on first send, and nothing is written before then.
-            // The flag is deliberately NOT set here — if the member never
-            // sends, the next boot should find this history again.
-            startPlaceholder(legacyId);
-            paintMessages(messages);
-          })
-          .catch(function () {
-            if (!stale(op) && !sessionId) startPlaceholder();
           });
       }
 
@@ -1864,6 +1820,7 @@
       // failure paths ends in a usable placeholder.
       showWelcome();
       renderSidebar();
+      clearRetiredKeys();
       // Belt and braces: the chat box is already usable at this point, and
       // nothing about resolving the chat list is allowed to change that.
       try {

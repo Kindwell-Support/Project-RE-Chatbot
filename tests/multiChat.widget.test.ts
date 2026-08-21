@@ -382,120 +382,80 @@ describe('T6: a reload lands back in the chat you were in', () => {
   });
 });
 
-describe('T7 (REWRITTEN): legacy adoption is a placeholder, decided AFTER the list', () => {
-  it('legacy key + empty list -> ONE sidebar row, ZERO db rows, no /history before /chats', async () => {
-    // The old version asserted a rule no real server could honour (BUG-020):
-    // adoption lived in the widget, auto-create lived in GET /chats, and the
-    // server cannot see localStorage. It passed only because a fake could
-    // satisfy an ordering the live server could not.
+describe('W1 legacy adoption is GONE — the widget never reads a session id', () => {
+  // C-2. The guarantee is now STRUCTURAL: with no code path reading
+  // 'james-bot-session', planting a UUID in localStorage cannot surface a
+  // chat. Structural guarantees are invisible, and invisible guarantees get
+  // re-added by the next person who thinks they are being helpful. This case
+  // is the only thing that will tell them it was a decision.
+  it('NEVER READS james-bot-session, even when one is sitting there', async () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem');
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
     const server = makeServer({
       chats: [],
-      history: { [LEGACY]: [{ role: 'user', content: 'my old conversation' }] },
+      history: { [LEGACY]: [{ role: 'user', content: 'a planted transcript' }] },
     });
     window.localStorage.setItem('james-bot-session', LEGACY);
+    getItem.mockClear();
+    setItem.mockClear();
+
     boot(server.fetchMock);
     await tick();
 
-    // ORDERING: the list comes first. Nothing asks for a legacy transcript
-    // before the empty-list decision has been taken.
-    const firstChatsIndex = server.calls.findIndex((c) => c.url.endsWith('/chats'));
-    const firstHistoryIndex = server.calls.findIndex((c) => c.url.includes('/history'));
-    expect(firstChatsIndex, 'the chat list was never requested').toBeGreaterThanOrEqual(0);
-    expect(firstHistoryIndex, 'the legacy transcript was never requested').toBeGreaterThanOrEqual(0);
     expect(
-      firstHistoryIndex > firstChatsIndex,
-      '/history was issued before /chats resolved — the BUG-020 race',
-    ).toBe(true);
+      getItem.mock.calls.map((c) => String(c[0])).filter((k) => k === 'james-bot-session'),
+      'the retired session key was READ — adoption is creeping back',
+    ).toEqual([]);
+    expect(
+      setItem.mock.calls.map((c) => String(c[0])).filter((k) => k === 'james-bot-session'),
+      'the retired session key was written',
+    ).toEqual([]);
 
-    expect(railRows(), 'the rail does not hold exactly one chat').toHaveLength(1);
-    expect(server.chats, 'adoption wrote a database row').toHaveLength(0);
+    // VACUITY GUARD: storage really was in use this run, so the absences above
+    // are not passing against a widget that never touched localStorage.
     expect(
-      server.calls.filter((c) => c.method === 'POST'),
-      'adoption issued a write',
-    ).toHaveLength(0);
+      setItem.mock.calls.map((c) => String(c[0])),
+      'nothing was stored at all, so the assertions above prove nothing',
+    ).toContain('james-bot-device');
+
+    // ...and the planted transcript never reaches the member.
     expect(
       document.querySelector('#james-bot')!.textContent,
-      'the adopted transcript was not shown',
-    ).toContain('my old conversation');
-  });
-
-  it('a NON-EMPTY list means adoption does not apply at all', async () => {
-    const server = makeServer({
-      chats: [{ id: CHAT_A, title: 'Existing chat' }],
-      history: {
-        [LEGACY]: [{ role: 'user', content: 'legacy words' }],
-        [CHAT_A]: [{ role: 'user', content: 'existing words' }],
-      },
-    });
-    window.localStorage.setItem('james-bot-session', LEGACY);
-    boot(server.fetchMock);
-    await tick();
-
-    expect(railLabels(), 'a legacy placeholder was added beside real chats').toEqual([
-      'Existing chat',
-    ]);
-    const text = document.querySelector('#james-bot').textContent ?? '';
-    expect(text, 'the legacy transcript was adopted anyway').not.toContain('legacy words');
-    expect(text, 'the own chat was not opened').toContain('existing words');
+      'a planted session id surfaced its transcript',
+    ).not.toContain('a planted transcript');
     expect(
       server.calls.some((c) => c.url.includes('/history') && c.url.includes(LEGACY)),
-      'the legacy session was probed despite the device having chats',
+      'the widget fetched a transcript for a session it found in storage',
     ).toBe(false);
   });
 
-  it('B4: a planted session id with NO messages is discarded, not adopted', async () => {
-    // Planting a UUID in localStorage must not conjure a chat. Only a session
-    // that actually holds a conversation is adoptable.
-    const server = makeServer({ chats: [], history: {} });
+  it('C-3: ERASES the retired key on first load', async () => {
+    // A live-looking key we have decided never to honour is how the next
+    // reader builds a wrong model. Deleting it states the decision.
+    const server = makeServer({ chats: [] });
     window.localStorage.setItem('james-bot-session', LEGACY);
     boot(server.fetchMock);
     await tick();
 
-    expect(railRows(), 'the rail should still hold one placeholder').toHaveLength(1);
-    expect(server.chats, 'an empty planted session created a row').toHaveLength(0);
     expect(
-      window.localStorage.getItem('james-bot-legacy-adopted'),
-      'the empty legacy key was not discarded, so it will be probed forever',
-    ).toBe('1');
-
-    // The placeholder must NOT be the planted id — it is a fresh chat.
-    await send('hello');
-    const posted = server.calls.filter((c) => c.url.endsWith('/chat') && c.method === 'POST');
-    expect(posted[0].body.session_id, 'the planted id was adopted anyway').not.toBe(LEGACY);
+      window.localStorage.getItem('james-bot-session'),
+      'the retired key survived the mount',
+    ).toBeNull();
   });
 
-  it('an unsent adoption is still adoptable on the next boot', async () => {
-    // The flag is deliberately NOT set on a successful adoption: if the member
-    // never sends, their history must still be reachable next time.
+  it('a planted session id gets a FRESH chat, not the planted one', async () => {
     const server = makeServer({
       chats: [],
-      history: { [LEGACY]: [{ role: 'user', content: 'my old conversation' }] },
+      history: { [LEGACY]: [{ role: 'user', content: 'a planted transcript' }] },
     });
     window.localStorage.setItem('james-bot-session', LEGACY);
     boot(server.fetchMock);
     await tick();
-    expect(document.querySelector('#james-bot').textContent).toContain('my old conversation');
-
-    document.body.innerHTML = '';
-    boot(server.fetchMock);
-    await tick();
-    expect(
-      document.querySelector('#james-bot')!.textContent,
-      'a legacy session that was never sent into became unreachable',
-    ).toContain('my old conversation');
-    expect(server.chats, 'a row was written without a message being sent').toHaveLength(0);
-  });
-
-  it('never writes the legacy key again', async () => {
-    const setItem = vi.spyOn(Storage.prototype, 'setItem');
-    const server = makeServer({ chats: [] });
-    boot(server.fetchMock);
-    await tick();
     await send('hello');
-    expect(
-      setItem.mock.calls.map((c) => String(c[0])).filter((k) => k === 'james-bot-session'),
-      'the retired session key was written again',
-    ).toEqual([]);
+
+    const posted = server.calls.filter((c) => c.url.endsWith('/chat') && c.method === 'POST');
+    expect(posted.length, 'the message was never sent').toBe(1);
+    expect(posted[0].body.session_id, 'the planted id was adopted').not.toBe(LEGACY);
   });
 });
 

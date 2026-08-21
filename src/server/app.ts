@@ -306,29 +306,21 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     }
   });
 
-  app.post<{ Body: { title?: unknown; id?: unknown } }>('/chats', async (request, reply) => {
+  app.post<{ Body: { title?: unknown } }>('/chats', async (request, reply) => {
     const ownerKey = ownerOr400(request, reply);
     if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
     const body = request.body ?? {};
-    // `id` is legacy adoption ONLY (widget rule W1). It cannot overwrite: the
-    // primary key rejects a collision and this answers 409.
-    if (body.id !== undefined && !isChatId(body.id)) {
-      reply.code(400);
-      return { error: 'id must be a uuid' };
-    }
+    // No client-supplied id: that option existed only for W1 legacy adoption.
+    // With ids always server-generated a primary-key collision is
+    // unreachable, so the 23505 branch that used to sit here is gone too —
+    // dead code that reads as live is the same class as a stale comment.
     try {
       const chat = await createChat(getSupabase(), ownerKey, {
-        ...(body.id ? { id: String(body.id) } : {}),
         title: normalizeTitle(body.title),
       });
       reply.code(201);
       return chat;
     } catch (err) {
-      const code = (err as { code?: string })?.code;
-      if (code === '23505') {
-        reply.code(409);
-        return { error: 'That chat id already exists.' };
-      }
       if (err instanceof ChatLimitError) {
         reply.code(409);
         return { error: 'You have reached the maximum number of chats. Delete one to make room.' };
@@ -532,14 +524,7 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     // the same reason qa_logs is: nothing reads them back this turn, and a
     // member's answer must never wait on cosmetics.
     //
-    // `hadPriorHistory` is the server-verified adoption signal: this session
-    // carried messages BEFORE this turn (history was read above, pre-turn),
-    // so if it also has no chats row it is a W1 legacy adoption rather than a
-    // new chat. Inferred rather than client-asserted precisely because an
-    // attacker would simply omit a self-declared flag.
-    void touchChat(sb, session_id, ownerKey, request.log, new Date(), {
-      hadPriorHistory: history.length > 0,
-    }).then(() => {
+    void touchChat(sb, session_id, ownerKey, request.log).then(() => {
       // A title is generated ONCE, from the first exchange — `history` was
       // read BEFORE this turn, so an empty one means this was it. The write
       // itself is conditional on title IS NULL, so this cannot overwrite a
