@@ -17,7 +17,9 @@ import { logExchange } from './logging.js';
 import { OWNER_KEY_HEADER, OwnerKeyError, resolveOwnerKey } from './ownerKey.js';
 import {
   archiveChat,
+  ChatLimitError,
   createChat,
+  findChatById,
   generateChatTitle,
   isChatId,
   listChats,
@@ -291,12 +293,12 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     const ownerKey = ownerOr400(request, reply);
     if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
     try {
-      let chats = await listChats(getSupabase(), ownerKey);
-      // R5: nobody ever sees an empty sidebar or a "create your first chat"
-      // prompt. This creates a CHAT, not history — the pane shows the normal
-      // welcome state. One member-visible round trip, as ruled.
-      if (chats.length === 0) chats = [await createChat(getSupabase(), ownerKey)];
-      return chats;
+      // R6: a PURE READ. The create-if-empty branch is gone — a safe verb does
+      // not write, and the server cannot see localStorage, so it could never
+      // know whether a legacy session was about to be adopted. Both first-chat
+      // decisions now live client-side where they can see each other; an empty
+      // list is answered with an ephemeral placeholder, not a row.
+      return await listChats(getSupabase(), ownerKey);
     } catch (err) {
       request.log.error({ err }, 'chats list failed');
       reply.code(503);
@@ -326,6 +328,10 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       if (code === '23505') {
         reply.code(409);
         return { error: 'That chat id already exists.' };
+      }
+      if (err instanceof ChatLimitError) {
+        reply.code(409);
+        return { error: 'You have reached the maximum number of chats. Delete one to make room.' };
       }
       request.log.error({ err }, 'chat create failed');
       reply.code(503);
@@ -428,8 +434,38 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       userMessage = message.trim();
     }
 
-    const oa = getOpenAI();
     const sb = getSupabase();
+
+    // The owner key is optional on /chat and read through the SAME seam as
+    // everywhere else (R3) — a client predating this deploy still gets a
+    // working conversation, it just cannot self-heal its chats row.
+    let ownerKey: string | undefined;
+    try {
+      ownerKey = resolveOwnerKey(request);
+    } catch {
+      ownerKey = undefined;
+    }
+
+    // BUG-016 billing hole, RULED: an archived chat answers 404 and never
+    // enters the agent loop — no OpenAI call, no Apify call. A member who
+    // deleted a chat cannot spend on it, and neither can anyone else holding
+    // its id. Placed BEFORE getOpenAI/getHistory so nothing chargeable has
+    // happened yet.
+    //
+    // A lookup FAILURE (the chats table not yet applied) must not 404 every
+    // member, so an unknown answer proceeds exactly as before.
+    try {
+      const existing = await findChatById(sb, session_id);
+      if (existing && existing.archived_at) {
+        request.log.info({ chatId: session_id }, 'POST /chat on an archived chat — refused before the agent loop');
+        reply.code(404);
+        return { error: 'That chat is no longer available.' };
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'chat archived-state lookup failed — proceeding');
+    }
+
+    const oa = getOpenAI();
 
     const history = await getHistory(sb, session_id, request.log);
 
@@ -496,17 +532,14 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     // the same reason qa_logs is: nothing reads them back this turn, and a
     // member's answer must never wait on cosmetics.
     //
-    // The owner key is read from the optional header, never required: the
-    // /chat request contract is unchanged, and a client that predates this
-    // deploy (or the widget's create round trip having failed) still gets a
-    // working conversation — it just cannot self-heal a missing chats row.
-    let ownerKey: string | undefined;
-    try {
-      ownerKey = resolveOwnerKey(request);
-    } catch {
-      ownerKey = undefined;
-    }
-    void touchChat(sb, session_id, ownerKey, request.log).then(() => {
+    // `hadPriorHistory` is the server-verified adoption signal: this session
+    // carried messages BEFORE this turn (history was read above, pre-turn),
+    // so if it also has no chats row it is a W1 legacy adoption rather than a
+    // new chat. Inferred rather than client-asserted precisely because an
+    // attacker would simply omit a self-declared flag.
+    void touchChat(sb, session_id, ownerKey, request.log, new Date(), {
+      hadPriorHistory: history.length > 0,
+    }).then(() => {
       // A title is generated ONCE, from the first exchange — `history` was
       // read BEFORE this turn, so an empty one means this was it. The write
       // itself is conditional on title IS NULL, so this cannot overwrite a

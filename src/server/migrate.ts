@@ -64,6 +64,14 @@ export async function ensureCompsTables(supabase: SupabaseClient): Promise<boole
     },
     {
       table: 'chats',
+      column: 'adopted_legacy',
+      sqlFile: 'sql/chats.sql',
+      degradation:
+        'EVERY chat-row creation fails (the self-heal insert names this column), so no chat is ' +
+        'ever listed — conversations still work, the sidebar stays empty forever',
+    },
+    {
+      table: 'chats',
       sqlFile: 'sql/chats.sql',
       degradation:
         'the sidebar is unavailable (GET /chats answers 503) and members fall back to a single ' +

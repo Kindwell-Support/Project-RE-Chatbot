@@ -24,6 +24,23 @@ const CHAT_COLUMNS = 'id, title, created_at, last_message_at';
 /** Sidebar page size. A member with more than this has older chats below the fold. */
 export const CHAT_LIST_LIMIT = 50;
 
+/**
+ * C1: the most ACTIVE chats one owner_key may hold. Deliberately equal to
+ * CHAT_LIST_LIMIT so a member can never own a chat that is not listable.
+ * Archived rows do not count. Forgeable by minting a new device key, which is
+ * the point: this bounds accidents and single-key loops, not a determined
+ * attacker (IP limits are Phase 3).
+ */
+export const MAX_ACTIVE_CHATS = CHAT_LIST_LIMIT;
+
+/** Raised when a create would exceed MAX_ACTIVE_CHATS. Handlers map it to 409. */
+export class ChatLimitError extends Error {
+  constructor() {
+    super('active chat limit reached');
+    this.name = 'ChatLimitError';
+  }
+}
+
 /** Titles are member-editable free text; cap the stored length. */
 export const MAX_TITLE_LENGTH = 120;
 
@@ -63,20 +80,60 @@ export async function listChats(
 }
 
 /**
- * Create a chat. `id` is supplied ONLY by legacy adoption (widget rule W1):
- * an existing member's 'james-bot-session' becomes the id of their first
- * chat, so their history is still theirs after this deploy. A collision
- * cannot overwrite anything — the primary key rejects it and the caller
- * surfaces a conflict.
+ * How many ACTIVE chats this owner holds, counted up to the cap + 1 — enough
+ * to answer "are they at the limit?" without reading a whole table.
+ */
+export async function countActiveChats(supabase: SupabaseClient, ownerKey: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('chats')
+    .select('id')
+    .eq('owner_key', ownerKey)
+    .is('archived_at', null)
+    .limit(MAX_ACTIVE_CHATS + 1);
+  if (error) throw error;
+  return ((data ?? []) as unknown[]).length;
+}
+
+/**
+ * One chat by id, WITHOUT an owner filter — the ownership question is what it
+ * answers. Its only caller is the "0 rows updated" branch of touchChat and the
+ * archived check on /chat, both of which need to tell "absent" apart from
+ * "exists, not yours" and "archived".
+ */
+export async function findChatById(
+  supabase: SupabaseClient,
+  chatId: string,
+): Promise<{ id: string; owner_key: string; archived_at: string | null } | null> {
+  if (!isChatId(chatId)) return null;
+  const { data, error } = await supabase
+    .from('chats')
+    .select('id, owner_key, archived_at')
+    .eq('id', chatId)
+    .limit(1);
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{ id: string; owner_key: string; archived_at: string | null }>;
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * Create a chat. `id` is honoured only for legacy adoption; a collision cannot
+ * overwrite anything — the primary key rejects it and the caller surfaces 409.
+ *
+ * NOTE (R6): the widget no longer calls this on any path. First-chat decisions
+ * are client-side placeholders now, and the row materialises through
+ * touchChat's self-heal on first send. This stays as the explicit API and is
+ * capped identically, so the two creation paths cannot diverge.
  */
 export async function createChat(
   supabase: SupabaseClient,
   ownerKey: string,
-  options: { id?: string; title?: string | null } = {},
+  options: { id?: string; title?: string | null; adoptedLegacy?: boolean } = {},
 ): Promise<ChatRow> {
+  if ((await countActiveChats(supabase, ownerKey)) >= MAX_ACTIVE_CHATS) throw new ChatLimitError();
   const row: Record<string, unknown> = { owner_key: ownerKey };
   if (options.id) row.id = options.id;
   if (options.title) row.title = options.title;
+  if (options.adoptedLegacy) row.adopted_legacy = true;
   const { data, error } = await supabase.from('chats').insert(row).select(CHAT_COLUMNS).single();
   if (error) throw error;
   return data as unknown as ChatRow;
@@ -144,23 +201,55 @@ export async function touchChat(
   ownerKey: string | undefined,
   logger: Logger = consoleLogger,
   now: Date = new Date(),
+  options: { hadPriorHistory?: boolean } = {},
 ): Promise<void> {
   if (!isChatId(chatId)) return;
+  // BUG-016: without an owner there is no way to scope the write, and an
+  // unscoped update is exactly the defect — a /chat call with someone else's
+  // chat id reordering their sidebar. No owner, no write.
+  if (!ownerKey) return;
   try {
     const stamp = now.toISOString();
     const { data, error } = await supabase
       .from('chats')
       .update({ last_message_at: stamp })
       .eq('id', chatId)
+      .eq('owner_key', ownerKey)
+      .is('archived_at', null)
       .select('id');
     if (error) throw error;
     if (((data ?? []) as unknown[]).length > 0) return;
-    // No row: a legacy session, or a create that never landed. Self-heal only
-    // when this request proved an owner.
-    if (!ownerKey) return;
-    const { error: insertError } = await supabase
-      .from('chats')
-      .insert({ id: chatId, owner_key: ownerKey, last_message_at: stamp });
+
+    // THE TRAP (BUG-016): now that the update is owner- and archive-filtered,
+    // "0 rows changed" no longer means "no such row". It also means "exists,
+    // not yours" and "exists, archived" — and inserting on either of those
+    // collides on the primary key. Only a lookup that finds NOTHING AT ALL
+    // justifies the self-heal.
+    const existing = await findChatById(supabase, chatId);
+    if (existing) return;
+
+    // C1 applies here too. After R6 this is the only path that creates rows in
+    // practice, so capping POST /chats alone would be a cap that enforces
+    // nothing.
+    if ((await countActiveChats(supabase, ownerKey)) >= MAX_ACTIVE_CHATS) {
+      logger.warn(
+        { chatId, limit: MAX_ACTIVE_CHATS },
+        'active chat limit reached — conversation continues, no sidebar row created',
+      );
+      return;
+    }
+
+    const { error: insertError } = await supabase.from('chats').insert({
+      id: chatId,
+      owner_key: ownerKey,
+      last_message_at: stamp,
+      // adopted_legacy is SERVER-INFERRED, never client-asserted: this session
+      // carried messages before it had a chat row, which is exactly the W1
+      // legacy-adoption signature (a genuinely new chat has none). Phase 3
+      // skips these rows when it rewrites owner_key to email:<verified>, so a
+      // planted session id can never be laundered into a verified account.
+      adopted_legacy: options.hadPriorHistory === true,
+    });
     if (insertError) throw insertError;
   } catch (err) {
     // Ordering is a nicety; the conversation itself is already persisted.

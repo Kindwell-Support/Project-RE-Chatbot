@@ -47,7 +47,6 @@ function makeServer(seed: {
   const chats = (seed.chats ?? []).map((c) => ({ ...c }));
   const history: Record<string, Msg[]> = seed.history ?? {};
   const calls: Array<{ method: string; url: string; body: any }> = [];
-  let autoCreated = 0;
 
   const json = (status: number, body: unknown) => ({
     ok: status >= 200 && status < 300,
@@ -66,10 +65,12 @@ function makeServer(seed: {
       return json(200, { messages: history[id] ?? [] });
     }
     if (u.endsWith('/chats') && method === 'GET') {
-      if (!chats.length) {
-        autoCreated += 1;
-        chats.push({ id: 'auto-0000-4000-8000-00000000000' + autoCreated, title: null });
-      }
+      // R6: a PURE READ. This fake used to auto-create on an empty list,
+      // modelling a server behaviour that has been deleted — and which,
+      // per BUG-020, could never have worked: the server cannot see
+      // localStorage, so it could not know a legacy session was about to be
+      // adopted. A fake that resolves an ordering the live server does not
+      // guarantee is a dead guard, and this one hid the race.
       return json(200, chats.map((c) => ({ ...c, created_at: 'x', last_message_at: 'x' })));
     }
     if (u.endsWith('/chats') && method === 'POST') {
@@ -103,7 +104,7 @@ function makeServer(seed: {
     return json(404, { error: 'unrouted ' + method + ' ' + u });
   });
 
-  return { fetchMock, chats, history, calls, autoCreatedCount: () => autoCreated };
+  return { fetchMock, chats, history, calls };
 }
 
 const tick = async (times = 6) => {
@@ -321,7 +322,7 @@ describe('T5: deleting a chat', () => {
     ).toContain('B history line');
   });
 
-  it('deleting the LAST chat auto-creates one, so the rail is never empty (R5)', async () => {
+  it('deleting the LAST chat leaves a PLACEHOLDER, not a row (R6/R6b)', async () => {
     const server = makeServer({ chats: [{ id: CHAT_A, title: 'Only chat' }] });
     boot(server.fetchMock);
     await tick();
@@ -330,10 +331,14 @@ describe('T5: deleting a chat', () => {
     row.querySelector<HTMLButtonElement>('[aria-label="Delete chat"]')!.click();
     await tick();
 
-    const created = server.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/chats'));
-    expect(created, 'no replacement chat was created').toHaveLength(1);
+    expect(
+      server.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/chats')),
+      'a replacement row was written for a chat nobody has spoken in',
+    ).toHaveLength(0);
+    expect(server.chats, 'the server holds a row it should not').toHaveLength(0);
     expect(railRows(), 'the sidebar was left empty').toHaveLength(1);
-    expect(bubbles(), 'the replacement chat did not open on the welcome state').toHaveLength(1);
+    expect(railLabels(), 'the placeholder is not labelled as a new chat').toEqual(['New chat']);
+    expect(bubbles(), 'the placeholder did not open on the welcome state').toHaveLength(1);
   });
 
   it('a cancelled confirm deletes nothing', async () => {
@@ -377,8 +382,12 @@ describe('T6: a reload lands back in the chat you were in', () => {
   });
 });
 
-describe('T7: legacy adoption (W1)', () => {
-  it('claims the pre-multi-chat session as the first chat, and R5 does not also fire', async () => {
+describe('T7 (REWRITTEN): legacy adoption is a placeholder, decided AFTER the list', () => {
+  it('legacy key + empty list -> ONE sidebar row, ZERO db rows, no /history before /chats', async () => {
+    // The old version asserted a rule no real server could honour (BUG-020):
+    // adoption lived in the widget, auto-create lived in GET /chats, and the
+    // server cannot see localStorage. It passed only because a fake could
+    // satisfy an ordering the live server could not.
     const server = makeServer({
       chats: [],
       history: { [LEGACY]: [{ role: 'user', content: 'my old conversation' }] },
@@ -387,31 +396,94 @@ describe('T7: legacy adoption (W1)', () => {
     boot(server.fetchMock);
     await tick();
 
-    const created = server.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/chats'));
-    expect(created, 'the legacy session was not adopted').toHaveLength(1);
-    expect(created[0].body.id, 'adoption used a fresh id instead of the legacy one').toBe(LEGACY);
-    expect(server.chats, 'R5 auto-create fired as well, leaving a blank chat').toHaveLength(1);
-    expect(server.chats[0].id).toBe(LEGACY);
-    expect(server.autoCreatedCount(), 'the server auto-created a chat despite adoption').toBe(0);
+    // ORDERING: the list comes first. Nothing asks for a legacy transcript
+    // before the empty-list decision has been taken.
+    const firstChatsIndex = server.calls.findIndex((c) => c.url.endsWith('/chats'));
+    const firstHistoryIndex = server.calls.findIndex((c) => c.url.includes('/history'));
+    expect(firstChatsIndex, 'the chat list was never requested').toBeGreaterThanOrEqual(0);
+    expect(firstHistoryIndex, 'the legacy transcript was never requested').toBeGreaterThanOrEqual(0);
+    expect(
+      firstHistoryIndex > firstChatsIndex,
+      '/history was issued before /chats resolved — the BUG-020 race',
+    ).toBe(true);
+
+    expect(railRows(), 'the rail does not hold exactly one chat').toHaveLength(1);
+    expect(server.chats, 'adoption wrote a database row').toHaveLength(0);
+    expect(
+      server.calls.filter((c) => c.method === 'POST'),
+      'adoption issued a write',
+    ).toHaveLength(0);
     expect(
       document.querySelector('#james-bot')!.textContent,
-      'the adopted history is not reachable',
+      'the adopted transcript was not shown',
     ).toContain('my old conversation');
   });
 
-  it('runs ONCE: a second mount does not re-adopt', async () => {
-    const server = makeServer({ chats: [] });
+  it('a NON-EMPTY list means adoption does not apply at all', async () => {
+    const server = makeServer({
+      chats: [{ id: CHAT_A, title: 'Existing chat' }],
+      history: {
+        [LEGACY]: [{ role: 'user', content: 'legacy words' }],
+        [CHAT_A]: [{ role: 'user', content: 'existing words' }],
+      },
+    });
     window.localStorage.setItem('james-bot-session', LEGACY);
     boot(server.fetchMock);
     await tick();
-    expect(window.localStorage.getItem('james-bot-legacy-adopted')).toBe('1');
+
+    expect(railLabels(), 'a legacy placeholder was added beside real chats').toEqual([
+      'Existing chat',
+    ]);
+    const text = document.querySelector('#james-bot').textContent ?? '';
+    expect(text, 'the legacy transcript was adopted anyway').not.toContain('legacy words');
+    expect(text, 'the own chat was not opened').toContain('existing words');
+    expect(
+      server.calls.some((c) => c.url.includes('/history') && c.url.includes(LEGACY)),
+      'the legacy session was probed despite the device having chats',
+    ).toBe(false);
+  });
+
+  it('B4: a planted session id with NO messages is discarded, not adopted', async () => {
+    // Planting a UUID in localStorage must not conjure a chat. Only a session
+    // that actually holds a conversation is adoptable.
+    const server = makeServer({ chats: [], history: {} });
+    window.localStorage.setItem('james-bot-session', LEGACY);
+    boot(server.fetchMock);
+    await tick();
+
+    expect(railRows(), 'the rail should still hold one placeholder').toHaveLength(1);
+    expect(server.chats, 'an empty planted session created a row').toHaveLength(0);
+    expect(
+      window.localStorage.getItem('james-bot-legacy-adopted'),
+      'the empty legacy key was not discarded, so it will be probed forever',
+    ).toBe('1');
+
+    // The placeholder must NOT be the planted id — it is a fresh chat.
+    await send('hello');
+    const posted = server.calls.filter((c) => c.url.endsWith('/chat') && c.method === 'POST');
+    expect(posted[0].body.session_id, 'the planted id was adopted anyway').not.toBe(LEGACY);
+  });
+
+  it('an unsent adoption is still adoptable on the next boot', async () => {
+    // The flag is deliberately NOT set on a successful adoption: if the member
+    // never sends, their history must still be reachable next time.
+    const server = makeServer({
+      chats: [],
+      history: { [LEGACY]: [{ role: 'user', content: 'my old conversation' }] },
+    });
+    window.localStorage.setItem('james-bot-session', LEGACY);
+    boot(server.fetchMock);
+    await tick();
+    expect(document.querySelector('#james-bot').textContent).toContain('my old conversation');
 
     document.body.innerHTML = '';
     boot(server.fetchMock);
     await tick();
-
-    const created = server.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/chats'));
-    expect(created, 'adoption ran a second time').toHaveLength(1);
+    expect(
+      document.querySelector('#james-bot')!.textContent,
+      'a legacy session that was never sent into became unreachable',
+    ).toContain('my old conversation');
+    expect(server.chats, 'a row was written without a message being sent').toHaveLength(0);
   });
 
   it('never writes the legacy key again', async () => {
@@ -428,13 +500,13 @@ describe('T7: legacy adoption (W1)', () => {
 });
 
 describe('T8: cold start on a fresh device', () => {
-  it('lands in exactly one chat — not zero, not two', async () => {
+  it('lands in exactly one chat — not zero, not two — and writes nothing', async () => {
     const server = makeServer({ chats: [] });
     boot(server.fetchMock);
     await tick();
 
-    expect(server.chats, 'the server holds the wrong number of chats').toHaveLength(1);
     expect(railRows(), 'the rail shows the wrong number of chats').toHaveLength(1);
+    expect(server.chats, 'a cold boot wrote a row before any message (R6)').toHaveLength(0);
     expect(bubbles(), 'a fresh chat opened with history').toHaveLength(1);
     expect(chatInput().disabled, 'the member cannot type on a fresh device').toBe(false);
   });
@@ -527,5 +599,106 @@ describe('W2/W3: new chat is lazy, the rail is a rail', () => {
       document.querySelector('#james-bot .jb-side')!.className,
       'the rail reopened despite being collapsed before',
     ).toContain('jb-side-collapsed');
+  });
+});
+
+describe('R6/R6a: placeholders are ephemeral and write nothing', () => {
+  it('five "+ New chat" clicks give five rows and ZERO writes; a reload collapses them', async () => {
+    const server = makeServer({ chats: [{ id: CHAT_A, title: 'Real chat' }] });
+    boot(server.fetchMock);
+    await tick();
+
+    const newChat = () =>
+      document.querySelector<HTMLButtonElement>('#james-bot .jb-new')!.click();
+    for (let i = 0; i < 5; i++) {
+      newChat();
+      await tick(1);
+    }
+
+    expect(
+      server.calls.filter((c) => c.method !== 'GET'),
+      'clicking New chat wrote to the server',
+    ).toHaveLength(0);
+    expect(server.chats, 'placeholder rows reached the database').toHaveLength(1);
+    // Only ONE placeholder is live at a time: each click replaces the last,
+    // because an unsent chat is not worth a row OR a rail entry of its own.
+    expect(railLabels(), 'placeholders accumulated in the rail').toEqual(['New chat', 'Real chat']);
+
+    // Reload: nothing about the placeholder survived.
+    document.body.innerHTML = '';
+    boot(server.fetchMock);
+    await tick();
+    expect(server.chats, 'a reload created rows for placeholders').toHaveLength(1);
+    expect(railLabels(), 'a placeholder survived a reload').toEqual(['Real chat']);
+  });
+
+  it('switching AWAY from an unsent placeholder discards it (FINDING-019)', async () => {
+    // The invariant lives in resetChatState, not in the call sites. Without a
+    // case that leaves a placeholder without materialising it, moving that
+    // line is unobservable — the dead-guard sweep caught exactly that.
+    const server = makeServer({ chats: [{ id: CHAT_A, title: 'Real chat' }] });
+    boot(server.fetchMock);
+    await tick();
+
+    document.querySelector<HTMLButtonElement>('#james-bot .jb-new')!.click();
+    await tick(1);
+    expect(railLabels(), 'no placeholder to discard').toEqual(['New chat', 'Real chat']);
+
+    clickRowByLabel('Real chat');
+    await tick();
+
+    expect(railLabels(), 'the abandoned placeholder survived the switch').toEqual(['Real chat']);
+    expect(activeRow()?.textContent, 'the switch did not land on the real chat').toContain(
+      'Real chat',
+    );
+  });
+
+  it('a placeholder becomes a real, persisted chat the moment its first turn lands', async () => {
+    const server = makeServer({ chats: [{ id: CHAT_A, title: 'Real chat' }] });
+    boot(server.fetchMock);
+    await tick();
+    document.querySelector<HTMLButtonElement>('#james-bot .jb-new')!.click();
+    await tick(1);
+    expect(window.localStorage.getItem('james-bot-active-chat'), 'a placeholder was persisted').toBe(
+      CHAT_A,
+    );
+
+    await send('first words');
+    const posted = server.calls.filter((c) => c.url.endsWith('/chat') && c.method === 'POST');
+    const newId = posted[posted.length - 1].body.session_id;
+    expect(newId, 'the placeholder reused the existing chat id').not.toBe(CHAT_A);
+    expect(
+      window.localStorage.getItem('james-bot-active-chat'),
+      'a materialised chat was not remembered for the next reload',
+    ).toBe(newId);
+    expect(railLabels(), 'the materialised chat left the rail').toEqual(['New chat', 'Real chat']);
+  });
+
+  it('a send into a chat deleted elsewhere fails QUIETLY, with no error bubble', async () => {
+    const server = makeServer({ chats: [{ id: CHAT_A, title: 'Chat A' }, { id: CHAT_B, title: 'Chat B' }] });
+    const gone = vi.fn(async (url: string, init?: any) => {
+      if (String(url).endsWith('/chat') && (init?.method ?? 'GET') === 'POST') {
+        return { ok: false, status: 404, json: async () => ({ error: 'gone' }) };
+      }
+      return server.fetchMock(url, init);
+    });
+    boot(gone);
+    await tick();
+
+    await send('into a deleted chat');
+
+    expect(
+      document.querySelector('#james-bot .jb-retry'),
+      'a 404 put a retry/error bubble in the member face',
+    ).toBeNull();
+    expect(
+      document.querySelector('#james-bot')!.textContent,
+      'a connection error was shown for a deleted chat',
+    ).not.toContain('Connection hiccup');
+    expect(
+      document.querySelector('#james-bot .jb-think-label'),
+      'the thinking indicator was left spinning',
+    ).toBeNull();
+    expect(chatInput().disabled, 'the composer was left locked').toBe(false);
   });
 });

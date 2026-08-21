@@ -30,6 +30,21 @@ create table if not exists chats (
 create index if not exists chats_owner_active_idx
   on chats (owner_key, last_message_at desc) where archived_at is null;
 
+-- Phase 1 remediation. Set TRUE only on a row that materialised from a W1
+-- legacy adoption — a session that already carried messages when its first
+-- chat row was written. It is SERVER-INFERRED (from the pre-turn history
+-- length), never client-asserted, because a self-declared flag would simply
+-- be omitted by anyone planting a session id.
+--
+-- Why it must exist before Phase 3 and cannot be added later: /history already
+-- serves any transcript to anyone holding its UUID, so planting a known
+-- session id discloses nothing new TODAY. But Phase 3 rewrites owner_key to
+-- 'email:<verified-addr>', which would hand that transcript permanently into
+-- the planter's authenticated account. Phase 3 skips adopted_legacy rows in
+-- the rewrite — and which rows were adopted is unknowable retroactively.
+alter table chats add column if not exists adopted_legacy boolean not null
+  default false;
+
 -- Same posture as chat_messages / comps_cache / session_state: RLS on, NO anon
 -- policies on purpose. The backend's only Supabase client is the SERVICE ROLE
 -- key, which bypasses RLS; the anon key appears nowhere in this path. An anon

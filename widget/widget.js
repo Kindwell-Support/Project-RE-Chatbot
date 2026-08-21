@@ -841,12 +841,24 @@
 
       // --- Per-chat state (Phase 1 multi-chat) -----------------------------
       // Everything below that belongs to the CONVERSATION is cleared by
-      // resetChatState(). Registry state (chats, activeChatId, collapsed) is
-      // deliberately NOT — the sidebar must survive a switch.
+      // resetChatState(). Registry state (the chats list and the collapsed
+      // rail) is deliberately NOT — the sidebar must survive a switch. The
+      // active chat is `sessionId`; there is no second variable for it.
       var busy = false;
       var started = false;
       var chats = [];
-      var pendingNewChat = false; // W2: started, not yet sent into, no row yet
+      /**
+       * R6a/R6b: THE placeholder. Non-null means `sessionId` names a chat that
+       * has no database row yet — one mechanism serving all three first-chat
+       * cases (an empty list, "+ New chat", and W1 legacy adoption), because
+       * two code paths that merely look alike drift.
+       *
+       * Placeholders are EPHEMERAL: never written to localStorage, never in
+       * the registry, gone on reload. Five "+ New chat" clicks give five rows
+       * and zero writes; a reload collapses them to one fresh placeholder,
+       * which is correct — nothing was in them.
+       */
+      var placeholderId = null;
       var renamingId = null;
       /**
        * Generation counter — bumped by every reset. Async callbacks capture
@@ -900,7 +912,7 @@
        * so that "what belongs to a chat" is answerable by reading one place.
        *
        * Deliberately NOT reset, each for a stated reason:
-       *   chats / activeChatId  registry, not conversation — the sidebar must
+       *   chats                 registry, not conversation — the sidebar must
        *                         still be there after the switch
        *   sidebar collapsed     a device preference, not chat state
        *   deviceKey             identity; survives every chat
@@ -947,6 +959,10 @@
         list.scrollTop = 0;
         // 9. Any half-open inline rename in the rail.
         renamingId = null;
+        // 9b. FINDING-019: the placeholder is per-chat state, so clearing it
+        //     belongs HERE rather than on the next line of each caller. Every
+        //     caller that wants one sets it AFTER this returns.
+        placeholderId = null;
         // 10. The welcome state the member should land in.
         showWelcome();
       }
@@ -970,9 +986,29 @@
         });
       }
 
+      /**
+       * Make `id` the active chat. Persisted ONLY for real chats: a
+       * placeholder that survived a reload would be a chat the server has
+       * never heard of, pinned forever (R6a).
+       */
       function persistActive(id) {
         sessionId = id;
         if (id) storageSet(ACTIVE_KEY, id);
+      }
+
+      /**
+       * R6b: the ONE first-chat mechanism. An empty list, "+ New chat" and
+       * legacy adoption all land here — the only difference is whether an id
+       * is supplied (adoption reuses the legacy session_id so its transcript
+       * comes with it).
+       *
+       * No row is written. R6: nothing is persisted until a message is sent.
+       */
+      function startPlaceholder(id) {
+        resetChatState(); // clears placeholderId; we set the new one after
+        placeholderId = id || uuid();
+        sessionId = placeholderId; // NOT persistActive — placeholders are ephemeral
+        renderSidebar();
       }
 
       function chatLabel(chat) {
@@ -982,7 +1018,7 @@
       /** One rail row: open, rename, delete. Rename swaps in an input in place. */
       function chatRow(chat) {
         var row = el('div', 'jb-chat-row', { role: 'listitem', 'data-chat-id': chat.id || '' });
-        if ((chat.id && chat.id === sessionId) || (chat.pending && pendingNewChat && !sessionId)) {
+        if (chat.id && chat.id === sessionId) {
           row.className += ' jb-chat-active';
         }
 
@@ -1068,7 +1104,9 @@
       function renderSidebar() {
         sideList.innerHTML = '';
         var rows = chats.slice();
-        if (pendingNewChat) rows.unshift({ id: null, title: null, pending: true });
+        // R6d: a placeholder sorts to the top until it becomes real; after the
+        // first send it takes its place in normal last_message_at order.
+        if (placeholderId) rows.unshift({ id: placeholderId, title: null, pending: true });
         if (!rows.length) {
           var empty = el('div', 'jb-side-empty');
           empty.textContent = 'No chats yet.';
@@ -1128,50 +1166,64 @@
       function switchToChat(id) {
         if (!id || id === sessionId) return;
         resetChatState();
-        pendingNewChat = false;
         persistActive(id);
         renderSidebar();
         loadHistory();
       }
 
       /**
-       * W2: "New chat" is LOCAL. It clears the pane and shows the welcome
-       * state without touching the server; the row is created on first send.
-       * Empty chats therefore cannot accumulate from idle clicking.
+       * W2 + R6: "+ New chat" is LOCAL and writes NOTHING. It clears the pane,
+       * shows the welcome state, and mints a placeholder; the row appears only
+       * when a message is actually sent. Idle clicking therefore cannot
+       * accumulate empty chats anywhere but on this screen, and a reload
+       * collapses them.
        */
       function startNewChat() {
-        resetChatState();
-        pendingNewChat = true;
-        sessionId = null;
-        renderSidebar();
+        startPlaceholder();
         input.focus();
       }
 
       /**
-       * The id to post with (W2 lazy creation) — SYNCHRONOUS on purpose.
+       * The id to post with — SYNCHRONOUS on purpose.
        *
-       * The row is not created by a round trip of its own: /chat already
-       * inserts it server-side when the id has no row yet and the request
-       * carries the owner header (touchChat's self-heal branch). So a pending
-       * chat mints its id here, the rail shows it immediately, and the first
-       * message creates the row as a side effect of being sent. One fewer
-       * round trip on the only latency path a member actually feels, and no
-       * failure mode where the create succeeds but the message does not.
+       * Boot always leaves either a real chat or a placeholder active, so this
+       * normally just hands back the current id. The row is not created by a
+       * round trip of its own: /chat inserts it server-side when the id has no
+       * row yet and the request carries the owner header (touchChat's
+       * self-heal). One fewer round trip on the only latency path a member
+       * feels, and no failure mode where the create succeeds but the message
+       * does not.
        */
       function ensureChatId() {
         if (sessionId) return sessionId;
-        var id = uuid();
-        pendingNewChat = false;
+        // Mints the placeholder WITHOUT going through startPlaceholder: this
+        // runs mid-send, after the member's message has been echoed and the
+        // thinking indicator is up, and resetChatState would wipe both.
+        placeholderId = uuid();
+        sessionId = placeholderId; // ephemeral until the turn lands (R6a)
+        renderSidebar();
+        return sessionId;
+      }
+
+      /**
+       * A placeholder becomes real the moment its first turn lands: the server
+       * has now written the row (touchChat), so it may be remembered across a
+       * reload and take its place in the rail.
+       */
+      function materialisePlaceholder() {
+        if (!placeholderId || placeholderId !== sessionId) return;
+        var id = placeholderId;
+        placeholderId = null;
         persistActive(id);
         chats.unshift({ id: id, title: null });
         renderSidebar();
-        return id;
       }
 
       /**
        * W5: deleting the active chat falls back to the most recent remaining
-       * one; deleting the last one auto-creates per R5, so the member is never
-       * left staring at an empty rail.
+       * one; deleting the last one leaves a PLACEHOLDER (R6/R6b — the same
+       * mechanism an empty list uses), so the rail is never empty and no row
+       * is written for a chat nobody has spoken in.
        */
       function deleteChat(id) {
         var wasActive = id === sessionId;
@@ -1191,62 +1243,40 @@
               switchToChat(chats[0].id);
               return;
             }
-            // Last chat deleted: R5 auto-create, so the sidebar is never empty.
-            resetChatState();
-            sessionId = null;
-            pendingNewChat = false;
-            chatsApi('/chats', { method: 'POST', body: JSON.stringify({}) })
-              .then(function (chat) {
-                if (!chat || !chat.id) throw new Error('no id');
-                chats = [chat];
-                persistActive(chat.id);
-                renderSidebar();
-              })
-              .catch(function () {
-                pendingNewChat = true;
-                renderSidebar();
-              });
+            startPlaceholder();
           });
       }
 
-      /**
-       * W1 legacy adoption, exactly once. An existing member's
-       * 'james-bot-session' becomes the id of their first chat, so their
-       * history is still theirs after this deploy. It runs BEFORE the list
-       * call on purpose: GET /chats auto-creates when the owner has none
-       * (R5), so adopting second would leave the member with a blank chat
-       * pinned above their real history.
-       */
-      function adoptLegacy(legacyId) {
-        storageSet(ADOPTED_KEY, '1'); // once, whatever the outcome
-        return chatsApi('/chats', {
-          method: 'POST',
-          body: JSON.stringify({ id: legacyId }),
-        }).catch(function () {
-          /* 409 (already adopted) or a dead API — the list call decides what happens next */
+      /** Paint a fetched transcript. Shared by the history load and adoption. */
+      function paintMessages(messages) {
+        messages.forEach(function (m, idx) {
+          var handle = addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
+          handle.row.style.animationDelay = Math.min(idx * 40, 320) + 'ms';
         });
+        list.scrollTop = list.scrollHeight;
       }
 
-      /** No chat list available: keep the member typing anyway. */
-      function localFallback() {
-        if (sessionId) return;
-        var legacy = storageGet(LEGACY_KEY);
-        persistActive(legacy && UUID_RE.test(legacy) ? legacy : uuid());
-        renderSidebar();
-        loadHistory();
-      }
-
+      /**
+       * R6c: the boot sequence, with its ordering now EXPLICIT.
+       *
+       * The chat list resolves FIRST and every first-chat decision is taken
+       * after it. That ordering is the fix for BUG-020: adoption and the
+       * empty-list case are both client-side now precisely so they can see
+       * each other — the server cannot read localStorage, so it could never
+       * know a legacy session was about to be adopted, and any server-side
+       * auto-create was guaranteed to race it.
+       *
+       * No /history is issued for a legacy session before that decision.
+       */
       function bootChats() {
         var op = beginOp();
-        var legacyId = readLegacySessionOnce();
 
-        // OPTIMISTIC REPAINT. We almost always know which chat the member was
-        // last in — the stored active id, or (first load after this deploy)
-        // their legacy session. Painting it now means history does not wait on
-        // the chat-list round trip; the list below only reconciles. A remembered
-        // chat that turns out to be gone is corrected there.
+        // OPTIMISTIC REPAINT — real chats only. The stored active id always
+        // names a chat the server has listed before (placeholders are never
+        // persisted), so painting it early costs nothing and saves the member
+        // a round trip. A legacy session is NOT eligible: deciding whether to
+        // adopt it is exactly what has to wait for the list.
         var remembered = storageGet(ACTIVE_KEY);
-        if (!remembered && legacyId) remembered = legacyId;
         if (remembered && UUID_RE.test(remembered)) {
           persistActive(remembered);
           chats = [{ id: remembered, title: null }];
@@ -1254,65 +1284,103 @@
           loadHistory();
         }
 
-        // Legacy adoption runs BEFORE the list call (W1): GET /chats
-        // auto-creates when the owner has none (R5), so adopting second would
-        // pin a blank chat above the member's real history.
-        var listing = legacyId
-          ? adoptLegacy(legacyId).then(function () {
-              return chatsApi('/chats', { method: 'GET' });
-            })
-          : chatsApi('/chats', { method: 'GET' });
-
-        listing
+        chatsApi('/chats', { method: 'GET' })
           .then(function (rows) {
             if (stale(op)) return;
             var server = Array.isArray(rows) ? rows : (rows && rows.chats) || [];
+
             // THE RACE THAT MATTERS: a member can type and send before this
             // list arrives. `started` says they did. Taking over the active
-            // chat here would repaint another conversation's history over the
-            // message they just sent, so the list is merged for the rail and
-            // the active chat is left exactly where they put it.
-            if (started || sessionId) {
+            // chat here would repaint another conversation over the message
+            // they just sent, so the list is merged for the rail only and the
+            // active chat is left exactly where they put it.
+            if (started) {
               var known = false;
               for (var j = 0; j < server.length; j++) {
                 if (server[j].id === sessionId) known = true;
               }
-              chats = known || !sessionId ? server : [{ id: sessionId, title: null }].concat(server);
+              chats = known ? server : [{ id: sessionId, title: null }].concat(server);
               renderSidebar();
               return;
             }
-            chats = server;
-            if (!chats.length) {
-              localFallback();
+
+            if (server.length) {
+              // This device already has chats, so W1 adoption does not apply
+              // AT ALL — the legacy key belongs to a session that has already
+              // been dealt with, or to a device that has moved on.
+              chats = server;
+              var preferred = storageGet(ACTIVE_KEY);
+              var chosen = null;
+              for (var i = 0; i < chats.length; i++) {
+                if (chats[i].id === preferred) chosen = chats[i];
+              }
+              // Newest activity first, so chats[0] is where a returning member
+              // most likely left off.
+              var target = (chosen || chats[0]).id;
+              if (target === sessionId) {
+                renderSidebar(); // already painted optimistically
+                return;
+              }
+              if (sessionId) {
+                switchToChat(target); // the remembered chat is gone
+                return;
+              }
+              persistActive(target);
+              renderSidebar();
+              loadHistory();
               return;
             }
-            var preferred = storageGet(ACTIVE_KEY);
-            var chosen = null;
-            for (var i = 0; i < chats.length; i++) {
-              if (chats[i].id === preferred) chosen = chats[i];
-            }
-            // Newest activity first, so chats[0] is where a returning member
-            // most likely left off.
-            var target = (chosen || chats[0]).id;
-            if (target === sessionId) {
-              renderSidebar(); // already painted optimistically; just show the rail
+
+            // Empty list. Adopt the legacy session, or start clean — one
+            // decision, taken in one place.
+            chats = [];
+            var legacyId = readLegacySessionOnce();
+            if (!legacyId) {
+              startPlaceholder();
               return;
             }
-            // The remembered chat is gone (deleted on another device, or this
-            // is a first visit). switchToChat resets whatever was painted.
-            if (sessionId) {
-              switchToChat(target);
-              return;
-            }
-            persistActive(target);
-            renderSidebar();
-            loadHistory();
+            probeLegacy(legacyId, op);
           })
           .catch(function () {
-            if (!stale(op)) localFallback();
+            // No list: still give the member somewhere to type. Nothing is
+            // written, so a dead API cannot create anything either.
+            if (!stale(op) && !sessionId) startPlaceholder();
           })
           .then(function () {
             endOp(op);
+          });
+      }
+
+      /**
+       * R6c narrowing of B4: adopt a legacy session ONLY if it actually holds
+       * a conversation. Planting an arbitrary UUID in localStorage must not
+       * conjure a chat, and an empty legacy key is just noise — discard it so
+       * this probe never runs again.
+       */
+      function probeLegacy(legacyId, op) {
+        return safeFetch(apiUrl + '/history?session_id=' + encodeURIComponent(legacyId), {
+          headers: { accept: 'application/json' },
+        })
+          .then(function (res) {
+            return res.ok ? res.json() : null;
+          })
+          .then(function (data) {
+            if (stale(op) || started || sessionId) return;
+            var messages = (data && data.messages) || [];
+            if (!messages.length) {
+              storageSet(ADOPTED_KEY, '1'); // nothing to adopt; stop asking
+              startPlaceholder();
+              return;
+            }
+            // Adopt as a PLACEHOLDER (R6c): the transcript is shown, the row
+            // self-heals on first send, and nothing is written before then.
+            // The flag is deliberately NOT set here — if the member never
+            // sends, the next boot should find this history again.
+            startPlaceholder(legacyId);
+            paintMessages(messages);
+          })
+          .catch(function () {
+            if (!stale(op) && !sessionId) startPlaceholder();
           });
       }
 
@@ -1663,6 +1731,7 @@
             addBubble(result.data.output || "I didn't catch that — try again.", 'bot', {
               animate: true,
             });
+            materialisePlaceholder();
             bumpActiveChat();
           })
           .catch(function () {
@@ -1707,16 +1776,26 @@
 
         safeFetch(apiUrl + '/chat', init)
           .then(function (res) {
+            // BUG-016 ruling: an archived chat answers 404 and never enters the
+            // agent loop. That send must fail QUIETLY — the chat is gone, so an
+            // error bubble in a pane that is about to be replaced is noise.
+            if (res.status === 404) return { gone: true };
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return res.json();
           })
           .then(function (data) {
             if (stale(op) || !data) return;
+            if (data.gone) {
+              removeTyping();
+              chatGone();
+              return;
+            }
             removeTyping();
             addBubble(data.output || "I didn't catch that — try again.", 'bot', { animate: true });
             // The model decides a form is warranted; the response carries the
             // descriptor. Rendered after the reply so the copy reads first.
             if (data.render_form) renderCalculatorForm(data.render_form);
+            materialisePlaceholder();
             bumpActiveChat();
           })
           .catch(function () {
@@ -1737,6 +1816,19 @@
        * mirroring the server's last_message_at bump so the order the member
        * sees does not wait for the next reload.
        */
+      /**
+       * The active chat no longer exists (deleted from another tab or device).
+       * Drop it and land the member somewhere real, without an error bubble.
+       */
+      function chatGone() {
+        var goneId = sessionId;
+        chats = chats.filter(function (chat) {
+          return chat.id !== goneId;
+        });
+        if (chats.length) switchToChat(chats[0].id);
+        else startPlaceholder();
+      }
+
       function bumpActiveChat() {
         for (var i = 0; i < chats.length; i++) {
           if (chats[i].id !== sessionId) continue;
@@ -1777,7 +1869,7 @@
       // The opening message and the rail are painted SYNCHRONOUSLY, before any
       // network call. Nothing below can gate the input box: bootChats resolves
       // the chat list and repaints history afterwards, and every one of its
-      // failure paths ends in a usable chat (localFallback).
+      // failure paths ends in a usable placeholder.
       showWelcome();
       renderSidebar();
       // Belt and braces: the chat box is already usable at this point, and
@@ -1785,7 +1877,7 @@
       try {
         bootChats();
       } catch (e) {
-        localFallback();
+        startPlaceholder();
       }
     }
 

@@ -12,7 +12,14 @@ import { buildApp } from '../src/server/app.js';
 import { loadConfig } from '../src/config.js';
 import { chatRecord, makeChatsSupabase, type ChatRecord } from './helpers/chatsFakes.js';
 import { resolveOwnerKey, OwnerKeyError, OWNER_KEY_HEADER } from '../src/server/ownerKey.js';
-import { touchChat, generateChatTitle, fallbackTitle, normalizeTitle } from '../src/server/chats.js';
+import {
+  touchChat,
+  generateChatTitle,
+  fallbackTitle,
+  normalizeTitle,
+  MAX_ACTIVE_CHATS,
+} from '../src/server/chats.js';
+import { makeFakeOpenAI } from './helpers/fakes.js';
 
 const OWNER_A = 'device:11111111-1111-4111-8111-111111111111';
 const OWNER_B = 'device:22222222-2222-4222-8222-222222222222';
@@ -95,13 +102,32 @@ describe('GET /chats', () => {
     await app.close();
   });
 
-  it('T8 (server half) / R5: zero chats auto-creates EXACTLY one', async () => {
+  it('R6: is a PURE READ — a fresh owner gets [] and NOTHING is written', async () => {
+    // This replaces the old R5 auto-create case. The server cannot see
+    // localStorage, so a server-side create could never know a legacy session
+    // was about to be adopted — it was guaranteed to race it (BUG-020). The
+    // empty-list answer is now a client-side placeholder.
     const { app, fake } = appWith([]);
     const res = await app.inject({ method: 'GET', url: '/chats', headers: auth(OWNER_A) });
-    const body = res.json() as Array<{ id: string }>;
-    expect(body, 'a fresh owner must never see an empty sidebar').toHaveLength(1);
-    expect(fake.rows, 'more than one chat was created').toHaveLength(1);
-    expect(fake.rows[0].owner_key).toBe(OWNER_A);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([]);
+    expect(fake.rows, 'a safe verb wrote a row').toHaveLength(0);
+    expect(fake.inserts, 'a safe verb issued an insert').toHaveLength(0);
+    await app.close();
+  });
+
+  it('R6: N parallel calls for a fresh owner still create ZERO rows', async () => {
+    // The old create-if-empty branch had no lock, so concurrent boots raced
+    // each other into duplicate rows. A pure read cannot.
+    const { app, fake } = appWith([]);
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        app.inject({ method: 'GET', url: '/chats', headers: auth(OWNER_A) }),
+      ),
+    );
+    expect(responses.every((r) => r.statusCode === 200)).toBe(true);
+    expect(responses.every((r) => r.json().length === 0)).toBe(true);
+    expect(fake.rows, 'concurrent reads created rows').toHaveLength(0);
     await app.close();
   });
 
@@ -380,5 +406,182 @@ describe('titles', () => {
     expect(normalizeTitle('')).toBeNull();
     expect(normalizeTitle(42)).toBeNull();
     expect(normalizeTitle('x'.repeat(400))!.length).toBe(120);
+  });
+});
+
+describe('BUG-016: touchChat cannot write across ownership or into archived rows', () => {
+  const logger = { warn: vi.fn(), error: vi.fn() };
+  beforeEach(() => logger.warn.mockClear());
+
+  it('a cross-owner id changes NOTHING, inserts nothing, and does not collide', async () => {
+    // Proved by execution before the fix: POST /chat with a chat UUID you do
+    // not own reordered another member's sidebar.
+    const fake = makeChatsSupabase([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_B, last_message_at: '2026-08-01T00:00:00.000Z' }),
+    ]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date('2026-08-09T12:00:00Z'));
+
+    expect(fake.rows, "the victim's row was duplicated or a new one inserted").toHaveLength(1);
+    expect(fake.rows[0].owner_key, 'ownership moved').toBe(OWNER_B);
+    expect(fake.rows[0].last_message_at, "another owner's sidebar was reordered").toBe(
+      '2026-08-01T00:00:00.000Z',
+    );
+    expect(fake.inserts, 'a blind insert fired and would collide on the primary key').toHaveLength(
+      0,
+    );
+    expect(logger.warn, 'a primary-key collision was swallowed as a warning').not.toHaveBeenCalled();
+  });
+
+  it('an ARCHIVED chat of your own is not bumped, and is not re-inserted', async () => {
+    const fake = makeChatsSupabase([
+      chatRecord({
+        id: CHAT_A,
+        owner_key: OWNER_A,
+        archived_at: '2026-08-02T00:00:00.000Z',
+        last_message_at: '2026-08-01T00:00:00.000Z',
+      }),
+    ]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date('2026-08-09T12:00:00Z'));
+
+    expect(fake.rows[0].last_message_at, 'a deleted chat was reordered back into the list').toBe(
+      '2026-08-01T00:00:00.000Z',
+    );
+    expect(fake.inserts, 'a deleted chat was re-created').toHaveLength(0);
+    expect(fake.rows[0].archived_at, 'the archive stamp was cleared').not.toBeNull();
+  });
+});
+
+describe('BUG-016 billing hole: an archived chat never enters the agent loop', () => {
+  it('POST /chat on an archived chat is a 404 and calls NO model', async () => {
+    const fake = makeChatsSupabase([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_A, archived_at: '2026-08-02T00:00:00.000Z' }),
+    ]);
+    const openai = makeFakeOpenAI([{ content: 'should never be produced' }]);
+    const app = buildApp(config, { supabase: fake.client as never, openai: openai.client as never });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat',
+      headers: auth(OWNER_A),
+      payload: { message: 'spend money for me', session_id: CHAT_A },
+    });
+
+    expect(res.statusCode, 'a deleted chat still accepted a turn').toBe(404);
+    // Asserted on the MOCK, not on the output: an error reply with no model
+    // call and an error reply after a paid one look identical from outside.
+    expect(openai.calls, 'the agent loop ran and billed OpenAI').toHaveLength(0);
+    expect(openai.embeddingCalls, 'retrieval embedded a query for a dead chat').toBe(0);
+    expect(fake.messages, 'the turn was written into a deleted chat').toHaveLength(0);
+    await app.close();
+  });
+
+  it('CONTROL: the same request against a LIVE chat does reach the model', async () => {
+    // Without this, the case above would pass against an app that never calls
+    // OpenAI at all.
+    const fake = makeChatsSupabase([chatRecord({ id: CHAT_A, owner_key: OWNER_A })]);
+    const openai = makeFakeOpenAI([{ content: 'a real answer' }]);
+    const app = buildApp(config, { supabase: fake.client as never, openai: openai.client as never });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat',
+      headers: auth(OWNER_A),
+      payload: { message: 'hello', session_id: CHAT_A },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(openai.calls.length, 'the live path never reached the model').toBeGreaterThan(0);
+    await app.close();
+  });
+});
+
+describe('C1: the active-chat cap', () => {
+  const atLimit = () =>
+    Array.from({ length: MAX_ACTIVE_CHATS }, (_, i) =>
+      chatRecord({
+        // Prefixed away from the fake's own uuid counter: colliding ids would
+        // make these cases pass on a DUPLICATE-KEY 409 instead of the cap.
+        id: 'ffffffff-ffff-4fff-8fff-' + String(i).padStart(12, '0'),
+        owner_key: OWNER_A,
+      }),
+    );
+
+  it('the 51st active chat is a 409', async () => {
+    const { app, fake } = appWith(atLimit());
+    const res = await app.inject({ method: 'POST', url: '/chats', headers: auth(OWNER_A), payload: {} });
+    expect(res.statusCode).toBe(409);
+    // The message matters: a duplicate-key 409 and a cap 409 are the same
+    // status, and this case is worthless if it cannot tell them apart.
+    expect(res.json().error, 'the 409 was not the cap').toContain('maximum number of chats');
+    expect(fake.rows, 'a row was created past the cap').toHaveLength(MAX_ACTIVE_CHATS);
+    await app.close();
+  });
+
+  it('ARCHIVED chats do not count toward it', async () => {
+    const seed = atLimit();
+    seed[0].archived_at = '2026-08-02T00:00:00.000Z';
+    const { app, fake } = appWith(seed);
+    const res = await app.inject({ method: 'POST', url: '/chats', headers: auth(OWNER_A), payload: {} });
+    expect(res.statusCode, 'a soft-deleted chat still occupied a slot').toBe(201);
+    expect(fake.rows).toHaveLength(MAX_ACTIVE_CHATS + 1);
+    await app.close();
+  });
+
+  it("another owner's chats do not count toward yours", async () => {
+    const seed = atLimit().map((row) => ({ ...row, owner_key: OWNER_B }));
+    const { app } = appWith(seed);
+    const res = await app.inject({ method: 'POST', url: '/chats', headers: auth(OWNER_A), payload: {} });
+    expect(res.statusCode).toBe(201);
+    await app.close();
+  });
+
+  it('the cap also holds on the self-heal path, which is where rows are really made', async () => {
+    // After R6 the widget never calls POST /chats, so capping only that route
+    // would be a cap that enforces nothing.
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const fake = makeChatsSupabase(atLimit());
+    await touchChat(fake.client as never, CHAT_B, OWNER_A, logger, new Date(), {
+      hadPriorHistory: false,
+    });
+    expect(fake.rows, 'the self-heal insert walked past the cap').toHaveLength(MAX_ACTIVE_CHATS);
+    expect(logger.warn, 'the refusal was silent').toHaveBeenCalled();
+  });
+});
+
+describe('adopted_legacy — the Phase 3 quarantine flag', () => {
+  const logger = { warn: vi.fn(), error: vi.fn() };
+
+  it('is TRUE when a session had messages before it had a row (W1 adoption)', async () => {
+    const fake = makeChatsSupabase([]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date(), {
+      hadPriorHistory: true,
+    });
+    expect(fake.inserts[0].adopted_legacy, 'an adopted row was not flagged for Phase 3').toBe(true);
+  });
+
+  it('is FALSE on a brand-new chat', async () => {
+    const fake = makeChatsSupabase([]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date(), {
+      hadPriorHistory: false,
+    });
+    expect(fake.inserts[0].adopted_legacy, 'a new chat was quarantined as adopted').toBe(false);
+  });
+
+  it('is FALSE on the explicit POST /chats path', async () => {
+    const { app, fake } = appWith([]);
+    await app.inject({ method: 'POST', url: '/chats', headers: auth(OWNER_A), payload: {} });
+    expect(fake.inserts[0].adopted_legacy).toBeUndefined();
+    await app.close();
+  });
+
+  it('is SERVER-INFERRED, so a planted session cannot omit the flag to escape it', async () => {
+    // The whole point: a client-asserted flag would simply be left off by an
+    // attacker planting a victim's session id, and Phase 3 would then rewrite
+    // that row into their verified account.
+    const fake = makeChatsSupabase([]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date(), {
+      hadPriorHistory: true,
+    });
+    expect(fake.inserts[0].adopted_legacy).toBe(true);
   });
 });
