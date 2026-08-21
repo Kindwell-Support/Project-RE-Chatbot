@@ -27,7 +27,24 @@ export interface ChatsFake {
   rows: ChatRecord[];
   /** Every insert that reached the table, in order. */
   inserts: Array<Record<string, unknown>>;
-  messages: Array<{ session_id: string; role: string; content: string }>;
+  messages: Array<MessageRecord>;
+}
+
+/**
+ * A chat_messages row. `id` and `created_at` are MODELLED rather than omitted:
+ * getHistory orders on both and then reverses, so a fake without them returns
+ * the exact INVERSE of the real transcript (INSPECTOR, gap 1).
+ *
+ * `id` is a zero-padded string because the sort compares stringified keys —
+ * unpadded, "10" would sort before "2" and a transcript would scramble at the
+ * tenth message.
+ */
+export interface MessageRecord {
+  session_id: string;
+  role: string;
+  content: string;
+  id?: string;
+  created_at?: string;
 }
 
 let counter = 0;
@@ -51,13 +68,36 @@ export function chatRecord(over: Partial<ChatRecord> = {}): ChatRecord {
 export function makeChatsSupabase(seed: ChatRecord[] = [], options: { failChats?: boolean } = {}): ChatsFake {
   const rows: ChatRecord[] = seed.map((r) => ({ ...r }));
   const inserts: Array<Record<string, unknown>> = [];
-  const messages: Array<{ session_id: string; role: string; content: string }> = [];
+  const messages: Array<MessageRecord> = [];
+
+  // Per-fake, so each instance starts from a known point and one suite's
+  // message ids can never depend on another's.
+  let messageSeq = 0;
+  let insertSeq = 0;
+  /**
+   * Stamp a message row the way Postgres would. Rows written by ONE insert
+   * share a created_at — that is not incidental, it is the exact condition
+   * getHistory's `id` tiebreaker exists to resolve, and a fake that gave each
+   * row its own timestamp would never exercise it.
+   */
+  function stampMessage(row: MessageRecord, stamp: string) {
+    messageSeq += 1;
+    row.id = String(messageSeq).padStart(12, '0');
+    row.created_at = stamp;
+  }
+  function nextInsertStamp(): string {
+    insertSeq += 1;
+    return new Date(Date.UTC(2026, 7, 1, 0, 0, insertSeq)).toISOString();
+  }
 
   function build(table: string) {
     const filters: Array<(row: any) => boolean> = [];
     let pendingUpdate: Record<string, unknown> | null = null;
     let selecting = false;
-    let sortKey: { column: string; ascending: boolean } | null = null;
+    // A LIST, not a single key. getHistory chains .order('created_at') then
+    // .order('id'); a last-one-wins field modelled a query production never
+    // sends and silently discarded the primary sort.
+    const sortKeys: Array<{ column: string; ascending: boolean }> = [];
     let take: number | null = null;
     // An insert failure has to travel down the SAME chain: production writes
     // `.insert(row).select(cols).single()`, so returning a bare promise here
@@ -76,16 +116,31 @@ export function makeChatsSupabase(seed: ChatRecord[] = [], options: { failChats?
       return out;
     };
 
-    const source = () => (table === 'chats' ? rows : messages);
+    const source = () => {
+      if (table === 'chats') return rows;
+      // A test may push straight onto `fake.messages` instead of going through
+      // insert(). Stamp those on first read, in array order, so a hand-seeded
+      // transcript sorts exactly like an inserted one — otherwise the two ways
+      // of seeding the fake would disagree about order.
+      for (const row of messages) {
+        if (row.id === undefined) stampMessage(row, nextInsertStamp());
+      }
+      return messages;
+    };
 
     function matched(): any[] {
       let out = source().filter((row) => filters.every((f) => f(row)));
-      if (sortKey) {
-        const { column, ascending } = sortKey;
+      if (sortKeys.length) {
         out = out.slice().sort((a: any, b: any) => {
-          const left = String(a[column] ?? '');
-          const right = String(b[column] ?? '');
-          return ascending ? left.localeCompare(right) : right.localeCompare(left);
+          // Keys applied in the order production declared them: the first is
+          // primary and later ones only break its ties.
+          for (const { column, ascending } of sortKeys) {
+            const left = String(a[column] ?? '');
+            const right = String(b[column] ?? '');
+            const cmp = ascending ? left.localeCompare(right) : right.localeCompare(left);
+            if (cmp !== 0) return cmp;
+          }
+          return 0;
         });
       }
       if (take !== null) out = out.slice(0, take);
@@ -115,33 +170,34 @@ export function makeChatsSupabase(seed: ChatRecord[] = [], options: { failChats?
         if (cols && cols !== '*') {
           columns = cols.split(',').map((c) => c.trim()).filter(Boolean);
         }
-        return chain;
+        return proxy;
       },
       eq: (column: string, value: unknown) => {
         filters.push((row) => String(row[column]) === String(value));
-        return chain;
+        return proxy;
       },
       is: (column: string, value: null) => {
         filters.push((row) => (row[column] ?? null) === value);
-        return chain;
+        return proxy;
       },
       order: (column: string, opts: { ascending?: boolean } = {}) => {
-        sortKey = { column, ascending: opts.ascending !== false };
-        return chain;
+        sortKeys.push({ column, ascending: opts.ascending !== false });
+        return proxy;
       },
       limit: (n: number) => {
         take = n;
-        return chain;
+        return proxy;
       },
       update: (patch: Record<string, unknown>) => {
         pendingUpdate = patch;
-        return chain;
+        return proxy;
       },
       insert: (payload: any) => {
         const list = Array.isArray(payload) ? payload : [payload];
+        const insertStamp = nextInsertStamp();
         if (options.failChats && table === 'chats') {
           pendingError = { message: 'chats unavailable' };
-          return chain;
+          return proxy;
         }
         for (const row of list) {
           inserts.push(row);
@@ -152,13 +208,13 @@ export function makeChatsSupabase(seed: ChatRecord[] = [], options: { failChats?
             // one that is more permissive than production.
             if (row.owner_key === undefined || row.owner_key === null) {
               pendingError = { code: '23502', message: 'null value in column "owner_key" violates not-null constraint' };
-              return chain;
+              return proxy;
             }
             const id = String(row.id ?? fakeUuid());
             if (rows.some((existing) => existing.id === id)) {
               // Primary-key conflict, exactly as Postgres reports it.
               pendingError = { code: '23505', message: 'duplicate key value' };
-              return chain;
+              return proxy;
             }
             rows.push(
               chatRecord({
@@ -170,16 +226,20 @@ export function makeChatsSupabase(seed: ChatRecord[] = [], options: { failChats?
             );
             insertedId = id;
           } else {
-            messages.push({
+            const stamped: MessageRecord = {
               session_id: String(row.session_id),
               role: String(row.role),
               content: String(row.content),
-            });
+            };
+            // Every row of THIS insert shares one stamp, as a single statement
+            // does in Postgres; the ids inside it still increase.
+            stampMessage(stamped, insertStamp);
+            messages.push(stamped);
           }
         }
         // supabase-js returns a thenable that may be chained further with
         // .select().single(); both shapes resolve through `settle`.
-        return chain;
+        return proxy;
       },
       single: async () => {
         const result = settle();
@@ -197,7 +257,14 @@ export function makeChatsSupabase(seed: ChatRecord[] = [], options: { failChats?
       },
     };
 
-    return new Proxy(chain, {
+    /**
+     * The guard. It was applied ONCE, to the object `from()` hands back, while
+     * every builder method returned the raw `chain` — so it only ever saw the
+     * FIRST call and `.eq(...).is(...)` was past it by the second link. That is
+     * the same shape as the bug it exists to catch, so every method now returns
+     * THIS proxy and the guard covers the chain to any depth.
+     */
+    const proxy: any = new Proxy(chain, {
       get(target, prop) {
         if (typeof prop === 'symbol' || prop in target) return (target as any)[prop];
         throw new Error(
@@ -206,6 +273,8 @@ export function makeChatsSupabase(seed: ChatRecord[] = [], options: { failChats?
         );
       },
     });
+
+    return proxy;
   }
 
   const client = { from: vi.fn((table: string) => build(table)) };

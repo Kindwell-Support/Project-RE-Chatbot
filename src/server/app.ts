@@ -1,7 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import OpenAI from 'openai';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { AppConfig } from '../config.js';
@@ -66,6 +67,49 @@ export interface AppDeps {
   propertyProvider?: PropertyDataProvider;
   /** Census demographics provider (§14.10) — same seam pattern; tests inject a fake, production builds from CENSUS_API_KEY. */
   censusProvider?: DemographicsProviderLike;
+}
+
+/**
+ * A strong entity-tag derived from the bundle's own bytes.
+ *
+ * Strong, and derived ONLY from content, because both properties are
+ * load-bearing (BUG-021):
+ *  - Content-derived, so the tag is identical on every process that serves the
+ *    same bundle. A validator minted per boot (a timestamp, a uuid) would look
+ *    correct in a single-instance test and fall apart the moment two instances
+ *    sit behind one load balancer: alternating requests would see alternating
+ *    tags and revalidation would miss every time.
+ *  - Quoted, because RFC 9110 sec 8.8.3 defines an entity-tag as a quoted
+ *    string. An unquoted tag is malformed and a cache may ignore it, which
+ *    fails silently as "caching just does not work".
+ */
+export function bundleEtag(bytes: Buffer): string {
+  return `"${createHash('sha256').update(bytes).digest('hex').slice(0, 32)}"`;
+}
+
+/**
+ * Does an `If-None-Match` request header match the tag we would serve?
+ *
+ * RFC 9110 sec 13.1.2: `If-None-Match` uses the WEAK comparison function, so
+ * `W/"x"` and `"x"` match. That is not pedantry — an intermediary is entitled
+ * to weaken a validator in transit, and comparing verbatim would turn every
+ * such request back into a full download, which is the exact defect this fix
+ * exists to close. The header is also a comma-separated LIST, and `*` matches
+ * any current representation.
+ */
+export function ifNoneMatchMatches(
+  header: string | string[] | undefined,
+  etag: string,
+): boolean {
+  if (!header) return false;
+  const weaken = (tag: string) => tag.trim().replace(/^W\//, '');
+  const target = weaken(etag);
+  return (Array.isArray(header) ? header.join(',') : header)
+    .split(',')
+    .some((candidate) => {
+      const value = weaken(candidate);
+      return value === '*' || value === target;
+    });
 }
 
 /**
@@ -173,23 +217,62 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
 
   app.get('/health', async () => ({ status: 'ok' }));
 
-  // Serve the widget bundle so no separate CDN is strictly required.
-  app.get('/widget.js', async (_request, reply) => {
+  /**
+   * The widget bundle, read ONCE here at boot and held in memory with a
+   * validator derived from its bytes.
+   *
+   * BUG-021. 'no-cache' means REVALIDATE on every use — it does NOT mean "do
+   * not store". But revalidation can only happen if the response carried a
+   * validator the browser can quote back, and this response carried neither an
+   * ETag nor a Last-Modified. With nothing to put in an If-None-Match or an
+   * If-Modified-Since, the browser had no conditional request available to it
+   * and every page load re-downloaded the whole bundle — measured at 3/3 loads
+   * of 35,542 bytes on an unbusted embed.
+   *
+   * The 304s that were cited when this header was chosen came from
+   * Cloudflare's edge, which synthesises a Last-Modified when it fills its own
+   * cache. That is edge behaviour. This route is the ORIGIN, and at origin
+   * there was no conditional path at all.
+   *
+   * Reading at boot rather than per request is correct for how this ships: the
+   * bundle is baked into the Docker image, so it cannot change underneath a
+   * running process. It also retires a disk read that ran on every request.
+   * The trade is local-only — after `npm run build:widget` a dev server must be
+   * restarted to serve the new bundle.
+   */
+  const widgetBundle = (() => {
     try {
       const here = path.dirname(fileURLToPath(import.meta.url));
-      const bundle = await readFile(path.resolve(here, '../../public/widget.js'));
-      reply.header('Content-Type', 'application/javascript; charset=utf-8');
-      // 'no-cache' means REVALIDATE, not "never cache": the live host already
-      // answers If-Modified-Since with 304, so this costs one conditional
-      // round trip per page load and nothing else. Three consecutive
-      // frontend-heavy phases behind a 5-minute edge+browser cache would have
-      // QA reporting stale bundles as bugs.
-      reply.header('Cache-Control', 'no-cache');
-      return reply.send(bundle);
+      const bytes = readFileSync(path.resolve(here, '../../public/widget.js'));
+      return { bytes, etag: bundleEtag(bytes) };
     } catch {
+      // Not built. Held as null rather than rethrown: a missing bundle must
+      // still answer 404 per request, exactly as it did before, and must never
+      // stop the app from booting.
+      return null;
+    }
+  })();
+
+  // Serve the widget bundle so no separate CDN is strictly required.
+  app.get('/widget.js', async (request, reply) => {
+    if (!widgetBundle) {
       reply.code(404);
       return { error: 'widget bundle not built — run `npm run build:widget`' };
     }
+    // Sent on the 304 as well as the 200: a conditional response has to carry
+    // the validator forward or the next request has nothing to revalidate
+    // against, and the caching would work exactly once.
+    reply.header('ETag', widgetBundle.etag);
+    // Kept deliberately. Three consecutive frontend-heavy phases behind a
+    // 5-minute edge+browser cache would have QA reporting stale bundles as
+    // bugs. With a real validator this now costs one conditional round trip
+    // per page load instead of a full re-download.
+    reply.header('Cache-Control', 'no-cache');
+    if (ifNoneMatchMatches(request.headers['if-none-match'], widgetBundle.etag)) {
+      return reply.code(304).send();
+    }
+    reply.header('Content-Type', 'application/javascript; charset=utf-8');
+    return reply.send(widgetBundle.bytes);
   });
 
   // /demo — the widget hosted on the API's own origin, so the bot can be seen
@@ -524,14 +607,24 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     // the same reason qa_logs is: nothing reads them back this turn, and a
     // member's answer must never wait on cosmetics.
     //
-    void touchChat(sb, session_id, ownerKey, request.log).then(() => {
-      // A title is generated ONCE, from the first exchange — `history` was
-      // read BEFORE this turn, so an empty one means this was it. The write
-      // itself is conditional on title IS NULL, so this cannot overwrite a
-      // rename or race a second turn.
-      if (history.length > 0) return;
-      return generateChatTitle(sb, oa, session_id, userMessage, result.output, request.log);
-    });
+    void touchChat(sb, session_id, ownerKey, request.log)
+      .then(() => {
+        // A title is generated ONCE, from the first exchange — `history` was
+        // read BEFORE this turn, so an empty one means this was it. The write
+        // itself is conditional on title IS NULL, so this cannot overwrite a
+        // rename or race a second turn.
+        if (history.length > 0) return;
+        return generateChatTitle(sb, oa, session_id, userMessage, result.output, request.log);
+      })
+      .catch((err) => {
+        // BUG-022: the same call-site guarantee its qa_logs sibling carries.
+        // Both callees swallow their own errors today, so this is latent — but
+        // that is an invariant living in another file and asserted nowhere
+        // here, and the .then() above adds a second way to reject that neither
+        // callee owns. A detached promise without this is one throw away from
+        // terminating the process on Node 15+.
+        request.log.warn({ err }, 'chat touch/title write failed — reply already sent');
+      });
 
     // `tool_calls` is trace evidence: which tools actually fired, in order.
     // Proves a BRRRR answer came from brrrr_calculator rather than being
