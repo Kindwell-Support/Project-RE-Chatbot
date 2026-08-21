@@ -28,8 +28,23 @@ describe('I1: CORS preflight (the old build returned 500 here)', () => {
     });
     expect(res.statusCode).toBe(204);
     expect(res.headers['access-control-allow-origin']).toBe(ALLOWED);
-    expect(res.headers['access-control-allow-methods']).toBe('POST, OPTIONS');
-    expect(res.headers['access-control-allow-headers']).toBe('content-type');
+    // Phase 1 multi-chat widened this: /chats needs GET (list), PATCH
+    // (rename) and DELETE (soft delete), and the owner-key header must be
+    // allow-listed or the browser blocks every one of them at the preflight.
+    // Asserted as a SET, not a string, so the order of the header value is
+    // not accidentally load-bearing.
+    expect(
+      String(res.headers['access-control-allow-methods'])
+        .split(',')
+        .map((m) => m.trim())
+        .sort(),
+    ).toEqual(['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST']);
+    expect(
+      String(res.headers['access-control-allow-headers'])
+        .split(',')
+        .map((h) => h.trim().toLowerCase())
+        .sort(),
+    ).toEqual(['content-type', 'x-james-owner']);
   });
 
   it('second allow-listed origin (comma-separated env) also passes', async () => {

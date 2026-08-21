@@ -1,0 +1,384 @@
+/**
+ * Phase 1 multi-chat — the server contract.
+ *
+ * T2 (history isolation), T3 (owner-scoped mutations 404), T4 (listing never
+ * crosses owners) and the R5 auto-create live here. The through-line of every
+ * case is that owner_key is a CAPABILITY, not a hint: it is resolved in one
+ * place, it scopes every WHERE, and a chat belonging to someone else is
+ * indistinguishable from a chat that does not exist.
+ */
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { buildApp } from '../src/server/app.js';
+import { loadConfig } from '../src/config.js';
+import { chatRecord, makeChatsSupabase, type ChatRecord } from './helpers/chatsFakes.js';
+import { resolveOwnerKey, OwnerKeyError, OWNER_KEY_HEADER } from '../src/server/ownerKey.js';
+import { touchChat, generateChatTitle, fallbackTitle, normalizeTitle } from '../src/server/chats.js';
+
+const OWNER_A = 'device:11111111-1111-4111-8111-111111111111';
+const OWNER_B = 'device:22222222-2222-4222-8222-222222222222';
+const CHAT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const CHAT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+const config = loadConfig({
+  ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
+  OPENAI_API_KEY: 'test',
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: 'test',
+} as NodeJS.ProcessEnv);
+
+function appWith(seed: ChatRecord[], options: { failChats?: boolean } = {}) {
+  const fake = makeChatsSupabase(seed, options);
+  const app = buildApp(config, { supabase: fake.client as never });
+  return { app, fake };
+}
+
+const auth = (owner: string) => ({ [OWNER_KEY_HEADER]: owner });
+
+describe('resolveOwnerKey — the single seam Phase 3 replaces (R3)', () => {
+  it('returns the device key from the header', () => {
+    expect(resolveOwnerKey({ headers: auth(OWNER_A) })).toBe(OWNER_A);
+  });
+
+  it('throws when the header is absent — never a shared "anonymous" owner', () => {
+    // A fallback owner would pool every keyless client into ONE owner, letting
+    // each of them list and delete the others' chats.
+    expect(() => resolveOwnerKey({ headers: {} })).toThrow(OwnerKeyError);
+  });
+
+  it('REJECTS a non-device key, which is the Phase 3 pre-seeding defence', () => {
+    // Phase 3 rewrites owner_key to 'email:<verified-addr>'. If arbitrary keys
+    // were accepted now, an attacker could create chats under a victim's
+    // future key TODAY and have them appear in that member's sidebar the
+    // moment real authentication arrives.
+    expect(() => resolveOwnerKey({ headers: auth('email:victim@example.com') })).toThrow(
+      OwnerKeyError,
+    );
+    expect(() => resolveOwnerKey({ headers: auth('device:not-a-uuid') })).toThrow(OwnerKeyError);
+  });
+
+  it('a repeated header is ambiguity, and ambiguity is never guessed', () => {
+    expect(() =>
+      resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: [OWNER_A, OWNER_B] } }),
+    ).toThrow(OwnerKeyError);
+  });
+});
+
+describe('GET /chats', () => {
+  it('T4: never returns a chat owned by someone else', async () => {
+    const { app } = appWith([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_A, title: 'A only' }),
+      chatRecord({ id: CHAT_B, owner_key: OWNER_B, title: 'B only' }),
+    ]);
+    const res = await app.inject({ method: 'GET', url: '/chats', headers: auth(OWNER_A) });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as Array<{ id: string; title: string }>;
+    expect(body.map((c) => c.id), "another owner's chat was listed").toEqual([CHAT_A]);
+    await app.close();
+  });
+
+  it('excludes archived chats (R4: delete is soft, not a tombstone in the list)', async () => {
+    const { app } = appWith([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_A }),
+      chatRecord({ id: CHAT_B, owner_key: OWNER_A, archived_at: '2026-08-02T00:00:00.000Z' }),
+    ]);
+    const res = await app.inject({ method: 'GET', url: '/chats', headers: auth(OWNER_A) });
+    expect((res.json() as Array<{ id: string }>).map((c) => c.id)).toEqual([CHAT_A]);
+    await app.close();
+  });
+
+  it('never leaks owner_key in the listing payload', async () => {
+    const { app } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_A })]);
+    const res = await app.inject({ method: 'GET', url: '/chats', headers: auth(OWNER_A) });
+    expect(res.body, 'the owner key is a credential and must not round-trip').not.toContain(
+      OWNER_A,
+    );
+    await app.close();
+  });
+
+  it('T8 (server half) / R5: zero chats auto-creates EXACTLY one', async () => {
+    const { app, fake } = appWith([]);
+    const res = await app.inject({ method: 'GET', url: '/chats', headers: auth(OWNER_A) });
+    const body = res.json() as Array<{ id: string }>;
+    expect(body, 'a fresh owner must never see an empty sidebar').toHaveLength(1);
+    expect(fake.rows, 'more than one chat was created').toHaveLength(1);
+    expect(fake.rows[0].owner_key).toBe(OWNER_A);
+    await app.close();
+  });
+
+  it('400 without an owner key, and the reply says which header', async () => {
+    const { app } = appWith([]);
+    const res = await app.inject({ method: 'GET', url: '/chats' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain(OWNER_KEY_HEADER);
+    await app.close();
+  });
+
+  it('a dead chats table degrades to 503, never a 500 stack', async () => {
+    const { app } = appWith([], { failChats: true });
+    const res = await app.inject({ method: 'GET', url: '/chats', headers: auth(OWNER_A) });
+    expect(res.statusCode).toBe(503);
+    await app.close();
+  });
+});
+
+describe('POST /chats', () => {
+  it('creates a chat for the caller and returns its id', async () => {
+    const { app, fake } = appWith([]);
+    const res = await app.inject({ method: 'POST', url: '/chats', headers: auth(OWNER_A), payload: {} });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().id, 'no id returned').toBeTruthy();
+    expect(fake.rows[0].owner_key).toBe(OWNER_A);
+    await app.close();
+  });
+
+  it('W1 legacy adoption: an explicit id is honoured, so old history stays reachable', async () => {
+    const { app, fake } = appWith([]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chats',
+      headers: auth(OWNER_A),
+      payload: { id: CHAT_A },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().id).toBe(CHAT_A);
+    expect(fake.rows[0].id).toBe(CHAT_A);
+    await app.close();
+  });
+
+  it('adoption cannot steal: a colliding id is a 409, never an overwrite', async () => {
+    const { app, fake } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_B, title: 'B owns this' })]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chats',
+      headers: auth(OWNER_A),
+      payload: { id: CHAT_A },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(fake.rows[0].owner_key, 'ownership was reassigned by a create').toBe(OWNER_B);
+    await app.close();
+  });
+
+  it('a non-uuid id is rejected before it reaches Postgres', async () => {
+    const { app } = appWith([]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chats',
+      headers: auth(OWNER_A),
+      payload: { id: 'sess-1723-abc' },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+});
+
+describe('PATCH /chats/:id — T3', () => {
+  it("404s on another owner's chat, and does NOT rename it", async () => {
+    const { app, fake } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_B, title: 'B title' })]);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/chats/${CHAT_A}`,
+      headers: auth(OWNER_A),
+      payload: { title: 'stolen' },
+    });
+    expect(res.statusCode, '403 would confirm the id exists; 404 must not').toBe(404);
+    expect(fake.rows[0].title, "another owner's chat was renamed").toBe('B title');
+    await app.close();
+  });
+
+  it('renames the caller’s own chat', async () => {
+    const { app, fake } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_A })]);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/chats/${CHAT_A}`,
+      headers: auth(OWNER_A),
+      payload: { title: '  Duplex on 5th   St ' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(fake.rows[0].title, 'whitespace was not normalized').toBe('Duplex on 5th St');
+    await app.close();
+  });
+
+  it('an empty title is a 400, not a chat named ""', async () => {
+    const { app } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_A })]);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/chats/${CHAT_A}`,
+      headers: auth(OWNER_A),
+      payload: { title: '   ' },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('a malformed id is a 404, not a 500 from Postgres', async () => {
+    const { app } = appWith([]);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/chats/not-a-uuid',
+      headers: auth(OWNER_A),
+      payload: { title: 'x' },
+    });
+    expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
+describe('DELETE /chats/:id — T3 + R4', () => {
+  it("404s on another owner's chat and leaves it active", async () => {
+    const { app, fake } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_B })]);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/chats/${CHAT_A}`,
+      headers: auth(OWNER_A),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(fake.rows[0].archived_at, "another owner's chat was archived").toBeNull();
+    await app.close();
+  });
+
+  it('soft-deletes: 204, archived_at stamped, transcript rows untouched', async () => {
+    const { app, fake } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_A })]);
+    fake.messages.push({ session_id: CHAT_A, role: 'user', content: 'keep me' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/chats/${CHAT_A}`,
+      headers: auth(OWNER_A),
+    });
+    expect(res.statusCode).toBe(204);
+    expect(fake.rows[0].archived_at, 'the row was not archived').not.toBeNull();
+    expect(fake.rows, 'the row was hard-deleted').toHaveLength(1);
+    expect(fake.messages, 'chat_messages must survive a soft delete').toHaveLength(1);
+    await app.close();
+  });
+
+  it('deleting twice is a 404 the second time (already archived)', async () => {
+    const { app } = appWith([chatRecord({ id: CHAT_A, owner_key: OWNER_A })]);
+    const first = await app.inject({ method: 'DELETE', url: `/chats/${CHAT_A}`, headers: auth(OWNER_A) });
+    const second = await app.inject({ method: 'DELETE', url: `/chats/${CHAT_A}`, headers: auth(OWNER_A) });
+    expect(first.statusCode).toBe(204);
+    expect(second.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
+describe('T2: /history is per chat, because a chat IS a session', () => {
+  it('returns only the rows of the requested chat', async () => {
+    const { app, fake } = appWith([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_A }),
+      chatRecord({ id: CHAT_B, owner_key: OWNER_A }),
+    ]);
+    fake.messages.push(
+      { session_id: CHAT_A, role: 'user', content: 'question in A' },
+      { session_id: CHAT_A, role: 'assistant', content: 'answer in A' },
+      { session_id: CHAT_B, role: 'user', content: 'question in B' },
+    );
+    const res = await app.inject({ method: 'GET', url: `/history?session_id=${CHAT_B}` });
+    const contents = (res.json().messages as Array<{ content: string }>).map((m) => m.content);
+    expect(contents, "chat A's transcript leaked into chat B").toEqual(['question in B']);
+    await app.close();
+  });
+});
+
+describe('touchChat — sidebar ordering, and the row it can self-heal', () => {
+  const logger = { warn: vi.fn(), error: vi.fn() };
+  beforeEach(() => logger.warn.mockClear());
+
+  it('bumps last_message_at on an existing chat', async () => {
+    const fake = makeChatsSupabase([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_A, last_message_at: '2026-08-01T00:00:00.000Z' }),
+    ]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger, new Date('2026-08-09T12:00:00Z'));
+    expect(fake.rows[0].last_message_at).toBe('2026-08-09T12:00:00.000Z');
+    await Promise.resolve();
+  });
+
+  it('creates the row when absent and an owner was proved (the legacy/lazy path)', async () => {
+    const fake = makeChatsSupabase([]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger);
+    expect(fake.rows).toHaveLength(1);
+    expect(fake.rows[0].id).toBe(CHAT_A);
+    expect(fake.rows[0].owner_key).toBe(OWNER_A);
+  });
+
+  it('creates NOTHING without an owner — a chat cannot be conjured ownerless', async () => {
+    const fake = makeChatsSupabase([]);
+    await touchChat(fake.client as never, CHAT_A, undefined, logger);
+    expect(fake.rows).toHaveLength(0);
+  });
+
+  it('never reassigns ownership of an existing chat', async () => {
+    const fake = makeChatsSupabase([chatRecord({ id: CHAT_A, owner_key: OWNER_B })]);
+    await touchChat(fake.client as never, CHAT_A, OWNER_A, logger);
+    expect(fake.rows[0].owner_key, 'a /chat call moved a chat between owners').toBe(OWNER_B);
+  });
+
+  it('a dead table warns and resolves — a member reply is never at risk', async () => {
+    const fake = makeChatsSupabase([], { failChats: true });
+    await expect(touchChat(fake.client as never, CHAT_A, OWNER_A, logger)).resolves.toBeUndefined();
+    expect(logger.warn, 'the failure was swallowed silently').toHaveBeenCalled();
+  });
+});
+
+describe('titles', () => {
+  const logger = { warn: vi.fn(), error: vi.fn() };
+  const openaiWith = (content: string | null, fail = false) =>
+    ({
+      chat: {
+        completions: {
+          create: vi.fn(async () => {
+            if (fail) throw new Error('model down');
+            return { choices: [{ message: { content } }] };
+          }),
+        },
+      },
+    }) as never;
+
+  beforeEach(() => logger.warn.mockClear());
+
+  it('writes the generated title, stripped of quotes and capped at six words', async () => {
+    const fake = makeChatsSupabase([chatRecord({ id: CHAT_A, owner_key: OWNER_A })]);
+    await generateChatTitle(
+      fake.client as never,
+      openaiWith('"Duplex Deal In North Tempe Today Extra"'),
+      CHAT_A,
+      'looking at a duplex',
+      'here are the numbers',
+      logger,
+    );
+    expect(fake.rows[0].title).toBe('Duplex Deal In North Tempe Today');
+    });
+
+  it('falls back to the first message, truncated, when the model fails', async () => {
+    const fake = makeChatsSupabase([chatRecord({ id: CHAT_A, owner_key: OWNER_A })]);
+    const long = 'I am looking at a duplex in north Tempe with a detached garage';
+    await generateChatTitle(fake.client as never, openaiWith(null, true), CHAT_A, long, 'ok', logger);
+    expect(fake.rows[0].title).toBe(long.slice(0, 40).trimEnd());
+    expect(fake.rows[0].title!.length).toBeLessThanOrEqual(40);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('NEVER regenerates: a chat that already has a title is left alone', async () => {
+    const fake = makeChatsSupabase([
+      chatRecord({ id: CHAT_A, owner_key: OWNER_A, title: 'Member renamed this' }),
+    ]);
+    await generateChatTitle(
+      fake.client as never,
+      openaiWith('A Brand New Title'),
+      CHAT_A,
+      'hello',
+      'hi',
+      logger,
+    );
+    expect(fake.rows[0].title, 'the WHERE title IS NULL guard did not hold').toBe(
+      'Member renamed this',
+    );
+  });
+
+  it('fallbackTitle and normalizeTitle handle the empty cases without inventing text', () => {
+    expect(fallbackTitle('   ')).toBe('New chat');
+    expect(fallbackTitle('short one')).toBe('short one');
+    expect(normalizeTitle('')).toBeNull();
+    expect(normalizeTitle(42)).toBeNull();
+    expect(normalizeTitle('x'.repeat(400))!.length).toBe(120);
+  });
+});

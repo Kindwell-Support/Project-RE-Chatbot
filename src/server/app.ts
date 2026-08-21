@@ -14,6 +14,17 @@ import {
 } from '../agent/formSubmission.js';
 import { getHistory, appendExchange } from './memory.js';
 import { logExchange } from './logging.js';
+import { OWNER_KEY_HEADER, OwnerKeyError, resolveOwnerKey } from './ownerKey.js';
+import {
+  archiveChat,
+  createChat,
+  generateChatTitle,
+  isChatId,
+  listChats,
+  normalizeTitle,
+  renameChat,
+  touchChat,
+} from './chats.js';
 import type { PropertyDataProvider } from '../features/comps/providers/types.js';
 import { ApifyZillowProvider } from '../features/comps/providers/apifyZillow.js';
 import { createCompsCache } from '../features/comps/cache/compsCache.js';
@@ -120,8 +131,13 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       reply.header('Vary', 'Origin');
     }
     if (request.method === 'OPTIONS') {
-      reply.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-      reply.header('Access-Control-Allow-Headers', 'content-type');
+      // GET/PATCH/DELETE joined POST with the /chats routes (Phase 1
+      // multi-chat). Without them the browser blocks rename and delete at the
+      // preflight and the sidebar looks broken with a healthy server. The
+      // owner-key header must be allow-listed for the same reason: a custom
+      // header makes every /chats call a preflighted request.
+      reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      reply.header('Access-Control-Allow-Headers', `content-type, ${OWNER_KEY_HEADER}`);
       reply.header('Access-Control-Max-Age', '86400');
       reply.code(204).send();
     }
@@ -161,7 +177,12 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       const here = path.dirname(fileURLToPath(import.meta.url));
       const bundle = await readFile(path.resolve(here, '../../public/widget.js'));
       reply.header('Content-Type', 'application/javascript; charset=utf-8');
-      reply.header('Cache-Control', 'public, max-age=300');
+      // 'no-cache' means REVALIDATE, not "never cache": the live host already
+      // answers If-Modified-Since with 304, so this costs one conditional
+      // round trip per page load and nothing else. Three consecutive
+      // frontend-heavy phases behind a 5-minute edge+browser cache would have
+      // QA reporting stale bundles as bugs.
+      reply.header('Cache-Control', 'no-cache');
       return reply.send(bundle);
     } catch {
       reply.code(404);
@@ -237,6 +258,133 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     }
     const history = await getHistory(getSupabase(), sessionId, request.log);
     return { messages: history };
+  });
+
+  // --- /chats (Phase 1 multi-chat) -----------------------------------------
+  //
+  // Every handler resolves its owner through resolveOwnerKey (ruling R3) and
+  // scopes its WHERE to that owner. A chat belonging to someone else answers
+  // 404 and never 403: a 403 confirms the id exists, which turns the response
+  // code into an enumeration oracle.
+  //
+  // Chat ids ARE session ids, so these routes carry the same exposure class as
+  // /chat and /history — holding the id is holding the conversation. What is
+  // new is the LISTING, and that is exactly why it is keyed on an unguessable
+  // device key rather than on the client-asserted member_email.
+
+  /** Map an unusable owner key to 400 once, so every handler reads the same. */
+  const ownerOr400 = (request: { headers: Record<string, string | string[] | undefined> }, reply: {
+    code: (n: number) => unknown;
+  }): string | null => {
+    try {
+      return resolveOwnerKey(request);
+    } catch (err) {
+      if (err instanceof OwnerKeyError) {
+        reply.code(400);
+        return null;
+      }
+      throw err;
+    }
+  };
+
+  app.get('/chats', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    try {
+      let chats = await listChats(getSupabase(), ownerKey);
+      // R5: nobody ever sees an empty sidebar or a "create your first chat"
+      // prompt. This creates a CHAT, not history — the pane shows the normal
+      // welcome state. One member-visible round trip, as ruled.
+      if (chats.length === 0) chats = [await createChat(getSupabase(), ownerKey)];
+      return chats;
+    } catch (err) {
+      request.log.error({ err }, 'chats list failed');
+      reply.code(503);
+      return { error: 'Chat list is unavailable right now.' };
+    }
+  });
+
+  app.post<{ Body: { title?: unknown; id?: unknown } }>('/chats', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    const body = request.body ?? {};
+    // `id` is legacy adoption ONLY (widget rule W1). It cannot overwrite: the
+    // primary key rejects a collision and this answers 409.
+    if (body.id !== undefined && !isChatId(body.id)) {
+      reply.code(400);
+      return { error: 'id must be a uuid' };
+    }
+    try {
+      const chat = await createChat(getSupabase(), ownerKey, {
+        ...(body.id ? { id: String(body.id) } : {}),
+        title: normalizeTitle(body.title),
+      });
+      reply.code(201);
+      return chat;
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code === '23505') {
+        reply.code(409);
+        return { error: 'That chat id already exists.' };
+      }
+      request.log.error({ err }, 'chat create failed');
+      reply.code(503);
+      return { error: 'Could not create a chat right now.' };
+    }
+  });
+
+  app.patch<{ Params: { id: string }; Body: { title?: unknown } }>(
+    '/chats/:id',
+    async (request, reply) => {
+      const ownerKey = ownerOr400(request, reply);
+      if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+      const title = normalizeTitle(request.body?.title);
+      if (!title) {
+        reply.code(400);
+        return { error: 'title is required' };
+      }
+      // A malformed id can match nothing; answering 404 here keeps Postgres
+      // from raising `invalid input syntax for type uuid` as a 500.
+      if (!isChatId(request.params.id)) {
+        reply.code(404);
+        return { error: 'Chat not found.' };
+      }
+      try {
+        const chat = await renameChat(getSupabase(), ownerKey, request.params.id, title);
+        if (!chat) {
+          reply.code(404);
+          return { error: 'Chat not found.' };
+        }
+        return chat;
+      } catch (err) {
+        request.log.error({ err }, 'chat rename failed');
+        reply.code(503);
+        return { error: 'Could not rename that chat right now.' };
+      }
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>('/chats/:id', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    if (!isChatId(request.params.id)) {
+      reply.code(404);
+      return { error: 'Chat not found.' };
+    }
+    try {
+      // SOFT (R4): chat_messages and session_state rows survive untouched.
+      const archived = await archiveChat(getSupabase(), ownerKey, request.params.id);
+      if (!archived) {
+        reply.code(404);
+        return { error: 'Chat not found.' };
+      }
+      reply.code(204);
+      return null;
+    } catch (err) {
+      request.log.error({ err }, 'chat delete failed');
+      reply.code(503);
+      return { error: 'Could not delete that chat right now.' };
+    }
   });
 
   app.post<{ Body: ChatBody }>('/chat', async (request, reply) => {
@@ -342,6 +490,29 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       request.log,
     ).catch((err) => {
       request.log.warn({ err }, 'qa_logs write failed — reply already sent');
+    });
+
+    // Sidebar ordering and titles (Phase 1 multi-chat). Both are DETACHED for
+    // the same reason qa_logs is: nothing reads them back this turn, and a
+    // member's answer must never wait on cosmetics.
+    //
+    // The owner key is read from the optional header, never required: the
+    // /chat request contract is unchanged, and a client that predates this
+    // deploy (or the widget's create round trip having failed) still gets a
+    // working conversation — it just cannot self-heal a missing chats row.
+    let ownerKey: string | undefined;
+    try {
+      ownerKey = resolveOwnerKey(request);
+    } catch {
+      ownerKey = undefined;
+    }
+    void touchChat(sb, session_id, ownerKey, request.log).then(() => {
+      // A title is generated ONCE, from the first exchange — `history` was
+      // read BEFORE this turn, so an empty one means this was it. The write
+      // itself is conditional on title IS NULL, so this cannot overwrite a
+      // rename or race a second turn.
+      if (history.length > 0) return;
+      return generateChatTitle(sb, oa, session_id, userMessage, result.output, request.log);
     });
 
     // `tool_calls` is trace evidence: which tools actually fired, in order.

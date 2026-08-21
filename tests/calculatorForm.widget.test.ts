@@ -294,8 +294,18 @@ describe('5.3 validation and dismissal', () => {
     await openChat(FLIP_REPLY);
     (control('purchase_price') as HTMLInputElement).value = '350000';
     clickText('Show advanced options');
-    // The session id is the one legitimate write; form values must never persist.
+    // What this pins is that FORM VALUES never persist. The chat registry
+    // (device key, active chat, sidebar state) is legitimate widget storage
+    // ruled in Phase 1 — it is enumerated here rather than pattern-matched so
+    // a new key cannot slip in under a prefix.
+    const REGISTRY_KEYS = [
+      'james-bot-session',
+      'james-bot-device',
+      'james-bot-active-chat',
+      'james-bot-sidebar-collapsed',
+      'james-bot-legacy-adopted',
+    ];
     const keys = setItem.mock.calls.map((c) => String(c[0]));
-    expect(keys.filter((k) => k !== 'james-bot-session')).toEqual([]);
+    expect(keys.filter((k) => REGISTRY_KEYS.indexOf(k) === -1)).toEqual([]);
   });
 });

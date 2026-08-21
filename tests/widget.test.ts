@@ -108,9 +108,14 @@ describe('I5: the input box renders without waiting on any network call', () => 
     (window as any).createJamesBot({ apiUrl: 'https://api.example.com', target: '#james-bot' });
 
     expect(fetchMock, 'history was never requested').toHaveBeenCalled();
-    expect(order, 'a network call was issued before the input box existed').toEqual([
-      'fetch-after-render',
-    ]);
+    // ORDERING, not call count. Mount now issues two non-blocking calls
+    // (history for the remembered chat, and the chat list); what this pins is
+    // that EVERY one of them happens after the input box exists.
+    expect(order.length, 'no network call was issued at mount').toBeGreaterThan(0);
+    expect(
+      order.filter((entry) => entry !== 'fetch-after-render'),
+      'a network call was issued before the input box existed',
+    ).toEqual([]);
   });
 
   it('renders the send button and the opening message locally, with no network reply', () => {
@@ -156,7 +161,13 @@ describe('I5: the input box renders without waiting on any network call', () => 
     expect(document.querySelectorAll('#james-bot .jb-chip'), 'chip row is back').toHaveLength(0);
     // Exactly one bubble on first load, and one input row. Nothing else.
     expect(document.querySelectorAll('#james-bot .jb-bubble')).toHaveLength(1);
-    expect(document.querySelectorAll('#james-bot button')).toHaveLength(1); // Send only
+    // Scoped to the CONVERSATION PANE. This asserted "1 button, Send only"
+    // against the whole widget until Phase 1 multi-chat added sidebar chrome
+    // (new-chat, collapse, per-row rename/delete). The intent being pinned is
+    // that the opening SCREEN is plain — no chip row, no numbered menu, no
+    // affordances competing with the message box — and that intent is
+    // unchanged; only the scope of "screen" moved.
+    expect(document.querySelectorAll('#james-bot .jb-main button')).toHaveLength(1); // Send only
   });
 
   it('the input accepts typed text while the network is down', () => {
@@ -497,7 +508,12 @@ describe('widget wiring', () => {
   it('a failed send offers Retry, which re-sends without duplicating the question', async () => {
     let attempt = 0;
     const fetchMock = vi.fn((url: string) => {
-      if (String(url).includes('/history')) return new Promise(() => {});
+      // /chats joined /history as a non-conversation call at mount (Phase 1
+      // multi-chat). This harness counts CONVERSATION attempts, so registry
+      // traffic is ignored here exactly as history already was.
+      if (String(url).includes('/history') || String(url).includes('/chats')) {
+        return new Promise(() => {});
+      }
       attempt++;
       if (attempt === 1) return Promise.reject(new Error('network down'));
       return Promise.resolve({ ok: true, json: async () => ({ output: 'Back online.' }) });

@@ -280,6 +280,53 @@
     '.jb-bar::after{display:none;}',
     '}',
     '@keyframes jb-fade{from{opacity:0;}to{opacity:1;}}',
+
+    /* --- Sidebar (Phase 1 multi-chat) --------------------------------------
+       The pane below the header splits into rail + conversation. The rail is
+       chrome: it uses the same glass tokens as the header so it reads as one
+       surface, and it never competes with the message box for attention. */
+    '.jb-body{display:flex;flex:1 1 auto;min-height:0;}',
+    '.jb-main{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;min-height:0;}',
+    '.jb-side{display:flex;flex-direction:column;width:216px;flex:0 0 216px;min-height:0;',
+    'border-right:1px solid var(--jb-glass-border);background:rgba(255,255,255,0.02);',
+    'transition:width 160ms var(--jb-ease),flex-basis 160ms var(--jb-ease);overflow:hidden;}',
+    /* Collapsed is width:0, not display:none — the rail animates shut and its
+       controls leave the tab order with it. */
+    '.jb-side-collapsed{width:0;flex-basis:0;border-right:none;}',
+    '.jb-side-top{padding:10px;flex:0 0 auto;}',
+    '.jb-new{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:9px;cursor:pointer;',
+    'font:inherit;font-size:12.5px;font-weight:650;color:var(--jb-on-accent);background:var(--jb-accent);',
+    'border:none;transition:background 140ms var(--jb-ease);}',
+    '.jb-new:hover{background:var(--jb-accent-hover);}',
+    '.jb-new:active{background:var(--jb-accent-pressed);}',
+    '.jb-side-list{flex:1 1 auto;overflow-y:auto;padding:0 6px 10px;min-height:0;}',
+    '.jb-chat-row{display:flex;align-items:center;gap:2px;border-radius:8px;margin-bottom:2px;}',
+    '.jb-chat-row:hover{background:rgba(255,255,255,0.05);}',
+    '.jb-chat-active{background:rgba(247,178,17,0.14);}',
+    '.jb-chat-open{flex:1 1 auto;min-width:0;text-align:left;background:none;border:none;cursor:pointer;',
+    'font:inherit;font-size:12.5px;color:var(--jb-text-secondary);padding:8px 6px;',
+    'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    '.jb-chat-active .jb-chat-open{color:var(--jb-text-primary);font-weight:600;}',
+    '.jb-chat-act{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px 5px;border-radius:6px;',
+    'color:var(--jb-text-tertiary);font:inherit;font-size:12px;line-height:1;opacity:0;',
+    'transition:opacity 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
+    /* Row actions appear on hover or keyboard focus — focus-within is what
+       keeps them reachable without a mouse. */
+    '.jb-chat-row:hover .jb-chat-act,.jb-chat-row:focus-within .jb-chat-act{opacity:1;}',
+    '.jb-chat-act:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
+    '.jb-chat-act:focus-visible{opacity:1;outline:2px solid var(--jb-accent);outline-offset:1px;}',
+    '.jb-chat-rename-input{flex:1 1 auto;min-width:0;font:inherit;font-size:12.5px;padding:6px;',
+    'border-radius:6px;border:1px solid var(--jb-glass-edge);background:var(--jb-bg-sunken);',
+    'color:var(--jb-text-primary);}',
+    '.jb-side-toggle{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px 6px;margin-right:2px;',
+    'border-radius:6px;color:var(--jb-text-tertiary);font:inherit;font-size:14px;line-height:1;}',
+    '.jb-side-toggle:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
+    '.jb-side-empty{padding:10px 8px;font-size:12px;color:var(--jb-text-tertiary);}',
+    /* Narrow hosts (a GHL lesson column) get the rail closed by default via
+       the same collapsed class the toggle uses; nothing here is layout-only. */
+    '@media (max-width:560px){.jb-side{position:absolute;z-index:3;height:100%;',
+    'background:var(--jb-bg-raised);box-shadow:0 8px 32px rgba(0,0,0,0.45);}',
+    '.jb-body{position:relative;}}',
   ].join('');
 
   function injectStyles() {
@@ -295,19 +342,90 @@
     return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
   }
 
-  function getSessionId() {
-    // Pre-existing per-browser session id so history survives a full reload.
-    // Predates this redesign and is out of its visual scope; no NEW state is
-    // stored. (See report on the §10 "no storage" tension.)
+  // --- Chat registry (Phase 1 multi-chat) ------------------------------------
+  //
+  // Replaces getSessionId(). One chat IS one session id: chat_messages and
+  // session_state are keyed on it verbatim, so switching chats isolates both
+  // the transcript AND the comps/ARV context with no server-side plumbing.
+  //
+  // Storage keys, all localStorage:
+  //   james-bot-device            'device:<uuid>' — the owner key (see below)
+  //   james-bot-active-chat       last active chat id, so a reload lands back
+  //   james-bot-sidebar-collapsed '1' when the rail is shut
+  //   james-bot-legacy-adopted    '1' once the pre-multi-chat session has been
+  //                               claimed, so adoption runs exactly ONCE
+  //   james-bot-session           LEGACY. Read once, at adoption. Never written
+  //                               again by this build.
+  var DEVICE_KEY = 'james-bot-device';
+  var ACTIVE_KEY = 'james-bot-active-chat';
+  var COLLAPSE_KEY = 'james-bot-sidebar-collapsed';
+  var ADOPTED_KEY = 'james-bot-legacy-adopted';
+  var LEGACY_KEY = 'james-bot-session';
+  var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  function storageGet(key) {
     try {
-      var key = 'james-bot-session';
-      var existing = window.localStorage.getItem(key);
-      if (existing) return existing;
-      var fresh = uuid();
-      window.localStorage.setItem(key, fresh);
-      return fresh;
+      return window.localStorage.getItem(key);
     } catch (e) {
-      return uuid();
+      return null; // Safari private mode / storage disabled — degrade, never throw.
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch (e) {
+      /* nothing to do: the chat still works, it just will not survive a reload */
+    }
+  }
+
+  /**
+   * The owner key. Unguessable and device-scoped ON PURPOSE (ruling R2):
+   * member_email is client-asserted and 'unknown' on ~18% of turns, so keying
+   * the chat LIST on it would let anyone enumerate another member's chats by
+   * guessing an address. This keeps today's exposure posture exactly — holding
+   * the key is the capability, same as holding a session id already is.
+   *
+   * PHASE 3 rewrites these values server-side to 'email:<verified-addr>' on
+   * first verified login per device, which is when chats become cross-device.
+   * Nothing here needs to change for that.
+   */
+  function getDeviceKey() {
+    var existing = storageGet(DEVICE_KEY);
+    if (existing && /^device:/.test(existing)) return existing;
+    var fresh = 'device:' + uuid();
+    storageSet(DEVICE_KEY, fresh);
+    return fresh;
+  }
+
+  /**
+   * The pre-multi-chat session id, read ONCE (W1). Returns null when there is
+   * nothing to adopt, when it has already been claimed, or when the stored id
+   * is one of the old non-uuid fallbacks ('sess-...'), which cannot be a uuid
+   * primary key. The flag is set by the caller once the attempt has been made,
+   * successful or not, so a failing server cannot cause repeat adoption.
+   */
+  function readLegacySessionOnce() {
+    if (storageGet(ADOPTED_KEY) === '1') return null;
+    var legacy = storageGet(LEGACY_KEY);
+    if (!legacy || !UUID_RE.test(legacy)) return null;
+    return legacy;
+  }
+
+  /**
+   * fetch that can only ever REJECT, never throw.
+   *
+   * The widget's founding rule is that no network call can break mounting, and
+   * `fetch` itself is a host-page global: a monkeypatched or hostile one can
+   * throw synchronously, and that throw would escape mount() and leave the
+   * member with no chat at all. A rejected promise routes into the same
+   * degradation paths every other failure uses.
+   */
+  function safeFetch(url, init) {
+    try {
+      return window.fetch(url, init);
+    } catch (e) {
+      return Promise.reject(e);
     }
   }
 
@@ -528,7 +646,12 @@
     var apiUrl = String(options.apiUrl == null ? '' : options.apiUrl).replace(/\/+$/, '');
     var targetSelector = options.target || '#james-bot';
     var memberEmail = options.memberEmail || 'unknown';
-    var sessionId = getSessionId();
+    // The owner key is per-device and long-lived; the chat id is per-chat and
+    // changes on every switch. `sessionId` is whatever chat is active right
+    // now — every /chat and /history call reads it at call time, never closes
+    // over it, so an in-flight request cannot post to the chat you just left.
+    var deviceKey = getDeviceKey();
+    var sessionId = null;
 
     function mount() {
       var target = document.querySelector(targetSelector);
@@ -547,10 +670,31 @@
       root.appendChild(orbs);
 
       var header = el('div', 'jb-head jb-glass');
+      var sideToggle = el('button', 'jb-side-toggle', {
+        type: 'button',
+        'aria-label': 'Toggle chat list',
+        'aria-expanded': 'true',
+        title: 'Chats',
+      });
+      sideToggle.textContent = '☰';
+      header.appendChild(sideToggle);
       header.appendChild(el('span', 'jb-dot', { 'aria-hidden': 'true' }));
       var title = el('span', 'jb-title');
       title.textContent = 'Ask James';
       header.appendChild(title);
+
+      // Rail + conversation. The list and the form move INSIDE .jb-main so the
+      // rail sits beside the whole conversation column rather than above it.
+      var body = el('div', 'jb-body');
+      var side = el('aside', 'jb-side', { 'aria-label': 'Your chats' });
+      var sideTop = el('div', 'jb-side-top');
+      var newChatBtn = el('button', 'jb-new', { type: 'button' });
+      newChatBtn.textContent = '+  New chat';
+      sideTop.appendChild(newChatBtn);
+      var sideList = el('div', 'jb-side-list', { role: 'list' });
+      side.appendChild(sideTop);
+      side.appendChild(sideList);
+      var main = el('div', 'jb-main');
 
       var list = el('div', 'jb-list', {
         role: 'log',
@@ -571,10 +715,27 @@
       form.appendChild(input);
       form.appendChild(send);
 
+      main.appendChild(list);
+      main.appendChild(form);
+      body.appendChild(side);
+      body.appendChild(main);
       root.appendChild(header);
-      root.appendChild(list);
-      root.appendChild(form);
+      root.appendChild(body);
       target.appendChild(root);
+
+      // Collapsed state is remembered per device (W3).
+      function applyCollapsed(collapsed) {
+        if (collapsed) side.classList.add('jb-side-collapsed');
+        else side.classList.remove('jb-side-collapsed');
+        side.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+        sideToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      }
+      applyCollapsed(storageGet(COLLAPSE_KEY) === '1');
+      sideToggle.addEventListener('click', function () {
+        var collapsed = !side.classList.contains('jb-side-collapsed');
+        applyCollapsed(collapsed);
+        storageSet(COLLAPSE_KEY, collapsed ? '1' : '0');
+      });
 
       // Scroll-anchoring: only follow new messages when the member is already
       // at the bottom, so a long answer can't yank them out of what they're
@@ -678,16 +839,481 @@
         };
       }
 
-      // Opening message: local and instant. The greeting and the pre-numbers
-      // disclaimer are static copy — a model can forget them, static text can't.
-      addBubble(OPENING_MESSAGE, 'bot');
-
+      // --- Per-chat state (Phase 1 multi-chat) -----------------------------
+      // Everything below that belongs to the CONVERSATION is cleared by
+      // resetChatState(). Registry state (chats, activeChatId, collapsed) is
+      // deliberately NOT — the sidebar must survive a switch.
       var busy = false;
       var started = false;
+      var chats = [];
+      var pendingNewChat = false; // W2: started, not yet sent into, no row yet
+      var renamingId = null;
+      /**
+       * Generation counter — bumped by every reset. Async callbacks capture
+       * the generation they began in and bail if it has moved.
+       *
+       * Aborting in-flight fetches is the first line of defence; this is the
+       * second, and it is the one that holds when AbortController is missing,
+       * when a response has already arrived and is merely queued behind a
+       * microtask, or when a .catch would otherwise paint a connection error
+       * into a chat the member has already left. Without it, chat A's answer
+       * lands in chat B — the exact leak W4 exists to close.
+       */
+      var generation = 0;
+      var inFlight = [];
+
+      /** Register a cancellable operation. Every network call in this widget goes through it. */
+      function beginOp() {
+        var op = {
+          gen: generation,
+          controller:
+            typeof window.AbortController === 'function' ? new window.AbortController() : null,
+          cleanup: null,
+        };
+        inFlight.push(op);
+        return op;
+      }
+
+      function endOp(op) {
+        var index = inFlight.indexOf(op);
+        if (index !== -1) inFlight.splice(index, 1);
+      }
+
+      /** True when this operation belongs to a chat the member has left. */
+      function stale(op) {
+        return op.gen !== generation;
+      }
+
+      /** The static welcome — local and instant, and re-shown on every reset. */
+      function showWelcome() {
+        addBubble(OPENING_MESSAGE, 'bot');
+      }
 
       function setBusy(state) {
         busy = state;
         send.disabled = state;
+      }
+
+      /**
+       * THE CHAT-SWITCH RESET (W4). One function, one explicit list — the
+       * variables are enumerated here rather than cleared at their use sites
+       * so that "what belongs to a chat" is answerable by reading one place.
+       *
+       * Deliberately NOT reset, each for a stated reason:
+       *   chats / activeChatId  registry, not conversation — the sidebar must
+       *                         still be there after the switch
+       *   sidebar collapsed     a device preference, not chat state
+       *   deviceKey             identity; survives every chat
+       *   apiUrl / memberEmail  mount configuration
+       *   busy/started/etc.     ARE reset, below
+       */
+      function resetChatState() {
+        // 1. Invalidate every callback that is already scheduled.
+        generation += 1;
+        // 2. Cancel in-flight network work and any timer it owns (the
+        //    calculator's 90s timeout, the thinking-copy interval).
+        for (var i = 0; i < inFlight.length; i++) {
+          var op = inFlight[i];
+          try {
+            if (op.cleanup) op.cleanup();
+          } catch (e) {
+            /* a cleanup must never block the rest of the reset */
+          }
+          try {
+            if (op.controller) op.controller.abort();
+          } catch (e) {
+            /* aborting an already-settled fetch throws in some engines */
+          }
+        }
+        inFlight.length = 0;
+        // 3. Transcript DOM. This is also what clears any open or half-filled
+        //    calculator form and the ARV pre-fill VALUES rendered into it —
+        //    that state lives only in those nodes (server-side it is keyed by
+        //    session_id, which is the chat id we are leaving).
+        list.innerHTML = '';
+        // 4. Pending/typing indicators: their rows went with the DOM above;
+        //    this clears the room-warming class they set on the ROOT, which
+        //    would otherwise persist into the next chat.
+        root.classList.remove('jb-busy');
+        // 5. Send lock.
+        busy = false;
+        send.disabled = false;
+        // 6. History-restore guard: the next chat must be allowed to repaint.
+        started = false;
+        // 7. Composer contents and its armed hint.
+        input.value = '';
+        form.classList.remove('jb-armed');
+        // 8. Scroll position.
+        list.scrollTop = 0;
+        // 9. Any half-open inline rename in the rail.
+        renamingId = null;
+        // 10. The welcome state the member should land in.
+        showWelcome();
+      }
+
+      // --- Chat registry plumbing -----------------------------------------
+
+      /**
+       * Every /chats call. The owner key rides a HEADER, never the query
+       * string: it is an unguessable bearer capability this phase, and query
+       * strings land in access logs, proxy logs and Referer headers.
+       */
+      function chatsApi(pathname, init) {
+        init = init || {};
+        var headers = { 'x-james-owner': deviceKey };
+        if (init.body) headers['content-type'] = 'application/json';
+        init.headers = headers;
+        return safeFetch(apiUrl + pathname, init).then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          if (res.status === 204) return null;
+          return res.json();
+        });
+      }
+
+      function persistActive(id) {
+        sessionId = id;
+        if (id) storageSet(ACTIVE_KEY, id);
+      }
+
+      function chatLabel(chat) {
+        return (chat && chat.title) || 'New chat';
+      }
+
+      /** One rail row: open, rename, delete. Rename swaps in an input in place. */
+      function chatRow(chat) {
+        var row = el('div', 'jb-chat-row', { role: 'listitem', 'data-chat-id': chat.id || '' });
+        if ((chat.id && chat.id === sessionId) || (chat.pending && pendingNewChat && !sessionId)) {
+          row.className += ' jb-chat-active';
+        }
+
+        if (renamingId && chat.id === renamingId) {
+          var field = el('input', 'jb-chat-rename-input', {
+            type: 'text',
+            'aria-label': 'Rename chat',
+          });
+          field.value = chatLabel(chat);
+          function commit(save) {
+            if (renamingId !== chat.id) return;
+            var next = field.value.trim();
+            renamingId = null;
+            if (save && next && next !== chat.title) submitRename(chat, next);
+            else renderSidebar();
+          }
+          field.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              commit(true);
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              commit(false);
+            }
+          });
+          field.addEventListener('blur', function () {
+            commit(true);
+          });
+          row.appendChild(field);
+          // Focus after the row is in the DOM, on the next frame — focusing a
+          // detached node is a no-op.
+          window.setTimeout(function () {
+            if (field.parentNode) field.focus();
+          }, 0);
+          return row;
+        }
+
+        var open = el('button', 'jb-chat-open', { type: 'button' });
+        open.textContent = chatLabel(chat);
+        open.setAttribute('title', chatLabel(chat));
+        open.addEventListener('click', function () {
+          if (chat.pending) return; // already here
+          switchToChat(chat.id);
+        });
+        row.appendChild(open);
+
+        if (!chat.pending) {
+          var rename = el('button', 'jb-chat-act', {
+            type: 'button',
+            'aria-label': 'Rename chat',
+            title: 'Rename',
+          });
+          rename.textContent = '✎';
+          rename.addEventListener('click', function () {
+            renamingId = chat.id;
+            renderSidebar();
+          });
+          row.appendChild(rename);
+
+          var del = el('button', 'jb-chat-act', {
+            type: 'button',
+            'aria-label': 'Delete chat',
+            title: 'Delete',
+          });
+          del.textContent = '✕';
+          del.addEventListener('click', function () {
+            // Only an EXPLICIT false cancels. A host without window.confirm
+            // must not silently make delete a dead control.
+            var answer = true;
+            try {
+              answer = window.confirm('Delete this chat? The conversation will be hidden.');
+            } catch (e) {
+              answer = true;
+            }
+            if (answer === false) return;
+            deleteChat(chat.id);
+          });
+          row.appendChild(del);
+        }
+        return row;
+      }
+
+      function renderSidebar() {
+        sideList.innerHTML = '';
+        var rows = chats.slice();
+        if (pendingNewChat) rows.unshift({ id: null, title: null, pending: true });
+        if (!rows.length) {
+          var empty = el('div', 'jb-side-empty');
+          empty.textContent = 'No chats yet.';
+          sideList.appendChild(empty);
+          return;
+        }
+        for (var i = 0; i < rows.length; i++) sideList.appendChild(chatRow(rows[i]));
+      }
+
+      function submitRename(chat, title) {
+        var previous = chat.title;
+        chat.title = title; // optimistic: the rail should not lag the keystroke
+        renderSidebar();
+        var op = beginOp();
+        chatsApi('/chats/' + encodeURIComponent(chat.id), {
+          method: 'PATCH',
+          body: JSON.stringify({ title: title }),
+        })
+          .catch(function () {
+            chat.title = previous; // server said no — put the old name back
+            if (!stale(op)) renderSidebar();
+          })
+          .then(function () {
+            endOp(op);
+          });
+      }
+
+      /** Repaint the transcript for whichever chat is active. Never gates the UI. */
+      function loadHistory() {
+        if (!sessionId) return;
+        var op = beginOp();
+        var init = { headers: { accept: 'application/json' } };
+        if (op.controller) init.signal = op.controller.signal;
+        safeFetch(apiUrl + '/history?session_id=' + encodeURIComponent(sessionId), init)
+          .then(function (res) {
+            return res.ok ? res.json() : null;
+          })
+          .then(function (data) {
+            if (stale(op)) return; // the member switched away mid-flight
+            if (!data || !data.messages || !data.messages.length) return;
+            if (started) return; // member got there first; don't reorder their chat
+            data.messages.forEach(function (m, idx) {
+              var handle = addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
+              handle.row.style.animationDelay = Math.min(idx * 40, 320) + 'ms';
+            });
+            list.scrollTop = list.scrollHeight;
+          })
+          .catch(function () {
+            /* history is a nicety — silence is the correct failure mode */
+          })
+          .then(function () {
+            endOp(op);
+          });
+      }
+
+      /** Switch chats: full reset, then repaint from the server (W4). */
+      function switchToChat(id) {
+        if (!id || id === sessionId) return;
+        resetChatState();
+        pendingNewChat = false;
+        persistActive(id);
+        renderSidebar();
+        loadHistory();
+      }
+
+      /**
+       * W2: "New chat" is LOCAL. It clears the pane and shows the welcome
+       * state without touching the server; the row is created on first send.
+       * Empty chats therefore cannot accumulate from idle clicking.
+       */
+      function startNewChat() {
+        resetChatState();
+        pendingNewChat = true;
+        sessionId = null;
+        renderSidebar();
+        input.focus();
+      }
+
+      /**
+       * The id to post with (W2 lazy creation) — SYNCHRONOUS on purpose.
+       *
+       * The row is not created by a round trip of its own: /chat already
+       * inserts it server-side when the id has no row yet and the request
+       * carries the owner header (touchChat's self-heal branch). So a pending
+       * chat mints its id here, the rail shows it immediately, and the first
+       * message creates the row as a side effect of being sent. One fewer
+       * round trip on the only latency path a member actually feels, and no
+       * failure mode where the create succeeds but the message does not.
+       */
+      function ensureChatId() {
+        if (sessionId) return sessionId;
+        var id = uuid();
+        pendingNewChat = false;
+        persistActive(id);
+        chats.unshift({ id: id, title: null });
+        renderSidebar();
+        return id;
+      }
+
+      /**
+       * W5: deleting the active chat falls back to the most recent remaining
+       * one; deleting the last one auto-creates per R5, so the member is never
+       * left staring at an empty rail.
+       */
+      function deleteChat(id) {
+        var wasActive = id === sessionId;
+        chats = chats.filter(function (chat) {
+          return chat.id !== id;
+        });
+        renderSidebar();
+        var op = beginOp();
+        chatsApi('/chats/' + encodeURIComponent(id), { method: 'DELETE' })
+          .catch(function () {
+            /* the row is already gone from the rail; a failed archive re-appears on reload */
+          })
+          .then(function () {
+            endOp(op);
+            if (!wasActive || stale(op)) return;
+            if (chats.length) {
+              switchToChat(chats[0].id);
+              return;
+            }
+            // Last chat deleted: R5 auto-create, so the sidebar is never empty.
+            resetChatState();
+            sessionId = null;
+            pendingNewChat = false;
+            chatsApi('/chats', { method: 'POST', body: JSON.stringify({}) })
+              .then(function (chat) {
+                if (!chat || !chat.id) throw new Error('no id');
+                chats = [chat];
+                persistActive(chat.id);
+                renderSidebar();
+              })
+              .catch(function () {
+                pendingNewChat = true;
+                renderSidebar();
+              });
+          });
+      }
+
+      /**
+       * W1 legacy adoption, exactly once. An existing member's
+       * 'james-bot-session' becomes the id of their first chat, so their
+       * history is still theirs after this deploy. It runs BEFORE the list
+       * call on purpose: GET /chats auto-creates when the owner has none
+       * (R5), so adopting second would leave the member with a blank chat
+       * pinned above their real history.
+       */
+      function adoptLegacy(legacyId) {
+        storageSet(ADOPTED_KEY, '1'); // once, whatever the outcome
+        return chatsApi('/chats', {
+          method: 'POST',
+          body: JSON.stringify({ id: legacyId }),
+        }).catch(function () {
+          /* 409 (already adopted) or a dead API — the list call decides what happens next */
+        });
+      }
+
+      /** No chat list available: keep the member typing anyway. */
+      function localFallback() {
+        if (sessionId) return;
+        var legacy = storageGet(LEGACY_KEY);
+        persistActive(legacy && UUID_RE.test(legacy) ? legacy : uuid());
+        renderSidebar();
+        loadHistory();
+      }
+
+      function bootChats() {
+        var op = beginOp();
+        var legacyId = readLegacySessionOnce();
+
+        // OPTIMISTIC REPAINT. We almost always know which chat the member was
+        // last in — the stored active id, or (first load after this deploy)
+        // their legacy session. Painting it now means history does not wait on
+        // the chat-list round trip; the list below only reconciles. A remembered
+        // chat that turns out to be gone is corrected there.
+        var remembered = storageGet(ACTIVE_KEY);
+        if (!remembered && legacyId) remembered = legacyId;
+        if (remembered && UUID_RE.test(remembered)) {
+          persistActive(remembered);
+          chats = [{ id: remembered, title: null }];
+          renderSidebar();
+          loadHistory();
+        }
+
+        // Legacy adoption runs BEFORE the list call (W1): GET /chats
+        // auto-creates when the owner has none (R5), so adopting second would
+        // pin a blank chat above the member's real history.
+        var listing = legacyId
+          ? adoptLegacy(legacyId).then(function () {
+              return chatsApi('/chats', { method: 'GET' });
+            })
+          : chatsApi('/chats', { method: 'GET' });
+
+        listing
+          .then(function (rows) {
+            if (stale(op)) return;
+            var server = Array.isArray(rows) ? rows : (rows && rows.chats) || [];
+            // THE RACE THAT MATTERS: a member can type and send before this
+            // list arrives. `started` says they did. Taking over the active
+            // chat here would repaint another conversation's history over the
+            // message they just sent, so the list is merged for the rail and
+            // the active chat is left exactly where they put it.
+            if (started || sessionId) {
+              var known = false;
+              for (var j = 0; j < server.length; j++) {
+                if (server[j].id === sessionId) known = true;
+              }
+              chats = known || !sessionId ? server : [{ id: sessionId, title: null }].concat(server);
+              renderSidebar();
+              return;
+            }
+            chats = server;
+            if (!chats.length) {
+              localFallback();
+              return;
+            }
+            var preferred = storageGet(ACTIVE_KEY);
+            var chosen = null;
+            for (var i = 0; i < chats.length; i++) {
+              if (chats[i].id === preferred) chosen = chats[i];
+            }
+            // Newest activity first, so chats[0] is where a returning member
+            // most likely left off.
+            var target = (chosen || chats[0]).id;
+            if (target === sessionId) {
+              renderSidebar(); // already painted optimistically; just show the rail
+              return;
+            }
+            // The remembered chat is gone (deleted on another device, or this
+            // is a first visit). switchToChat resets whatever was painted.
+            if (sessionId) {
+              switchToChat(target);
+              return;
+            }
+            persistActive(target);
+            renderSidebar();
+            loadHistory();
+          })
+          .catch(function () {
+            if (!stale(op)) localFallback();
+          })
+          .then(function () {
+            endOp(op);
+          });
       }
 
       function showError(failedText) {
@@ -957,6 +1583,15 @@
         setBusy(true);
         var removePending = addPending();
         var settled = false;
+        // Tracked like a message send: a chat switch aborts the request and
+        // clears the 90s timer below, and `stale` stops the result painting
+        // into the wrong chat.
+        var op = beginOp();
+        op.cleanup = function () {
+          settled = true; // a reset is not a settle-with-message; just stop the timers
+          if (timer) clearTimeout(timer);
+          removePending();
+        };
 
         /** Clear the calculating state exactly once, whichever way this ends. */
         function settle(message) {
@@ -971,8 +1606,7 @@
 
         // Bounded: fetch has no timeout of its own, so a hung connection would
         // otherwise leave the button spinning indefinitely.
-        var controller =
-          typeof window.AbortController === 'function' ? new window.AbortController() : null;
+        var controller = op.controller;
         var timer = window.setTimeout(function () {
           if (controller) controller.abort();
           settle('That took too long to come back. Try Calculate again.');
@@ -980,8 +1614,12 @@
 
         var init = {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', 'x-james-owner': deviceKey },
           body: JSON.stringify({
+            // Read at CALL time, never closed over at render time: a form card
+            // rendered in chat A can only ever submit into chat A because the
+            // reset removes the card, but reading late keeps that true by
+            // construction rather than by timing.
             session_id: sessionId,
             member_email: memberEmail,
             form_submission: { calculator: spec.calculator, values: values },
@@ -989,7 +1627,7 @@
         };
         if (controller) init.signal = controller.signal;
 
-        fetch(apiUrl + '/chat', init)
+        safeFetch(apiUrl + '/chat', init)
           .then(function (res) {
             return res.json().then(
               function (data) {
@@ -1002,6 +1640,7 @@
             );
           })
           .then(function (result) {
+            if (stale(op)) return; // the member switched chats mid-calculation
             if (settled) return; // timed out already; ignore the late arrival
             // A 400 is a validation answer about THIS form — keep the form up
             // with the message on it rather than dropping a dead-end error
@@ -1024,9 +1663,14 @@
             addBubble(result.data.output || "I didn't catch that — try again.", 'bot', {
               animate: true,
             });
+            bumpActiveChat();
           })
           .catch(function () {
+            if (stale(op)) return;
             settle("Couldn't reach the calculator — try Calculate again in a few seconds.");
+          })
+          .then(function () {
+            endOp(op);
           });
       }
 
@@ -1041,35 +1685,66 @@
         if (!skipEcho) addBubble(text, 'user');
         setBusy(true);
         var removeTyping = addTyping();
+        // Tracked so a chat switch can abort the request AND stop the thinking
+        // indicator's interval; `stale` then stops every callback below from
+        // painting into a chat the member has left.
+        var op = beginOp();
+        op.cleanup = removeTyping;
 
-        fetch(apiUrl + '/chat', {
+        // The chat id for a "New chat" (W2) is minted here, on first send —
+        // never on the click itself, so idle clicking cannot spawn rows.
+        var chatId = ensureChatId();
+        var init = {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', 'x-james-owner': deviceKey },
           body: JSON.stringify({
             message: text,
-            session_id: sessionId,
+            session_id: chatId,
             member_email: memberEmail,
           }),
-        })
+        };
+        if (op.controller) init.signal = op.controller.signal;
+
+        safeFetch(apiUrl + '/chat', init)
           .then(function (res) {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return res.json();
           })
           .then(function (data) {
+            if (stale(op) || !data) return;
             removeTyping();
             addBubble(data.output || "I didn't catch that — try again.", 'bot', { animate: true });
             // The model decides a form is warranted; the response carries the
             // descriptor. Rendered after the reply so the copy reads first.
             if (data.render_form) renderCalculatorForm(data.render_form);
+            bumpActiveChat();
           })
           .catch(function () {
+            if (stale(op)) return;
             removeTyping();
             showError(text);
           })
           .then(function () {
+            endOp(op);
+            if (stale(op)) return; // the reset already restored the input
             setBusy(false);
             input.focus();
           });
+      }
+
+      /**
+       * Move the active chat to the top of the rail after a completed turn,
+       * mirroring the server's last_message_at bump so the order the member
+       * sees does not wait for the next reload.
+       */
+      function bumpActiveChat() {
+        for (var i = 0; i < chats.length; i++) {
+          if (chats[i].id !== sessionId) continue;
+          var chat = chats.splice(i, 1)[0];
+          chats.unshift(chat);
+          renderSidebar();
+          return;
+        }
       }
 
       form.addEventListener('submit', function (event) {
@@ -1093,33 +1768,25 @@
         }
       });
 
+      newChatBtn.addEventListener('click', function () {
+        startNewChat();
+      });
+
       input.focus();
 
-      // Restore prior turns AFTER the UI is up and interactive. Memory lives on
-      // the server, so without this a reload or GHL lesson swap shows an empty
-      // chat while the bot still remembers the deal — confusing. This fetch can
-      // hang or fail with no consequence: it never gates rendering, never
-      // disables the input, and never surfaces an error to the member.
-      fetch(apiUrl + '/history?session_id=' + encodeURIComponent(sessionId), {
-        headers: { accept: 'application/json' },
-      })
-        .then(function (res) {
-          return res.ok ? res.json() : null;
-        })
-        .then(function (data) {
-          if (!data || !data.messages || !data.messages.length) return;
-          if (started) return; // member got there first; don't reorder their chat
-          data.messages.forEach(function (m, idx) {
-            var handle = addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
-            // Gentle stagger on a bulk repaint (capped); harmless under
-            // reduced-motion, which overrides to a plain fade.
-            handle.row.style.animationDelay = Math.min(idx * 40, 320) + 'ms';
-          });
-          list.scrollTop = list.scrollHeight;
-        })
-        .catch(function () {
-          /* history is a nicety — silence is the correct failure mode */
-        });
+      // The opening message and the rail are painted SYNCHRONOUSLY, before any
+      // network call. Nothing below can gate the input box: bootChats resolves
+      // the chat list and repaints history afterwards, and every one of its
+      // failure paths ends in a usable chat (localFallback).
+      showWelcome();
+      renderSidebar();
+      // Belt and braces: the chat box is already usable at this point, and
+      // nothing about resolving the chat list is allowed to change that.
+      try {
+        bootChats();
+      } catch (e) {
+        localFallback();
+      }
     }
 
     // Initial mount (DOM may or may not be ready when the loader runs).

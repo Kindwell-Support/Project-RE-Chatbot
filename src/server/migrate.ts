@@ -62,6 +62,13 @@ export async function ensureCompsTables(supabase: SupabaseClient): Promise<boole
       sqlFile: 'sql/add_census_cache.sql',
       degradation: 'no demographics caching (every lookup re-queries the Census API)',
     },
+    {
+      table: 'chats',
+      sqlFile: 'sql/chats.sql',
+      degradation:
+        'the sidebar is unavailable (GET /chats answers 503) and members fall back to a single ' +
+        'local chat — conversations still work and nothing is lost, but multi-chat is dark',
+    },
   ];
   for (const { table, column, sqlFile, degradation } of checks) {
     const target = column ? `${table}.${column}` : table;
