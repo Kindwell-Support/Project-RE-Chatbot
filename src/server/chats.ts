@@ -250,14 +250,20 @@ export async function touchChat(
       //
       // WHAT THIS FLAG ACTUALLY MEANS — read before adding a caller: it means
       // "this session ALREADY HAD HISTORY when its first chat row was
-      // written". It does NOT mean "was adopted". Today those coincide,
-      // because W1 legacy adoption is the only way a row is created for a
-      // session that already holds messages. If any future path ever creates
-      // a row for a session with prior history — a merge, a repair script, an
-      // import, a Phase 3 backfill — those rows are flagged silently, Phase 3
-      // skips them in the owner_key rewrite, and a member loses a REAL chat.
-      // Any such path must either pass hadPriorHistory:false deliberately or
-      // this flag must stop being inferred.
+      // written". It does NOT mean "was adopted". W1 legacy adoption is the
+      // usual way those coincide, but INSPECTOR proved they can come apart:
+      // a NEW chat whose first write is skipped (the C1 cap, a transient
+      // insert failure) acquires history and is then flagged on turn 2.
+      //
+      // PURPOSE CHANGED (operator ruling, N1): all three phases now ship
+      // together, so owner_key is 'email:<verified>' from the very first
+      // write and there is no Phase 3 rewrite pass for this flag to gate.
+      // That retires the failure the flag was defending against — a
+      // false positive no longer costs a member a real chat — and demotes
+      // it to an AUDIT column. Keep it, keep the inference: it is the only
+      // record of which rows were written over a session that already had
+      // a transcript, which is exactly what an audit of the migration will
+      // want. Do not read it as "adopted" in any new code.
       adopted_legacy: options.hadPriorHistory === true,
     });
     if (insertError) throw insertError;

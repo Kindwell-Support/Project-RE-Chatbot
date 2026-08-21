@@ -36,12 +36,12 @@ create index if not exists chats_owner_active_idx
 -- length), never client-asserted, because a self-declared flag would simply
 -- be omitted by anyone planting a session id.
 --
--- Why it must exist before Phase 3 and cannot be added later: /history already
--- serves any transcript to anyone holding its UUID, so planting a known
--- session id discloses nothing new TODAY. But Phase 3 rewrites owner_key to
--- 'email:<verified-addr>', which would hand that transcript permanently into
--- the planter's authenticated account. Phase 3 skips adopted_legacy rows in
--- the rewrite — and which rows were adopted is unknowable retroactively.
+-- PURPOSE CHANGED (operator ruling, N1): all three phases now ship together,
+-- so owner_key is 'email:<verified-addr>' from the first write and there is
+-- no Phase 3 rewrite pass for this flag to gate. It is now an AUDIT column —
+-- the only record of which rows were written over a session that already held
+-- a transcript. Kept deliberately: the inference is cheap, and which rows
+-- those were is unknowable retroactively.
 alter table chats add column if not exists adopted_legacy boolean not null
   default false;
 
