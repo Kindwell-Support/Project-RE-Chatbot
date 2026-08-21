@@ -167,6 +167,81 @@ not a correctness one.
 
 ---
 
+## 5b. RE-VERIFICATION OF MASON'S FIXES — `2724895`, all four findings CLOSED
+
+Verified independently, not on MASON's report. Suite `15 failed | 1680 passed`
+(the 15 are the inherited comps reds), stable across 3 consecutive runs.
+
+**BUG-021 / F4 — CLOSED.** 19 independent checks, 0 failures. Real quoted
+sha256 ETag matching the bundle bytes; `Cache-Control: no-cache` retained;
+304 on a matching `If-None-Match` with an empty body **and the validator carried
+forward**; weak comparison (`W/"x"` ≡ `"x"`), comma-lists and `*` all honoured;
+ETag identical across two independently built app instances and instance B
+honours instance A's tag (the load-balancer case); ETag changes when the bundle
+bytes change, and the old tag against the new bundle correctly gets a full 200.
+
+*The wrong-subject check, which F6 flagged in the original run:* all three arms
+were exercised — match→304, **mismatch→200 with the full body**, absent→200. The
+304 branch demonstrably executes, and so does the not-304 branch, so "304
+returned" is distinguished from "304 returned unconditionally".
+
+*End to end:* my original unchanged F4.5 script went from `[200, 200, 200]`
+(3 full 35,542-byte downloads) to **`[200, 304, 304]`** on the unbusted
+GHL-style embed. The measured defect is gone at the member path.
+
+**BUG-022 / F5 — CLOSED.** `.catch()` present at the call site; removing it goes
+red on 2 assertions including *"BUG-022: touchChat carries the guarantee at its
+OWN call site"*. The sweep test means a third detached promise cannot land
+without a handler.
+
+**chatsFakes gap 1 — CLOSED.** My original unchanged probe now returns
+`[Q1, A1, Q2, A2]`, matching production; it returned the exact inverse before.
+
+**chatsFakes gap 2 — CLOSED.** The guard now fires with the fake's own message at
+links 1, 2, 3 and 4 (`.eq(...).is(...)` — the original miss — included), with a
+control confirming a fully-implemented chain still passes, so the guard traps
+misses without trapping everything.
+
+### Mutation results — every assertion reintroduced against its own defect
+| mutant | verdict |
+|---|---|
+| ETag header withheld | RED — 5 assertions |
+| 304 branch deleted | RED — 3 |
+| **unconditional 304** (vacuity trap) | RED — 3, incl. "NON-matching ETag: 200 and the full bundle" |
+| per-boot validator, not content-derived | RED — 3, incl. "TWO app instances serve the SAME ETag" |
+| verbatim comparison, not weak | RED — 3 |
+| `.catch()` removed | RED — 2 |
+| `.order()` accumulation broken | RED — 5, on the transcript-order case |
+| proxy escape after link 1 | RED — 1, "link 3 — after a filter" |
+
+No regression in the Phase 1 battery re-run at this SHA (A3/A5/A7/A8, E4 all
+green). The fake fix is visible in my own evidence: `E4.p1.order` now reads
+chronologically where it previously read reversed, and passed **both** before and
+after — which is what a correctly split subject should do.
+
+### Three corrections to my own work this round, all wrong-subject class
+1. **My mutation driver reported "RED (defect caught)" for all eight mutants
+   while every run printed "Tests no tests".** It matched on `Test Files 1
+   failed` and called a *collection failure* an assertion firing — the exact
+   error this pass exists to catch, committed by the tool doing the catching.
+   Fixed to require that tests RAN and ≥1 FAILED, plus a green baseline per
+   target before mutating.
+2. **The first `.order()` mutation was not faithful.** Keeping the *last* sort
+   key leaves `id desc`, which still sorts correctly now that ids are modelled,
+   so it proved nothing. The faithful reintroduction drops the `id` tiebreaker —
+   the condition rows sharing a `created_at` exist to resolve — and that one goes
+   red on the transcript-order assertion.
+3. **The intermittent "no tests" was my driver**, racing a file rewrite against
+   vitest's module resolution — not a repo defect. Six rapid unmutated runs were
+   clean, as were 3 full-suite runs.
+
+**OBSERVATION for CI.** A collection failure reports as
+`Test Files N failed / Tests no tests`. Anything that reads only the failed-file
+count will mistake "nothing ran" for "tests failed" — the same trap as above. A
+CI gate should assert a non-zero passed count, not merely absence of failures.
+
+---
+
 ## 6. CARRIED INTO PHASE 2 (`feat/phase2-ui`, off `c709bc6`)
 
 1. **Verify every re-point MASON announces by reintroducing the original defect
