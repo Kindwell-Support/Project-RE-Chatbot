@@ -56,27 +56,11 @@ describe('STEP 2 — D1 / N1 / N2 and the fake NOT NULL gap', () => {
     for (const r of out) expect(r).toEqual([]);
   });
 
-  it('N1: a genuine legacy session IS flagged; a genuinely new chat is NOT', async () => {
-    const a = makeChatsSupabase([]);
-    await touchChat(a.client as never, NEW_CHAT, OWNER, undefined, stamp, { hadPriorHistory: true });
-    expect(a.inserts[0]?.adopted_legacy, 'a genuine adoption was not flagged').toBe(true);
-    const b = makeChatsSupabase([]);
-    await touchChat(b.client as never, NEW_CHAT, OWNER, undefined, stamp, { hadPriorHistory: false });
-    expect(b.inserts[0]?.adopted_legacy, 'a new chat was flagged').toBe(false);
-  });
-
-  it('N1 OBSERVATION: a new chat is FALSELY flagged if its first write was skipped', async () => {
-    const atCap = Array.from({ length: MAX_ACTIVE_CHATS }, (_, i) =>
-      chatRecord({ id: `5${String(i).padStart(7, '0')}-4444-4444-8444-444444444444`, owner_key: OWNER }));
-    const fake = makeChatsSupabase(atCap);
-    await touchChat(fake.client as never, NEW_CHAT, OWNER, undefined, stamp, { hadPriorHistory: false });
-    expect(fake.inserts.filter((r: any) => r?.id === NEW_CHAT).length,
-      'precondition: the cap did not skip the insert').toBe(0);
-    fake.rows[0].archived_at = '2026-08-21T00:00:00.000Z';
-    await touchChat(fake.client as never, NEW_CHAT, OWNER, undefined, stamp, { hadPriorHistory: true });
-    expect(fake.inserts.find((r: any) => r?.id === NEW_CHAT)?.adopted_legacy,
-      'if false, the hole is closed and this should assert that instead').toBe(true);
-  });
+  // N1's two cases are DELETED, not re-pointed. RULING 2 removed the
+  // adopted_legacy column and the inference behind it, so there is no adjacent
+  // behaviour left for them to assert — a re-point here would be a test about
+  // nothing, kept alive because it used to pass. The mis-flagging observation
+  // they proved survives in the report as the reason the column was dropped.
 
   it('N2: the self-heal insert is capped, and the WARN is scoped to its MESSAGE', async () => {
     const atCap = Array.from({ length: MAX_ACTIVE_CHATS }, (_, i) =>
@@ -94,10 +78,24 @@ describe('STEP 2 — D1 / N1 / N2 and the fake NOT NULL gap', () => {
       'the skip was silent, or the WARN is not identifiable by its message').toBe(1);
   });
 
-  it('FINDING: the fake coerces an undefined owner_key that Postgres would reject', async () => {
+  it('FINDING-025 FLIPPED: the fake now REJECTS a null owner_key as Postgres does', async () => {
+    // This was a sentinel recording a gap: String(row.owner_key) coerced
+    // undefined to the literal "undefined", so the fake accepted a row that
+    // Postgres NOT NULL rejects. MASON closed it — the fake now answers 23502.
+    // Flipped to verify the fix rather than deleted, per the FINDING-013
+    // pattern: the case that found the gap becomes the case that keeps it shut.
     const fake = makeChatsSupabase([]);
-    await createChat(fake.client as never, undefined as never);
-    expect(fake.rows[0]?.owner_key,
-      'if no longer "undefined", the fake now models NOT NULL').toBe('undefined');
+    await expect(createChat(fake.client as never, undefined as never)).rejects.toBeTruthy();
+    expect(fake.rows.length, 'a row with no owner survived the rejection').toBe(0);
+  });
+
+  it('CONTROL: a VALID owner_key is still accepted — the fake did not start rejecting everything', async () => {
+    // Without this the sentinel above passes against a fake that refuses all
+    // inserts, which would look like a fix and be a broken double. Subject:
+    // the fake's discrimination, not merely its rejection.
+    const fake = makeChatsSupabase([]);
+    const chat = await createChat(fake.client as never, OWNER);
+    expect(chat?.id, 'a valid create no longer returns a row').toBeTruthy();
+    expect(fake.rows.length, 'a valid owner_key was rejected too').toBe(1);
   });
 });
