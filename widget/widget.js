@@ -316,6 +316,27 @@
     '.jb-chat-row:hover .jb-chat-act,.jb-chat-row:focus-within .jb-chat-act{opacity:1;}',
     '.jb-chat-act:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
     '.jb-chat-act:focus-visible{opacity:1;outline:2px solid var(--jb-accent);outline-offset:1px;}',
+
+    /* S2.1 — ON TOUCH THE ACTIONS ARE ALWAYS VISIBLE.
+       opacity:0 revealed on :hover/:focus-within means that on a phone rename
+       and delete are not merely hard to reach, they are UNREACHABLE: there is
+       no hover, and a tap on the row switches chat rather than focusing it. A
+       coarse pointer gets no hover affordance to lose, so nothing is traded. */
+    '@media (hover: none),(pointer: coarse){.jb-chat-act{opacity:1;}}',
+    /* S2.2 — the in-widget delete confirmation. Replaces the row contents the
+       way the rename input already does, so the control is anchored ON the row
+       it acts on and needs no space for a title it cannot fit at 216px. */
+    '.jb-chat-confirm{display:flex;align-items:center;gap:4px;width:100%;min-width:0;padding:3px 4px 3px 6px;}',
+    '.jb-chat-confirm-q{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
+    'font-size:12px;color:var(--jb-text-secondary);}',
+    '.jb-chat-confirm-yes,.jb-chat-confirm-no{flex:0 0 auto;font:inherit;font-size:11.5px;font-weight:700;',
+    'border-radius:6px;padding:5px 8px;cursor:pointer;border:1px solid transparent;}',
+    '.jb-chat-confirm-yes{background:var(--jb-danger);color:#200906;border-color:var(--jb-danger);}',
+    '.jb-chat-confirm-no{background:transparent;color:var(--jb-text-secondary);border-color:var(--jb-glass-border);}',
+    '.jb-chat-confirm-no:hover{color:var(--jb-text-primary);border-color:var(--jb-text-secondary);}',
+    '.jb-chat-confirm-yes:focus-visible,.jb-chat-confirm-no:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:1px;}',
+    /* A destructive control needs a real tap target where there is no cursor. */
+    '@media (hover: none),(pointer: coarse){.jb-chat-confirm-yes,.jb-chat-confirm-no{padding:8px 10px;}}',
     '.jb-chat-rename-input{flex:1 1 auto;min-width:0;font:inherit;font-size:12.5px;padding:6px;',
     'border-radius:6px;border:1px solid var(--jb-glass-edge);background:var(--jb-bg-sunken);',
     'color:var(--jb-text-primary);}',
@@ -924,6 +945,14 @@
       var placeholderId = null;
       var renamingId = null;
       /**
+       * S2.2 — the row holding an open delete confirmation, or null.
+       *
+       * A SCALAR, like renamingId and placeholderId: only one destructive
+       * question can be open at a time, so a second one cannot be left
+       * hanging off-screen where the member cannot see what they agreed to.
+       */
+      var confirmingId = null;
+      /**
        * S1.2 — the transcript skeleton, held in ONE variable so there is
        * exactly one thing to tear down. Conversation state: it belongs to the
        * chat whose history is being fetched, so it is enumerated in
@@ -1059,6 +1088,11 @@
         list.scrollTop = 0;
         // 9. Any half-open inline rename in the rail.
         renamingId = null;
+        // 9a. Any open delete confirmation (S2.2). Same reasoning as the
+        //     rename, with more at stake: a half-taken DESTRUCTIVE question
+        //     must not survive into another chat, where the row it refers to
+        //     may not even be on screen any more.
+        confirmingId = null;
         // 9b. FINDING-019: the placeholder is per-chat state, so clearing it
         //     belongs HERE rather than on the next line of each caller. Every
         //     caller that wants one sets it AFTER this returns.
@@ -1155,6 +1189,63 @@
           return row;
         }
 
+        // S2.2: the confirm REPLACES the row, exactly as the rename input
+        // does. window.confirm is gone - a native dialog inside a GHL SPA
+        // embed is fragile, reads as the page breaking rather than as the
+        // widget asking, and mobile browsers can suppress it outright, which
+        // would have made delete a silently dead control.
+        if (confirmingId && chat.id === confirmingId) {
+          // The GROUP and the confirming BUTTON must not share a label: a
+          // duplicate makes the pair ambiguous to a screen reader, and any
+          // selector for the action would match the wrapper first.
+          var ask = el('div', 'jb-chat-confirm', {
+            role: 'group',
+            'aria-label': 'Delete confirmation',
+          });
+          var askQ = el('span', 'jb-chat-confirm-q');
+          askQ.textContent = 'Delete?';
+          ask.appendChild(askQ);
+
+          var yes = el('button', 'jb-chat-confirm-yes', {
+            type: 'button',
+            'aria-label': 'Confirm delete chat',
+          });
+          yes.textContent = 'Delete';
+          yes.addEventListener('click', function () {
+            confirmingId = null;
+            deleteChat(chat.id);
+          });
+          ask.appendChild(yes);
+
+          var no = el('button', 'jb-chat-confirm-no', {
+            type: 'button',
+            'aria-label': 'Cancel delete chat',
+          });
+          no.textContent = 'Cancel';
+          no.addEventListener('click', function () {
+            confirmingId = null;
+            renderSidebar();
+          });
+          ask.appendChild(no);
+
+          // Escape backs out, matching the rename input's contract.
+          ask.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            confirmingId = null;
+            renderSidebar();
+          });
+
+          row.appendChild(ask);
+          // Focus the confirming action on the next frame - focusing a
+          // detached node is a no-op. Reaching it already took one deliberate
+          // activation, and Escape is the way out.
+          window.setTimeout(function () {
+            if (yes.parentNode) yes.focus();
+          }, 0);
+          return row;
+        }
+
         var open = el('button', 'jb-chat-open', { type: 'button' });
         open.textContent = chatLabel(chat);
         open.setAttribute('title', chatLabel(chat));
@@ -1172,6 +1263,7 @@
           });
           rename.textContent = '✎';
           rename.addEventListener('click', function () {
+            confirmingId = null; // one open question at a time
             renamingId = chat.id;
             renderSidebar();
           });
@@ -1184,16 +1276,13 @@
           });
           del.textContent = '✕';
           del.addEventListener('click', function () {
-            // Only an EXPLICIT false cancels. A host without window.confirm
-            // must not silently make delete a dead control.
-            var answer = true;
-            try {
-              answer = window.confirm('Delete this chat? The conversation will be hidden.');
-            } catch (e) {
-              answer = true;
-            }
-            if (answer === false) return;
-            deleteChat(chat.id);
+            // Step ONE of two. Nothing destructive happens here. This control
+            // sits beside the one you tap to SWITCH chats, and on touch both
+            // are now permanently visible (S2.1) - so without a second step a
+            // single mis-tap would archive a conversation.
+            renamingId = null; // one open question at a time
+            confirmingId = chat.id;
+            renderSidebar();
           });
           row.appendChild(del);
         }

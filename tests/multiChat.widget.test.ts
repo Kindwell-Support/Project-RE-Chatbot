@@ -140,16 +140,56 @@ async function send(text: string) {
   await tick();
 }
 
+/**
+ * Delete is TWO deliberate steps now (S2.2), because this control sits beside
+ * the one you tap to switch chats and on touch both are permanently visible.
+ * Step one only opens the question; step two is the destructive act.
+ */
+function rowById(id: string | null): Element {
+  const found = document.querySelector(`#james-bot .jb-chat-row[data-chat-id="${id}"]`);
+  if (!found) throw new Error(`no rail row for chat ${id}`);
+  return found;
+}
+
+function clickDelete(row: Element) {
+  const id = row.getAttribute('data-chat-id');
+  row.querySelector<HTMLButtonElement>('[aria-label="Delete chat"]')!.click();
+  // Step one re-renders the whole rail, so the node above is now detached and
+  // the confirmation lives on its replacement. Re-query by chat id rather than
+  // reusing the stale reference.
+  const confirm = rowById(id).querySelector<HTMLButtonElement>(
+    '[aria-label="Confirm delete chat"]',
+  );
+  if (!confirm) throw new Error('no confirm step appeared - delete is one tap from destructive');
+  confirm.click();
+}
+
 function clickRowByLabel(label: string) {
   const row = railRows().find((r) => (r.querySelector('.jb-chat-open')?.textContent ?? '') === label);
   row!.querySelector<HTMLButtonElement>('.jb-chat-open')!.click();
 }
 
+/**
+ * RE-POINTED (Phase 2 S2.2). This used to stub window.confirm to `true` so the
+ * delete path would run. The widget no longer calls it: a native dialog inside
+ * a GHL SPA embed is fragile and reads as the page breaking rather than as the
+ * widget asking, and mobile browsers may suppress it entirely, which would make
+ * delete a silently dead control.
+ *
+ * The stub is KEPT and inverted into a tripwire. Deleting it would leave
+ * nothing asserting that the native dialog stays gone, and a regression to
+ * window.confirm would then pass every case in this file — jsdom's own confirm
+ * returns undefined, and the old code treated anything but an explicit false as
+ * consent, so the deletes would still go through and look correct.
+ */
+let confirmSpy: ReturnType<typeof vi.fn>;
+
 beforeEach(() => {
   document.body.innerHTML = '';
   window.localStorage.clear();
   vi.restoreAllMocks();
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  confirmSpy = vi.fn(() => true);
+  vi.stubGlobal('confirm', confirmSpy);
 });
 
 afterEach(() => {
@@ -311,9 +351,10 @@ describe('T5: deleting a chat', () => {
     expect(activeRow()?.textContent, 'chat A was not active to begin with').toContain('Chat A');
 
     const row = railRows().find((r) => (r.textContent ?? '').includes('Chat A'))!;
-    row.querySelector<HTMLButtonElement>('[aria-label="Delete chat"]')!.click();
+    clickDelete(row);
     await tick();
 
+    expect(confirmSpy, 'a native dialog is back').not.toHaveBeenCalled();
     expect(railLabels(), 'the deleted chat is still in the rail').toEqual(['Chat B']);
     expect(activeRow()?.textContent, 'the fallback chat is not active').toContain('Chat B');
     expect(
@@ -328,9 +369,10 @@ describe('T5: deleting a chat', () => {
     await tick();
 
     const row = railRows()[0];
-    row.querySelector<HTMLButtonElement>('[aria-label="Delete chat"]')!.click();
+    clickDelete(row);
     await tick();
 
+    expect(confirmSpy, 'a native dialog is back').not.toHaveBeenCalled();
     expect(
       server.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/chats')),
       'a replacement row was written for a chat nobody has spoken in',
@@ -342,7 +384,28 @@ describe('T5: deleting a chat', () => {
   });
 
   it('a cancelled confirm deletes nothing', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => false));
+    // RE-POINTED (S2.2): the cancel is now the widget's own Cancel button
+    // rather than window.confirm returning false. Same intent, same subject —
+    // that a declined confirmation issues no DELETE and leaves the rail whole.
+    const server = makeServer({ chats: [{ id: CHAT_A, title: 'Chat A' }, { id: CHAT_B, title: 'Chat B' }] });
+    boot(server.fetchMock);
+    await tick();
+
+    const id = railRows()[0].getAttribute('data-chat-id');
+    railRows()[0].querySelector<HTMLButtonElement>('[aria-label="Delete chat"]')!.click();
+    rowById(id).querySelector<HTMLButtonElement>('[aria-label="Cancel delete chat"]')!.click();
+    await tick();
+
+    expect(server.calls.filter((c) => c.method === 'DELETE'), 'delete fired despite cancel').toHaveLength(0);
+    expect(railLabels()).toEqual(['Chat A', 'Chat B']);
+    expect(confirmSpy, 'a native dialog is back').not.toHaveBeenCalled();
+  });
+
+  it('STEP ONE ALONE DELETES NOTHING - the defect the two-step exists to stop', async () => {
+    // The re-points above would all pass against a widget that deleted on the
+    // FIRST tap and merely happened to render a confirm afterwards. This is
+    // the case that distinguishes them: after step one and nothing else, the
+    // chat must still be there and no DELETE may have been issued.
     const server = makeServer({ chats: [{ id: CHAT_A, title: 'Chat A' }, { id: CHAT_B, title: 'Chat B' }] });
     boot(server.fetchMock);
     await tick();
@@ -350,8 +413,17 @@ describe('T5: deleting a chat', () => {
     railRows()[0].querySelector<HTMLButtonElement>('[aria-label="Delete chat"]')!.click();
     await tick();
 
-    expect(server.calls.filter((c) => c.method === 'DELETE'), 'delete fired despite cancel').toHaveLength(0);
-    expect(railLabels()).toEqual(['Chat A', 'Chat B']);
+    expect(
+      server.calls.filter((c) => c.method === 'DELETE'),
+      'one tap archived a conversation',
+    ).toHaveLength(0);
+    expect(server.chats, 'the row was archived on the first tap').toHaveLength(2);
+    // Precondition: step one really did happen, so the absence above is not
+    // the silence of a button that does nothing at all.
+    expect(
+      railRows()[0].querySelector('[aria-label="Confirm delete chat"]'),
+      'step one did not open the confirmation',
+    ).not.toBeNull();
   });
 });
 

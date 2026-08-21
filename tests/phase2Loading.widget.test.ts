@@ -229,18 +229,17 @@ describe('T-P2.2 — the rail distinguishes loading / empty / error', () => {
     expect(railText()).not.toContain('No chats yet');
   });
 
-  it('EMPTY fallback: "No chats yet" is UNREACHABLE, which is the finding', async () => {
-    // Not an oversight, and worth pinning so nobody "fixes" it back.
+  it('EMPTY fallback: no BOOT, ERROR or RETRY path reaches "No chats yet"', async () => {
+    // SCOPE CORRECTED. An earlier version of this case claimed the copy was
+    // unreachable outright. That claim was too strong and the case could not
+    // have caught it being wrong: it sampled only the boot, error and retry
+    // paths, so it was measuring "these four states" while asserting "every
+    // state". The delete path does reach a zero-row rail — see the
+    // characterisation case below, and BUG-024.
     //
-    // R6b mints a placeholder the moment an empty list resolves, and every
-    // other path keeps the active chat in the rail, so the rendered row count
-    // is never zero. Combined with the loading state, that means the
-    // .jb-side-empty branch can no longer fire AT ALL through the UI — and in
-    // the pre-fix build the loading window was the only time it ever did.
-    // Every appearance of that copy a member ever saw was a false one.
-    //
-    // Asserted as the strongest form of the slice's claim: the copy shows in
-    // NO reachable state, not merely in fewer of them.
+    // What is true, and what this now asserts, is still the substance of S1.1:
+    // across every path where the rail LOADS, R6b's placeholder or the
+    // preserved active chat always occupies it, so the copy never appears.
     const server = makeServer({
       chats: [{ id: CHAT_A, title: 'Deal in Tacoma' }],
       history: { [CHAT_A]: [] },
@@ -263,12 +262,66 @@ describe('T-P2.2 — the rail distinguishes loading / empty / error', () => {
     await send('a message, so the member holds a real chat');
     await sample(); // active chat kept in the rail despite an empty server list
 
-    expect(seen, '"No chats yet" surfaced in a reachable state').toEqual([0, 0, 0, 0]);
+    expect(seen, '"No chats yet" surfaced on a load path').toEqual([0, 0, 0, 0]);
     // Precondition: the rail was really being rendered throughout, so the
     // zeroes above are not the silence of a widget that drew nothing.
     expect(chatRows().length, 'the rail is empty — the assertion above is vacuous').toBeGreaterThan(
       0,
     );
+  });
+
+  it('CHARACTERISATION (BUG-024): deleting the last chat DOES reach a zero-row rail', async () => {
+    // Not a defence of this behaviour — a record of it, pinned so the ruling on
+    // R-1 is taken against a measured fact rather than my earlier assertion.
+    //
+    // deleteChat removes the row and renders OPTIMISTICALLY, but the
+    // replacement placeholder is only minted in the .then after the DELETE
+    // round trip. For that whole round trip the rail has zero rows, and R6b's
+    // "the rail is never empty" does not hold. Today .jb-side-empty fills the
+    // gap with "No chats yet" — which is itself premature, since the archive
+    // has not been confirmed yet.
+    //
+    // WHEN THE FIX LANDS (mint the fallback synchronously) this case must be
+    // rewritten to assert a placeholder row appears with no empty frame. It is
+    // expected to change; that is the point of it.
+    const waiting: Array<(v: unknown) => void> = [];
+    const fetchMock = vi.fn((url: string, init?: any) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const u = String(url);
+      if (u.includes('/history')) return Promise.resolve(json(200, { messages: [] }));
+      if (u.endsWith('/chats') && method === 'GET') {
+        return Promise.resolve(
+          json(200, [{ id: CHAT_A, title: 'Only chat', created_at: 'x', last_message_at: 'x' }]),
+        );
+      }
+      if (u.includes('/chats/') && method === 'DELETE') {
+        return new Promise((resolve) => waiting.push(resolve as (v: unknown) => void));
+      }
+      return Promise.resolve(json(404, {}));
+    });
+    boot(fetchMock);
+    await tick();
+    expect(chatRows().length, 'precondition: exactly one chat to delete').toBe(1);
+
+    document
+      .querySelector<HTMLButtonElement>('#james-bot [aria-label="Delete chat"]')!
+      .click();
+    // Step one re-renders the rail, so the confirmation is on a fresh node.
+    document
+      .querySelector<HTMLButtonElement>('#james-bot [aria-label="Confirm delete chat"]')!
+      .click();
+    await tick(2);
+
+    // THE WINDOW. Both assertions describe current behaviour, not desired.
+    expect(chatRows().length, 'the zero-row window has closed on its own').toBe(0);
+    expect(emptyCopy().length, 'nothing fills the gap during the delete round trip').toBe(1);
+
+    waiting.splice(0).forEach((r) => r({ ok: true, status: 204, json: async () => null }));
+    await tick();
+
+    // And it does heal, which is why this is a flash and not a dead end.
+    expect(chatRows().length, 'the placeholder never arrived').toBe(1);
+    expect(emptyCopy().length).toBe(0);
   });
 
   it('ERROR (network): says so, offers retry, and does NOT say "No chats yet"', async () => {
