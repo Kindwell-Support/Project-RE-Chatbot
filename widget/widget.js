@@ -277,6 +277,7 @@
        setCalculating/renderPending). */
     '.jb-pending{animation:jb-fade 220ms var(--jb-ease) both;}',
     '.jb-bar::after,.jb-spin{animation:none!important;}',
+    '.jb-skel::after{animation:none!important;display:none;}',
     '.jb-bar::after{display:none;}',
     '}',
     '@keyframes jb-fade{from{opacity:0;}to{opacity:1;}}',
@@ -322,6 +323,46 @@
     'border-radius:6px;color:var(--jb-text-tertiary);font:inherit;font-size:14px;line-height:1;}',
     '.jb-side-toggle:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
     '.jb-side-empty{padding:10px 8px;font-size:12px;color:var(--jb-text-tertiary);}',
+
+    /* --- Honest loading (S1.1/S1.2/S1.3) -----------------------------------
+       Three states, three appearances. The rail used to collapse all three
+       onto the empty copy, so a member with chats was told they had none for
+       as long as the request took. A skeleton is deliberately inert: no text
+       to misread, no control to click, and aria-hidden so a screen reader is
+       not handed three meaningless rows (the list carries aria-busy instead). */
+    '.jb-skel-row{display:flex;align-items:center;padding:8px 6px;margin-bottom:2px;}',
+    '.jb-skel{height:9px;border-radius:5px;background:rgba(255,255,255,0.09);',
+    'position:relative;overflow:hidden;display:block;}',
+    '.jb-skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);',
+    'background:linear-gradient(90deg,transparent,rgba(255,255,255,0.13),transparent);',
+    'animation:jb-sweep 1500ms var(--jb-ease) infinite;}',
+    /* Widths carried by MODIFIER classes, not :nth-child — a skeleton may sit
+       below real rows or an error notice, and positional selectors would
+       re-shuffle the widths depending on what happened to precede them. */
+    '.jb-skel-a{width:82%;}.jb-skel-b{width:64%;}.jb-skel-c{width:47%;}',
+    '.jb-skel-b::after{animation-delay:150ms;}',
+    '.jb-skel-c::after{animation-delay:300ms;}',
+    '.jb-side-error{padding:10px 8px;font-size:12px;line-height:1.45;color:var(--jb-text-secondary);}',
+    '.jb-side-retry{margin-top:8px;background:transparent;border:1px solid var(--jb-accent);',
+    'color:var(--jb-accent);border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;',
+    'font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
+    '.jb-side-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
+    '.jb-side-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
+
+    /* Transcript skeleton: the SHAPE of a restored conversation — alternating
+       sides, varied line counts — rather than a spinner, so the pane reads as
+       "your conversation is coming back" instead of "something is happening". */
+    '.jb-hist-skel{display:flex;flex-direction:column;gap:12px;}',
+    '.jb-hist-line{display:flex;}',
+    '.jb-hist-line.jb-hist-right{justify-content:flex-end;}',
+    '.jb-hist-block{max-width:70%;border-radius:var(--jb-radius);padding:13px 15px;',
+    'background:var(--jb-bot-bg);border:1px solid var(--jb-bot-border);',
+    'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;',
+    'display:flex;flex-direction:column;gap:8px;min-width:130px;}',
+    '.jb-hist-right .jb-hist-block{background:rgba(247,178,17,0.10);',
+    'border:1px solid rgba(247,178,17,0.18);border-top-right-radius:5px;',
+    'border-top-left-radius:var(--jb-radius);}',
+    '.jb-hist-block .jb-skel{height:11px;}',
     /* Narrow hosts (a GHL lesson column) get the rail closed by default via
        the same collapsed class the toggle uses; nothing here is layout-only. */
     '@media (max-width:560px){.jb-side{position:absolute;z-index:3;height:100%;',
@@ -852,6 +893,24 @@
       var started = false;
       var chats = [];
       /**
+       * S1.1 — the rail has THREE states, not two.
+       *
+       * `chats.length === 0` was painted as "No chats yet" from the moment of
+       * mount, BEFORE /chats had been asked. For a returning member with a
+       * full sidebar that is not a slow UI, it is a false statement, and it
+       * held for the entire request (measured at 618ms locally).
+       *
+       *   'loading'  not asked yet, or asked and still out
+       *   'ready'    asked and answered — an empty list here really IS empty
+       *   'error'    asked and failed, which is NOT the same as empty
+       *
+       * REGISTRY state, so like `chats` it is deliberately NOT in
+       * resetChatState: it describes the chat LIST, which outlives any one
+       * conversation. Clearing it on a switch would flip a rail that has
+       * already loaded back to skeletons on every chat change.
+       */
+      var chatsState = 'loading';
+      /**
        * R6a/R6b: THE placeholder. Non-null means `sessionId` names a chat that
        * has no database row yet — one mechanism serving all three first-chat
        * cases (an empty list, "+ New chat", and W1 legacy adoption), because
@@ -864,6 +923,13 @@
        */
       var placeholderId = null;
       var renamingId = null;
+      /**
+       * S1.2 — the transcript skeleton, held in ONE variable so there is
+       * exactly one thing to tear down. Conversation state: it belongs to the
+       * chat whose history is being fetched, so it is enumerated in
+       * resetChatState below.
+       */
+      var historySkeleton = null;
       /**
        * Generation counter — bumped by every reset. Async callbacks capture
        * the generation they began in and bail if it has moved.
@@ -900,6 +966,25 @@
         return op.gen !== generation;
       }
 
+      /**
+       * The member has committed content to this chat (S1.2).
+       *
+       * The skeleton comes down HERE as well as in loadHistory's .then because
+       * those are two different moments: the fetch can still be out when the
+       * member sends, and a skeleton left standing above their own message
+       * claims their conversation is still loading while they are already
+       * having it.
+       *
+       * This is not a second reset path (P2) — nothing is reset. It is the one
+       * place that records "this chat now has member content", and a skeleton
+       * is by definition the stand-in for content that has not arrived, so the
+       * two move together or they drift apart.
+       */
+      function markStarted() {
+        started = true;
+        clearHistorySkeleton();
+      }
+
       /** The static welcome — local and instant, and re-shown on every reset. */
       function showWelcome() {
         addBubble(OPENING_MESSAGE, 'bot');
@@ -918,6 +1003,10 @@
        * Deliberately NOT reset, each for a stated reason:
        *   chats                 registry, not conversation — the sidebar must
        *                         still be there after the switch
+       *   chatsState            registry for the same reason (S1.1): it
+       *                         describes the LIST, not this conversation.
+       *                         Resetting it would send an already-loaded rail
+       *                         back to skeletons on every chat switch.
        *   sidebar collapsed     a device preference, not chat state
        *   deviceKey             identity; survives every chat
        *   apiUrl / memberEmail  mount configuration
@@ -947,6 +1036,13 @@
         //    that state lives only in those nodes (server-side it is keyed by
         //    session_id, which is the chat id we are leaving).
         list.innerHTML = '';
+        // 3b. FINDING-019 again, for the history skeleton (S1.2): the NODE
+        //     went with the innerHTML above, but the REFERENCE did not. A live
+        //     reference to a detached node makes the next clearHistorySkeleton
+        //     a silent no-op — it would null out its own handle and leave the
+        //     NEXT chat's skeleton on screen forever. Enumerated here rather
+        //     than cleared at a call site, per the rule this list exists for.
+        historySkeleton = null;
         // 4. Pending/typing indicators: their rows went with the DOM above;
         //    this clears the room-warming class they set on the ROOT, which
         //    would otherwise persist into the next chat.
@@ -1104,19 +1200,129 @@
         return row;
       }
 
+      /** One inert placeholder row: nothing to read, nothing to click. */
+      function skeletonRow(variant) {
+        var row = el('div', 'jb-skel-row', { 'aria-hidden': 'true' });
+        row.appendChild(el('span', 'jb-skel jb-skel-' + variant));
+        return row;
+      }
+
+      /**
+       * S1.3 — what the rail says when the list could not be fetched.
+       *
+       * The old code had no such branch: a 503 or a dead network fell through
+       * to the same "No chats yet" an empty account sees, which tells a member
+       * their chats are GONE when they are merely unreachable.
+       */
+      function chatsErrorNotice() {
+        var box = el('div', 'jb-side-error', { role: 'status' });
+        var line = el('div');
+        line.textContent = "Couldn't load your chats.";
+        box.appendChild(line);
+        var retry = el('button', 'jb-side-retry', { type: 'button' });
+        retry.textContent = 'Try again';
+        retry.addEventListener('click', function () {
+          refreshChatList();
+        });
+        box.appendChild(retry);
+        return box;
+      }
+
       function renderSidebar() {
         sideList.innerHTML = '';
+        sideList.setAttribute('aria-busy', chatsState === 'loading' ? 'true' : 'false');
         var rows = chats.slice();
         // R6d: a placeholder sorts to the top until it becomes real; after the
         // first send it takes its place in normal last_message_at order.
         if (placeholderId) rows.unshift({ id: placeholderId, title: null, pending: true });
-        if (!rows.length) {
+
+        // The failure is reported ABOVE whatever rows we do have, not only
+        // when the rail is empty: the boot catch leaves the member holding a
+        // placeholder, so rows.length is 1 and an empty-only branch would
+        // never fire — the failure would be silent in exactly the case that
+        // produces it.
+        if (chatsState === 'error') sideList.appendChild(chatsErrorNotice());
+
+        for (var i = 0; i < rows.length; i++) sideList.appendChild(chatRow(rows[i]));
+
+        if (chatsState === 'loading') {
+          // Skeletons go AFTER any real rows. During a load the member may
+          // already hold a placeholder and that row is theirs — it must not be
+          // displaced by a guess at what else is coming.
+          var variants = ['a', 'b', 'c'];
+          for (var s = 0; s < variants.length; s++) {
+            sideList.appendChild(skeletonRow(variants[s]));
+          }
+          return;
+        }
+
+        // 'ready' and genuinely empty — the ONLY state this copy is true in.
+        //
+        // And in practice that state is UNREACHABLE: R6b mints a placeholder
+        // the instant an empty list resolves, and every other path keeps the
+        // active chat in `rows`, so the rail always has at least one. Which is
+        // the finding, not an oversight — in the pre-fix build this branch
+        // could only ever fire during the loading window, so every appearance
+        // of "No chats yet" a member ever saw was a false one.
+        //
+        // Retained as a defensive fallback rather than deleted: if a future
+        // path ever leaves no active chat, a rail that says nothing is worse
+        // than one that says this. It is not a state the UI can currently
+        // produce, and no test claims otherwise.
+        if (chatsState === 'ready' && !rows.length) {
           var empty = el('div', 'jb-side-empty');
           empty.textContent = 'No chats yet.';
           sideList.appendChild(empty);
-          return;
         }
-        for (var i = 0; i < rows.length; i++) sideList.appendChild(chatRow(rows[i]));
+      }
+
+      /**
+       * S1.3 retry — re-fetch the LIST and nothing else.
+       *
+       * Deliberately NOT bootChats. Boot decides which chat is active, and
+       * re-running that decision here would yank a member out of the chat they
+       * are already in — its empty-list branch calls startPlaceholder, which
+       * resets the pane outright. A retry has to repair the rail without
+       * touching the conversation, so this writes `chats` and nothing else.
+       *
+       * The cost, stated: a member whose boot failed stays in the placeholder
+       * the catch gave them rather than being moved to their most recent chat.
+       * The rail shows the real list, one click away. Non-destructive beats
+       * clever here.
+       */
+      function refreshChatList() {
+        chatsState = 'loading';
+        renderSidebar();
+        var op = beginOp();
+        chatsApi('/chats', { method: 'GET' })
+          .then(function (rows) {
+            if (stale(op)) return;
+            var server = Array.isArray(rows) ? rows : (rows && rows.chats) || [];
+            // Never drop the chat the member is actually IN — the same rule
+            // bootChats applies on its `started` branch. Without it, a retry
+            // that arrives while the list is momentarily empty (deleted from
+            // another device) would erase the live chat from the rail while
+            // the member sits in it.
+            //
+            // Only for a REAL chat: a placeholder has no row yet and is
+            // rendered from placeholderId by renderSidebar, so adding it to
+            // `chats` as well would draw it twice.
+            var keepActive = sessionId && sessionId !== placeholderId;
+            for (var i = 0; i < server.length; i++) {
+              if (server[i].id === sessionId) keepActive = false;
+            }
+            chats = keepActive ? [{ id: sessionId, title: null }].concat(server) : server;
+            chatsState = 'ready';
+            renderSidebar();
+          })
+          .catch(function () {
+            if (stale(op)) return;
+            chatsState = 'error';
+            renderSidebar();
+          })
+          .then(function () {
+            endOp(op);
+          });
       }
 
       function submitRename(chat, title) {
@@ -1137,18 +1343,89 @@
           });
       }
 
+      /** Take the transcript skeleton down. Idempotent — every path may call it. */
+      function clearHistorySkeleton() {
+        if (!historySkeleton) return;
+        var node = historySkeleton;
+        historySkeleton = null;
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
+
+      /**
+       * The shape of a conversation coming back, not a spinner: alternating
+       * sides and varied line counts, so the pane says "your history is
+       * loading" rather than "something is happening somewhere".
+       */
+      function showHistorySkeleton() {
+        clearHistorySkeleton();
+        var wrap = el('div', 'jb-hist-skel', { 'aria-hidden': 'true' });
+        var shapes = [
+          { side: '', lines: ['a', 'b'] },
+          { side: ' jb-hist-right', lines: ['c'] },
+          { side: '', lines: ['a', 'b', 'c'] },
+        ];
+        for (var i = 0; i < shapes.length; i++) {
+          var line = el('div', 'jb-hist-line' + shapes[i].side);
+          var block = el('div', 'jb-hist-block');
+          for (var n = 0; n < shapes[i].lines.length; n++) {
+            block.appendChild(el('span', 'jb-skel jb-skel-' + shapes[i].lines[n]));
+          }
+          line.appendChild(block);
+          wrap.appendChild(line);
+        }
+        historySkeleton = wrap;
+        list.appendChild(wrap);
+      }
+
+      /**
+       * S1.3 — /history failing used to be silent, on the reasoning that
+       * "history is a nicety". For a RETURNING member it is not: their
+       * conversation is simply missing, and silence is indistinguishable from
+       * an empty chat, so the failure reads as data loss.
+       *
+       * Suppressed once the member has started — they are having a live
+       * conversation, and an error about restoring an old one is noise they
+       * cannot act on and did not ask for.
+       */
+      function showHistoryError() {
+        if (started) return;
+        var handle = addBubble("Couldn't load this conversation's earlier messages.", 'bot');
+        var retry = el('button', 'jb-retry', { type: 'button' });
+        retry.textContent = 'Retry';
+        retry.addEventListener('click', function () {
+          if (handle.row.parentNode) handle.row.parentNode.removeChild(handle.row);
+          loadHistory();
+        });
+        handle.bubble.appendChild(retry);
+      }
+
       /** Repaint the transcript for whichever chat is active. Never gates the UI. */
       function loadHistory() {
         if (!sessionId) return;
         var op = beginOp();
+        // Guarded on `started` even though every call site today reaches here
+        // with it false (boot returns early when it is true; switchToChat
+        // resets it). That keeps S1.2's rule true BY CONSTRUCTION rather than
+        // by audit: a future caller cannot slip a skeleton in underneath a
+        // message the member has already sent.
+        if (!started) showHistorySkeleton();
+        // A chat switch inerts the skeleton through the same mechanism it uses
+        // for the thinking indicator and the calculator timer.
+        op.cleanup = clearHistorySkeleton;
         var init = { headers: { accept: 'application/json' } };
         if (op.controller) init.signal = op.controller.signal;
         safeFetch(apiUrl + '/history?session_id=' + encodeURIComponent(sessionId), init)
           .then(function (res) {
-            return res.ok ? res.json() : null;
+            // A non-ok response now THROWS rather than resolving to null. It
+            // used to share the "nothing to paint" path with an empty
+            // transcript, which is how a 503 came to look identical to a chat
+            // with no messages in it.
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
           })
           .then(function (data) {
             if (stale(op)) return; // the member switched away mid-flight
+            clearHistorySkeleton();
             if (!data || !data.messages || !data.messages.length) return;
             if (started) return; // member got there first; don't reorder their chat
             data.messages.forEach(function (m, idx) {
@@ -1158,10 +1435,17 @@
             list.scrollTop = list.scrollHeight;
           })
           .catch(function () {
-            /* history is a nicety — silence is the correct failure mode */
+            if (stale(op)) return;
+            clearHistorySkeleton();
+            showHistoryError();
           })
           .then(function () {
             endOp(op);
+            // Belt and braces. The two branches above each clear it, but a
+            // skeleton that outlives its fetch is worse than no skeleton at
+            // all — it claims a conversation is still arriving when nothing is
+            // coming — so no branch is trusted to be the only one.
+            if (!stale(op)) clearHistorySkeleton();
           });
       }
 
@@ -1293,6 +1577,7 @@
                 if (server[j].id === sessionId) known = true;
               }
               chats = known ? server : [{ id: sessionId, title: null }].concat(server);
+              chatsState = 'ready';
               renderSidebar();
               return;
             }
@@ -1302,6 +1587,7 @@
               // AT ALL — the legacy key belongs to a session that has already
               // been dealt with, or to a device that has moved on.
               chats = server;
+              chatsState = 'ready';
               var preferred = storageGet(ACTIVE_KEY);
               var chosen = null;
               for (var i = 0; i < chats.length; i++) {
@@ -1320,12 +1606,22 @@
             // Empty list: start clean. There is no second decision to race
             // any more — the widget never adopts a session id from storage.
             chats = [];
+            // Asked, answered, and genuinely empty — the one state in which
+            // "No chats yet" is a true statement.
+            chatsState = 'ready';
             startPlaceholder();
           })
           .catch(function () {
+            if (stale(op)) return;
+            // S1.3: the list could not be fetched. That is NOT an empty
+            // account, and the rail must not say it is.
+            chatsState = 'error';
             // No list: still give the member somewhere to type. Nothing is
             // written, so a dead API cannot create anything either.
-            if (!stale(op) && !sessionId) startPlaceholder();
+            if (!sessionId) startPlaceholder();
+            // startPlaceholder renders; if the member already has a chat we
+            // still need a repaint to show the failure.
+            else renderSidebar();
           })
           .then(function () {
             endOp(op);
@@ -1595,7 +1891,7 @@
        * is no branch where the member is left watching it.
        */
       function submitCalculatorForm(spec, values, dismiss, errorNode, setCalculating) {
-        started = true;
+        markStarted();
         setBusy(true);
         var removePending = addPending();
         var settled = false;
@@ -1698,7 +1994,7 @@
           input.value = '';
           form.classList.remove('jb-armed');
         }
-        started = true;
+        markStarted();
         if (!skipEcho) addBubble(text, 'user');
         setBusy(true);
         var removeTyping = addTyping();
