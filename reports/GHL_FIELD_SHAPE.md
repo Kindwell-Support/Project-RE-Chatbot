@@ -154,5 +154,17 @@ file's §7 arrays are the parser's pinned fixtures. Labels-not-keys means no
 mapping table today — if one ever appears mixed, the parser grows a documented
 mapping and the change is announced, not absorbed.
 
+## 9. UNSAMPLED: cleared-after-having-a-value (operator addendum)
+
+All three probes sampled NEVER-SET blanks. A field that HAD a value and was
+set back to empty — the path revocation actually takes if a retiree is handled
+by clearing rather than selecting Retired Member — was NOT sampled, and GHL
+sometimes represents cleared differently from never-set (id present with
+null, or with ""). Not inferred here: the parser DENIES on all four candidate
+representations (entry absent · value null · value "" · value whitespace-only)
+and each of the four is TESTED, not merely asserted, in tests/ghlAccess.test.ts.
+If a cleared contact becomes available, one probe run pins the real
+representation.
+
 Open item for Abdullah: the definitions-scope 401 (§1). Preferred close: add
 the scope, re-run the probe once, replace "inferred" with "confirmed" in §3.

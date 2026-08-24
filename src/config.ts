@@ -29,6 +29,17 @@ export interface AppConfig {
    * "Missing Key" page on every vintage).
    */
   censusApiKey?: string;
+  /**
+   * GHL access gating (Phase 3). Token OPTIONAL at S1: the client exists but
+   * no route is gated until S3, which is where assertRuntimeConfig grows the
+   * production requirement. The field id is a CONFIGURED VALUE, not a code
+   * literal (C-1): it is INFERRED from cross-contact probe evidence until the
+   * token gains the definitions scope, and a wrong id denies every member —
+   * env-overridable so fixing it never needs a deploy of new code.
+   */
+  ghlApiToken?: string;
+  ghlLocationId: string;
+  ghlCourseAccessFieldId: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -53,6 +64,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...(env.APIFY_TOKEN ? { apifyToken: env.APIFY_TOKEN } : {}),
     compsDailyRunCap: Number(env.COMPS_DAILY_RUN_CAP ?? 50),
     ...(env.CENSUS_API_KEY ? { censusApiKey: env.CENSUS_API_KEY } : {}),
+    ...(env.GHL_API_TOKEN ? { ghlApiToken: env.GHL_API_TOKEN } : {}),
+    ghlLocationId: env.GHL_LOCATION_ID ?? 'EDY094ip0U3HwMFQYsVy',
+    ghlCourseAccessFieldId: env.GHL_COURSE_ACCESS_FIELD_ID ?? 'axyDeZQxj7gMCtV1FyxS',
   };
 }
 
