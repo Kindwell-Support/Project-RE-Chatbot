@@ -22,6 +22,16 @@ reclamation would reintroduce the corruption the lock prevents. The driver
 also verifies every restore left the target byte-equal to the pristine source
 and aborts on a second writer (INSPECTOR's tree_clean() equivalent, adopted).
 
+**READ-SIDE PROTECTION (L-1/L-2): the lock protects writers from each other
+and does nothing for readers.** A read-only measurement — a plain suite run, a
+browser pass — can sample inside the window between a holder's mutations,
+where fifteen seconds of stability is a gap, not quiescence. Before ANY
+measurement: `python tools/qa/mutation_lock.py status` (exit 0 free / 2 held,
+holder named) and decline to start if held. Around EVERY measurement: bracket
+with `python tools/qa/mutation_lock.py hash <paths>` before and after — if the
+hashes differ the tree moved mid-measurement; DISCARD, do not report. Both
+rigs use this one implementation.
+
 **Run mutate.py IN THE BACKGROUND — that is the default, foreground is the
 exception.** The run outgrew a 10-minute foreground window at 32 mutations and
 the set only grows; a foreground timeout kills it mid-mutation (the sidecar

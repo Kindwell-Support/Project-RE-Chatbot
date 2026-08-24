@@ -113,3 +113,64 @@ def release():
         os.remove(LOCK_PATH)
     except OSError:
         pass
+
+
+# --- READ-SIDE PROTECTION (L-1, L-2) ---------------------------------------
+# The lock protects WRITERS from each other; these protect READERS. Both
+# incidents to date shared one shape: a stable-looking sample is not a
+# quiescent tree. INSPECTOR's corrupted run was read-only — fifteen seconds of
+# apparent stability was a gap between a holder's mutations, not quiescence
+# (its bracket capture: BEFORE deea23e7, AFTER d41d8cd9 — the md5 of an empty
+# diff; the file was restored mid-run). Neither the sidecar nor the
+# restore-verification catches that, because both are write-side.
+
+
+def status():
+    """L-1: report the lock WITHOUT acquiring. A reader — a plain suite run,
+    a browser pass, any measurement — checks this and declines to start,
+    rather than discovering corruption afterwards."""
+    held = _read_lock()
+    if not held:
+        return {'held': False}
+    return {
+        'held': True,
+        'rig': held.get('rig'),
+        'pid': held.get('pid'),
+        'pid_alive': _pid_alive(held.get('pid', -1)),
+        'target': held.get('target'),
+        'started': held.get('started'),
+        'driver_version': held.get('driver_version'),
+    }
+
+
+def tree_state_hash(paths):
+    """L-2: the measurement bracket. Hash `git diff` over the stated paths;
+    capture BEFORE a measurement and AFTER it, and if they differ the
+    measurement ran on a moving tree — DISCARD it, do not report it. Stays
+    useful after the lock exists: a reader can still sample inside the window
+    between a holder's mutations, where everything looks stable and is not."""
+    import hashlib
+    import subprocess
+    diff = subprocess.run('git diff -- ' + ' '.join(paths), shell=True,
+                          capture_output=True, text=True,
+                          encoding='utf-8', errors='replace').stdout
+    return hashlib.md5(diff.encode('utf-8')).hexdigest()
+
+
+if __name__ == '__main__':
+    # CLI so shell-side readers gate without writing Python:
+    #   python tools/qa/mutation_lock.py status        exit 0 free / 2 held
+    #   python tools/qa/mutation_lock.py hash <paths>  print the bracket hash
+    if len(sys.argv) >= 2 and sys.argv[1] == 'status':
+        st = status()
+        if not st['held']:
+            print('mutation lock: FREE')
+            sys.exit(0)
+        print('mutation lock: HELD by %(rig)s (pid %(pid)s, alive=%(pid_alive)s) '
+              'since %(started)s, target %(target)s, driver %(driver_version)s' % st)
+        sys.exit(2)
+    if len(sys.argv) >= 3 and sys.argv[1] == 'hash':
+        print(tree_state_hash(sys.argv[2:]))
+        sys.exit(0)
+    print('usage: mutation_lock.py status | hash <paths...>')
+    sys.exit(64)
