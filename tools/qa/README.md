@@ -8,6 +8,20 @@ python tools/qa/mutate.py          # do the tests catch the defects they target?
 python tools/qa/p1_identity.py     # are the P1 mechanisms still byte-identical?
 ```
 
+**THE MUTATION LOCK — one lock, both drivers, or it is not a lock.** Both
+rigs' drivers mutate the same target on a shared tree, and "the other rig had
+no uncommitted work when I started" is a point-in-time check that says nothing
+about them starting mid-cycle: INSPECTOR sampled between a restore and the
+next mutation and measured a phantom coverage gap (opacity:0.999 against a
+.toBe('1')). `mutation_lock.py` is the shared implementation — acquire before
+ANY write (sidecar recovery included), hold across every restore, release on
+clean exit only. Refusal names the holder and its start time. Stale locks
+(holder PID dead, or older than the stated 60 minutes) are reclaimed LOUDLY,
+and reclaiming restores the previous holder's sidecar first — silent
+reclamation would reintroduce the corruption the lock prevents. The driver
+also verifies every restore left the target byte-equal to the pristine source
+and aborts on a second writer (INSPECTOR's tree_clean() equivalent, adopted).
+
 **Run mutate.py IN THE BACKGROUND — that is the default, foreground is the
 exception.** The run outgrew a 10-minute foreground window at 32 mutations and
 the set only grows; a foreground timeout kills it mid-mutation (the sidecar

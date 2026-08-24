@@ -6,3 +6,4 @@ public/
 *.log
 widget/widget.js.pristine
 tools/qa/results/
+tools/qa/.mutation-lock

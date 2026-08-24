@@ -37,6 +37,12 @@ import io, json, os, re, subprocess, sys
 # mutation while it runs, not an empty file until exit.
 sys.stdout.reconfigure(line_buffering=True)
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mutation_lock import acquire as acquire_mutation_lock, release as release_mutation_lock
+
+RIG_ID = os.environ.get('QA_RIG', 'MASON')
+DRIVER_VERSION = 'mutate.py/lock-1'
+
 TARGET = 'widget/widget.js'
 
 # --- Durable results (operational ruling after FINDING-036) -----------------
@@ -406,6 +412,12 @@ def run():
 # happened: an interrupted driver left M12 on disk and the suite red). The
 # pristine source is persisted to a sidecar before any mutation; a leftover
 # sidecar on startup means the last run died dirty, and it is restored FIRST.
+# THE LOCK COVERS THE WHOLE CYCLE — acquired before ANY write (the sidecar
+# recovery below is itself a write to the target) and released after the final
+# restore. The window INSPECTOR fell into was between a restore and the next
+# mutation; holding across restores is the point.
+acquire_mutation_lock(rig=RIG_ID, target=TARGET, driver_version=DRIVER_VERSION)
+
 SIDECAR = TARGET + '.pristine'
 if os.path.exists(SIDECAR):
     print('RECOVERY: leftover %s found — restoring the pristine source first' % SIDECAR)
@@ -418,6 +430,18 @@ io.open(SIDECAR, 'w', encoding='utf-8', newline='').write(src)
 
 def restore():
     io.open(TARGET, 'w', encoding='utf-8', newline='').write(src)
+    # INSPECTOR's tree_clean() equivalent, adopted deliberately: a restore that
+    # does not leave the target byte-equal to the pristine source means a
+    # SECOND WRITER is active. Abort loudly — every measurement after this
+    # point would be non-deterministic, and a driver that keeps scoring under
+    # a second writer reports phantom gaps and phantom passes alike.
+    actual = io.open(TARGET, encoding='utf-8').read()
+    if actual != src:
+        print('ABORT: restore did not stick — a second writer is mutating %s. '
+              'All results from this cycle are unreliable.' % TARGET)
+        log.write({'row': 'abort', 'reason': 'second_writer_detected', 'at': _now()})
+        release_mutation_lock()
+        sys.exit(3)
 
 
 pristine_artifact = build_artifact()
@@ -481,6 +505,7 @@ os.remove(SIDECAR)  # a clean exit leaves no sidecar; leftovers mean a dirty dea
 log.write({'row': 'summary', 'complete': True, 'finished': _now(),
            'result': 'ALL_CAUGHT' if not bad else 'PROBLEMS',
            'problems': bad, 'baseline_passed': baseline_passed})
+release_mutation_lock()
 print()
 print('baseline passed count: %d' % baseline_passed)
 print('RESULT: %s' % ('ALL MUTATIONS CAUGHT' if not bad else 'PROBLEMS: ' + '; '.join(bad)))
