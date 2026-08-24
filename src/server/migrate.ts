@@ -62,14 +62,15 @@ export async function ensureCompsTables(supabase: SupabaseClient): Promise<boole
       sqlFile: 'sql/add_census_cache.sql',
       degradation: 'no demographics caching (every lookup re-queries the Census API)',
     },
-    {
-      table: 'chats',
-      column: 'adopted_legacy',
-      sqlFile: 'sql/chats.sql',
-      degradation:
-        'EVERY chat-row creation fails (the self-heal insert names this column), so no chat is ' +
-        'ever listed — conversations still work, the sidebar stays empty forever',
-    },
+    // BUG-028: a probe for chats.adopted_legacy stood here and MUST NOT come
+    // back. The column was deliberately dropped (RULING 2, 2dfc31e) and the
+    // self-heal insert has not named it since — but the probe outlived the
+    // drop and reported "EVERY chat-row creation fails / the sidebar stays
+    // empty forever" against a correct schema on every boot. A false
+    // catastrophic warning is worse than none: it trains every reader to skim
+    // past the one line that matters when something real breaks. If a probe is
+    // ever added here, its DDL must exist in sql/ at the same commit, and its
+    // removal belongs in the same commit as the column's.
     {
       table: 'chats',
       sqlFile: 'sql/chats.sql',

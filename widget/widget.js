@@ -1616,9 +1616,18 @@
         // removes the stale(op) window outright — there is no deferred
         // callback left to go stale.
         //
-        // Order matters within this branch: the switch (or placeholder) runs
-        // BEFORE beginOp, so the DELETE below registers under the NEW
-        // generation and is not aborted by its own chat-switch reset.
+        // The switch (or placeholder) runs BEFORE beginOp — deliberate, and
+        // KEEP it this way — but be precise about why (FINDING-029): it is
+        // NOT currently load-bearing. chatsApi attaches no abort signal (only
+        // loadHistory and the two /chat sends wire op.controller.signal into
+        // their fetch), so no /chats call can be aborted by a reset and both
+        // orderings behave identically today. The moment chatsApi gains
+        // signal wiring — a plausible robustness change — the reversed order
+        // would let the DELETE be aborted by its OWN chat-switch reset and
+        // the archive would be lost. This ordering is insurance for that
+        // change, not a mechanism in play now. No test pins it: at the
+        // shipped code no assertion can distinguish the orderings, and a
+        // test that measures nothing is worse than a comment that says so.
         if (wasActive) {
           if (chats.length) switchToChat(chats[0].id);
           else startPlaceholder();
