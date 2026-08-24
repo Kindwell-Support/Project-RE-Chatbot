@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { signingKeyProblem } from './server/sessionToken.js';
 
 export interface AppConfig {
   openaiApiKey: string;
@@ -40,6 +41,10 @@ export interface AppConfig {
   ghlApiToken?: string;
   ghlLocationId: string;
   ghlCourseAccessFieldId: string;
+  /** HMAC key for member session tokens (S2). Boot REFUSES on absence or
+   * triviality — a missing key that degraded to a predictable token would
+   * look gated and not be. */
+  sessionSigningKey?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -67,6 +72,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...(env.GHL_API_TOKEN ? { ghlApiToken: env.GHL_API_TOKEN } : {}),
     ghlLocationId: env.GHL_LOCATION_ID ?? 'EDY094ip0U3HwMFQYsVy',
     ghlCourseAccessFieldId: env.GHL_COURSE_ACCESS_FIELD_ID ?? 'axyDeZQxj7gMCtV1FyxS',
+    ...(env.SESSION_SIGNING_KEY ? { sessionSigningKey: env.SESSION_SIGNING_KEY } : {}),
   };
 }
 
@@ -94,6 +100,16 @@ export function assertRuntimeConfig(config: AppConfig): void {
         'The documents table was embedded with it. A 1536-dim substitute such as ' +
         'text-embedding-ada-002 will NOT error — it will return silently wrong results. ' +
         'Only change this after re-embedding the entire documents table.',
+    );
+  }
+  // S2: the signing key refuses boot on absence or triviality — unlike the
+  // optional feature keys above, a weak value here does not degrade a
+  // feature, it silently unguards the whole product.
+  const keyProblem = signingKeyProblem(config.sessionSigningKey);
+  if (keyProblem) {
+    throw new Error(
+      `${keyProblem}. Generate one (e.g. openssl rand -base64 48) and set it in the ` +
+        'environment. Rotating it invalidates every live member session.',
     );
   }
 }

@@ -134,10 +134,15 @@ describe('embedding model is pinned to text-embedding-3-small', () => {
   });
 
   it('a valid config passes startup', () => {
+    // RE-POINTED (Phase 3 S2): a valid config now includes a session signing
+    // key — assertRuntimeConfig refuses boot without one, because a missing
+    // key would leave the product looking gated while it is not. The boot
+    // gate's own cases live in tests/sessionToken.test.ts.
     const ok = loadConfig({
       OPENAI_API_KEY: 'k',
       SUPABASE_URL: 'https://x.supabase.co',
       SUPABASE_SERVICE_ROLE_KEY: 'k',
+      SESSION_SIGNING_KEY: 'test-signing-key-0123456789-abcdefghijklmnop',
     } as NodeJS.ProcessEnv);
     expect(() => assertRuntimeConfig(ok)).not.toThrow();
   });
