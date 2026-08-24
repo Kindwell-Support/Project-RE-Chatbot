@@ -30,6 +30,12 @@ function corsVerdict(methods: string, headers: string): 'pass' | 'fail' {
 const REGISTRY_KEYS = [
   'james-bot-session', 'james-bot-device', 'james-bot-active-chat',
   'james-bot-sidebar-collapsed', 'james-bot-legacy-adopted',
+  // Phase 3 S4 (announced): the session token, sessionStorage. Carries the
+  // signed credential, never conversation content. james-bot-device above is
+  // now RETIRED-ERASED like james-bot-session — kept in the registry so its
+  // ERASURE stays sanctioned; a WRITE to it would be a regression a future
+  // sweep should question.
+  'james-bot-token',
 ];
 const storageVerdict = (keys: string[]) =>
   keys.filter((k) => REGISTRY_KEYS.indexOf(k) === -1).length === 0 ? 'pass' : 'fail';

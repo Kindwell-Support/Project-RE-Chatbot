@@ -154,6 +154,12 @@ async function send(text: string) {
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  window.sessionStorage.clear();
+  // Phase 3 S4 (announced re-point, uniform across widget suites): the
+  // widget now gates on a session token before ANY chat UI. Seeding one
+  // keeps each suite's original subject - chat behaviour - unchanged;
+  // the gate's own behaviour is pinned in phase3Widget.test.ts.
+  window.sessionStorage.setItem('james-bot-token', 'jsdom-suite-token');
   window.localStorage.clear();
   vi.restoreAllMocks();
   vi.useFakeTimers({ shouldAdvanceTime: true, now: NOW });

@@ -192,6 +192,12 @@ let confirmSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  window.sessionStorage.clear();
+  // Phase 3 S4 (announced re-point, uniform across widget suites): the
+  // widget now gates on a session token before ANY chat UI. Seeding one
+  // keeps each suite's original subject - chat behaviour - unchanged;
+  // the gate's own behaviour is pinned in phase3Widget.test.ts.
+  window.sessionStorage.setItem('james-bot-token', 'jsdom-suite-token');
   window.localStorage.clear();
   vi.restoreAllMocks();
   confirmSpy = vi.fn(() => true);
@@ -490,11 +496,14 @@ describe('W1 legacy adoption is GONE — the widget never reads a session id', (
     ).toEqual([]);
 
     // VACUITY GUARD: storage really was in use this run, so the absences above
-    // are not passing against a widget that never touched localStorage.
+    // are not passing against a widget that never touched storage. RE-POINTED
+    // (Phase 3 S4): the guard was keyed to the james-bot-device WRITE, which
+    // died with the client-asserted owner — the widget's boot now READS its
+    // keys (token, collapse, active-chat), so presence-of-reads is the guard.
     expect(
-      setItem.mock.calls.map((c) => String(c[0])),
-      'nothing was stored at all, so the assertions above prove nothing',
-    ).toContain('james-bot-device');
+      getItem.mock.calls.map((c) => String(c[0])),
+      'nothing was read at all, so the assertions above prove nothing',
+    ).toContain('james-bot-token');
 
     // ...and the planted transcript never reaches the member.
     expect(
@@ -549,22 +558,32 @@ describe('T8: cold start on a fresh device', () => {
     expect(chatInput().disabled, 'the member cannot type on a fresh device').toBe(false);
   });
 
-  it('mints a device owner key and sends it on every /chats call', async () => {
+  it('ASSERTS NO OWNER: the token rides every /chats call and x-james-owner is gone', async () => {
+    // RE-POINTED (Phase 3 S4) — a full inversion BY RULING, and the strongest
+    // one in the file: this test used to pin that the widget minted a device
+    // key and sent it on every call. The client now stops asserting an owner
+    // ENTIRELY: identity is the verified session token, x-james-owner never
+    // leaves the widget, and the retired device key is ERASED on mount like
+    // james-bot-session before it. What survives from the original intent:
+    // every /chats call still carries the member's credential — it is just no
+    // longer one the client invented.
     const server = makeServer({ chats: [] });
     boot(server.fetchMock);
     await tick();
-    const stored = window.localStorage.getItem('james-bot-device') ?? '';
-    expect(stored, 'no device key was minted').toMatch(
-      /^device:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    );
-    const headers = server.fetchMock.mock.calls
-      .filter((c: any[]) => String(c[0]).includes('/chats'))
-      .map((c: any[]) => c[1]?.headers?.['x-james-owner']);
-    expect(headers.length, 'no /chats call was made').toBeGreaterThan(0);
+
     expect(
-      headers.every((h: string) => h === stored),
-      'a /chats call went out without the owner key',
-    ).toBe(true);
+      window.localStorage.getItem('james-bot-device'),
+      'a device key was minted — the client is asserting an owner again',
+    ).toBeNull();
+
+    const calls = server.fetchMock.mock.calls.filter((c: any[]) => String(c[0]).includes('/chats'));
+    expect(calls.length, 'no /chats call was made').toBeGreaterThan(0);
+    for (const c of calls) {
+      expect(c[1]?.headers?.['x-james-owner'], 'x-james-owner escaped the widget').toBeUndefined();
+      expect(c[1]?.headers?.authorization, 'a /chats call went out without the token').toBe(
+        'Bearer jsdom-suite-token',
+      );
+    }
   });
 
   it('a dead chats API still leaves a usable chat (the deploy-before-migration window)', async () => {

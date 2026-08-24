@@ -134,28 +134,15 @@ Point them at the deployment by running from a machine with the same `.env`.
 
 ## 3. Wire up the widget in GHL
 
-Put this in **Settings > Business Profile > Header Tracking Code** (NOT the lesson body —
-GHL strips `<script>` there):
+THE SNIPPET LIVES IN README.md ("GHL embed — THE live snippet") and ONLY
+there — this section used to carry its own copy, the two drifted (different
+settings page, different heights, different loader shape), and the live
+snippet existed in neither. One canonical copy, one place.
 
-```html
-<script src="https://<your-deploy-url>/widget.js"></script>
-<script>
-  (function () {
-    var email = 'unknown';
-    try { email = (JSON.parse(localStorage.getItem('common') || '{}').email) || 'unknown'; } catch (e) {}
-    window.createJamesBot({
-      apiUrl: 'https://<your-deploy-url>',
-      target: '#james-bot',
-      memberEmail: email
-    });
-  })();
-</script>
-```
-
-Then drop `<div id="james-bot" style="height:600px"></div>` into any lesson body.
-
-`{{contact.email}}` does not interpolate in the header, which is why the email is read from
-`localStorage.getItem('common')`.
+Summary only: a `<div id="james-bot">` in each lesson body, plus the loader
+from README pasted into the membership site's Header Tracking Code. Since
+Phase 3 there is NO memberEmail in the snippet — the widget verifies the
+member itself against GHL Course Access and mints a session token.
 
 ## 4. After deploy — update ALLOWED_ORIGINS
 

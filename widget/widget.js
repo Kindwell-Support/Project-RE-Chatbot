@@ -402,6 +402,32 @@
     '.jb-skel-b::after{animation-delay:150ms;}',
     '.jb-skel-c::after{animation-delay:300ms;}',
     '.jb-side-error{padding:10px 8px;font-size:12px;line-height:1.45;color:var(--jb-text-secondary);}',
+
+    /* --- Phase 3: the member gate (S4) ------------------------------------
+       The FIRST thing an ungated session sees — the gate replaces the
+       conversation area outright rather than floating over a rendered chat,
+       so there is no chat behind it to invite peeking. jb-gated hides the
+       rail, its toggle and the composer. */
+    '.jb-root.jb-gated .jb-side,.jb-root.jb-gated .jb-side-toggle,.jb-root.jb-gated .jb-form{display:none;}',
+    '.jb-gate{max-width:400px;margin:auto;padding:26px 22px;border-radius:16px;text-align:left;width:100%;}',
+    '.jb-gate-title{font-size:17px;font-weight:700;margin:0 0 6px;color:var(--jb-text-primary);}',
+    '.jb-gate-copy{font-size:13.5px;line-height:1.55;color:var(--jb-text-secondary);margin:0 0 14px;}',
+    '.jb-gate-row{display:flex;gap:8px;}',
+    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:16px;font-family:inherit;outline:none;}',
+    '.jb-gate-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
+    '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:10px;padding:11px 18px;background:var(--jb-accent);',
+    'color:var(--jb-on-accent);font-weight:700;font-size:14px;font-family:inherit;cursor:pointer;}',
+    '.jb-gate-btn:hover{background:var(--jb-accent-hover);}',
+    '.jb-gate-btn[disabled]{opacity:0.6;cursor:default;}',
+    '.jb-gate-btn:focus-visible,.jb-gate-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
+    /* The three failure states are DIFFERENT PROBLEMS: copy distinguishes all
+       three, and only could-not-check gets a retry control. */
+    '.jb-gate-status{margin:12px 0 0;font-size:13px;line-height:1.5;color:var(--jb-danger);min-height:1em;}',
+    '.jb-gate-status[data-kind="lookup_failed"]{color:var(--jb-text-secondary);}',
+    '.jb-gate-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
+    'border-radius:8px;padding:6px 13px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;}',
+    '.jb-gate-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
     '.jb-side-retry{margin-top:8px;background:transparent;border:1px solid var(--jb-accent);',
     'color:var(--jb-accent);border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;',
     'font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
@@ -472,6 +498,17 @@
   //   james-bot-sidebar-collapsed '1' when the rail is shut
   //   james-bot-session           RETIRED. Never read, never written — ERASED
   //                               on mount (see clearRetiredKeys).
+  /**
+   * Phase 3: THE CLIENT STOPS ASSERTING AN OWNER (ruled). Identity is the
+   * HMAC token from POST /auth, in SESSIONSTORAGE deliberately: it survives a
+   * refresh and dies on tab close — not localStorage (must not outlive the
+   * tab), not a cookie (the widget is third-party to the API origin and
+   * cookie blocking would break it outright).
+   */
+  var TOKEN_KEY = 'james-bot-token';
+  /** RETIRED with Phase 3 — never read, never written, ERASED on mount like
+   * james-bot-session before it: the widget no longer asserts device owners,
+   * and a live-looking key invites the next reader to build on it. */
   var DEVICE_KEY = 'james-bot-device';
   var ACTIVE_KEY = 'james-bot-active-chat';
   var COLLAPSE_KEY = 'james-bot-sidebar-collapsed';
@@ -505,12 +542,28 @@
    * first verified login per device, which is when chats become cross-device.
    * Nothing here needs to change for that.
    */
-  function getDeviceKey() {
-    var existing = storageGet(DEVICE_KEY);
-    if (existing && /^device:/.test(existing)) return existing;
-    var fresh = 'device:' + uuid();
-    storageSet(DEVICE_KEY, fresh);
-    return fresh;
+  function sessionGet(key) {
+    try {
+      return window.sessionStorage.getItem(key);
+    } catch (e) {
+      return null; // storage disabled — the member re-auths per pageload
+    }
+  }
+
+  function sessionSet(key, value) {
+    try {
+      window.sessionStorage.setItem(key, value);
+    } catch (e) {
+      /* the session still works; it will not survive a refresh */
+    }
+  }
+
+  function sessionRemove(key) {
+    try {
+      window.sessionStorage.removeItem(key);
+    } catch (e) {
+      /* nothing to remove */
+    }
   }
 
   /**
@@ -529,6 +582,7 @@
   function clearRetiredKeys() {
     try {
       window.localStorage.removeItem(LEGACY_KEY);
+      window.localStorage.removeItem(DEVICE_KEY); // retired with Phase 3
     } catch (e) {
       /* storage disabled — nothing to erase, and nothing depends on it */
     }
@@ -767,13 +821,31 @@
     options = options || {};
     var apiUrl = String(options.apiUrl == null ? '' : options.apiUrl).replace(/\/+$/, '');
     var targetSelector = options.target || '#james-bot';
+    // VESTIGIAL, KEPT (P3 hard contract): the widget now collects and
+    // verifies the email itself, so this option plays no part in identity —
+    // but removing it from the signature would force a hand-edit of the live
+    // GHL snippet, which is not in version control. Accepted and ignored for
+    // auth; it still rides the /chat body's member_email field, which the
+    // server treats as telemetry, never identity.
     var memberEmail = options.memberEmail || 'unknown';
     // The owner key is per-device and long-lived; the chat id is per-chat and
     // changes on every switch. `sessionId` is whatever chat is active right
     // now — every /chat and /history call reads it at call time, never closes
     // over it, so an in-flight request cannot post to the chat you just left.
-    var deviceKey = getDeviceKey();
+    // (Phase 3: `var deviceKey` stood here — the client no longer asserts an
+    // owner, so the variable went with the header it fed. The P1 pin on the
+    // call-time sessionId mechanism was re-pointed to exclude the deleted
+    // line; the mechanism itself is unchanged.)
     var sessionId = null;
+    /**
+     * The session token, or null when the member has not passed the gate.
+     * SESSION identity, not conversation state — deliberately NOT in
+     * resetChatState's list (P2): a chat switch changes which conversation is
+     * open, never who the member is. It is cleared in exactly one place —
+     * authExpired(), when the server says the session is over.
+     */
+    var authToken = null;
+    var lastAuthEmail = ''; // re-auth prefill only; never sent unverified
 
     function mount() {
       var target = document.querySelector(targetSelector);
@@ -1243,7 +1315,10 @@
        *                         Resetting it would send an already-loaded rail
        *                         back to skeletons on every chat switch.
        *   sidebar collapsed     a device preference, not chat state
-       *   deviceKey             identity; survives every chat
+       *   authToken             SESSION identity, not conversation state
+       *                         (S4, ruled EXCLUDED): a chat switch changes
+       *                         which conversation is open, never who the
+       *                         member is. Cleared only by authExpired().
        *   apiUrl / memberEmail  mount configuration
        *   busy/started/etc.     ARE reset, below
        */
@@ -1337,10 +1412,26 @@
        */
       function chatsApi(pathname, init) {
         init = init || {};
-        var headers = { 'x-james-owner': deviceKey };
+        // Phase 3: identity is the TOKEN. The widget asserts no owner —
+        // x-james-owner is gone from every request it makes.
+        var headers = { authorization: 'Bearer ' + (authToken || '') };
         if (init.body) headers['content-type'] = 'application/json';
         init.headers = headers;
         return safeFetch(apiUrl + pathname, init).then(function (res) {
+          if (res.status === 401) {
+            // The session is over (expired / rejected). Kick off re-auth and
+            // still reject so in-flight callers stop cleanly.
+            return res.json().then(
+              function (body) {
+                authExpired(body && body.reason);
+                throw new Error('HTTP 401');
+              },
+              function () {
+                authExpired('expired');
+                throw new Error('HTTP 401');
+              },
+            );
+          }
           if (!res.ok) throw new Error('HTTP ' + res.status);
           if (res.status === 204) return null;
           return res.json();
@@ -1903,10 +1994,24 @@
         // A chat switch inerts the skeleton through the same mechanism it uses
         // for the thinking indicator and the calculator timer.
         op.cleanup = clearHistorySkeleton;
-        var init = { headers: { accept: 'application/json' } };
+        var init = {
+          headers: { accept: 'application/json', authorization: 'Bearer ' + (authToken || '') },
+        };
         if (op.controller) init.signal = op.controller.signal;
         safeFetch(apiUrl + '/history?session_id=' + encodeURIComponent(sessionId), init)
           .then(function (res) {
+            if (res.status === 401) {
+              return res.json().then(
+                function (body) {
+                  authExpired(body && body.reason);
+                  throw new Error('HTTP 401');
+                },
+                function () {
+                  authExpired('expired');
+                  throw new Error('HTTP 401');
+                },
+              );
+            }
             // A non-ok response now THROWS rather than resolving to null. It
             // used to share the "nothing to paint" path with an empty
             // transcript, which is how a 503 came to look identical to a chat
@@ -2461,7 +2566,10 @@
 
         var init = {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-james-owner': deviceKey },
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + (authToken || ''),
+          },
           body: JSON.stringify({
             // Read at CALL time, never closed over at render time: a form card
             // rendered in chat A can only ever submit into chat A because the
@@ -2554,7 +2662,10 @@
         var chatId = ensureChatId();
         var init = {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-james-owner': deviceKey },
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + (authToken || ''),
+          },
           body: JSON.stringify({
             message: text,
             session_id: chatId,
@@ -2565,6 +2676,25 @@
 
         safeFetch(apiUrl + '/chat', init)
           .then(function (res) {
+            if (res.status === 401) {
+              // Mid-session expiry (S4): tear down the thinking state, keep
+              // the member's unsent text for after re-auth, and open the gate.
+              // The conversation itself is preserved SERVER-side — re-auth
+              // reruns boot, ACTIVE_KEY lands back in this chat, and /history
+              // repaints it.
+              removeTyping();
+              pendingResendText = text;
+              return res.json().then(
+                function (body) {
+                  authExpired(body && body.reason);
+                  return null;
+                },
+                function () {
+                  authExpired('expired');
+                  return null;
+                },
+              );
+            }
             // BUG-016 ruling: an archived chat answers 404 and never enters the
             // agent loop. That send must fail QUIETLY — the chat is gone, so an
             // error bubble in a pane that is about to be replaced is noise.
@@ -2727,21 +2857,198 @@
         startNewChat();
       });
 
-      input.focus();
+      /**
+       * Phase 3 S4 — the member gate.
+       *
+       * `pendingResendText` carries a message that was in flight when the
+       * session expired: after re-auth it is refilled into the composer, so
+       * the member loses nothing but the round trip.
+       */
+      var pendingResendText = '';
 
-      // The opening message and the rail are painted SYNCHRONOUSLY, before any
-      // network call. Nothing below can gate the input box: bootChats resolves
-      // the chat list and repaints history afterwards, and every one of its
-      // failure paths ends in a usable placeholder.
-      showWelcome();
-      renderSidebar();
+      function startAuthedSession() {
+        root.classList.remove('jb-gated');
+        // The opening message and the rail are painted SYNCHRONOUSLY, before
+        // any network call. Nothing below can gate the input box: bootChats
+        // resolves the chat list and repaints history afterwards, and every
+        // one of its failure paths ends in a usable placeholder.
+        resetChatState();
+        chats = [];
+        chatsState = 'loading';
+        renderSidebar();
+        if (pendingResendText) {
+          input.value = pendingResendText;
+          pendingResendText = '';
+          form.classList.add('jb-armed');
+        }
+        // Belt and braces: the chat box is already usable at this point, and
+        // nothing about resolving the chat list is allowed to change that.
+        try {
+          bootChats();
+        } catch (e) {
+          startPlaceholder();
+        }
+        refocusComposer();
+      }
+
+      /**
+       * The gate replaces the conversation area OUTRIGHT (ruled): in an
+       * ungated session it is the first thing the member sees — never a modal
+       * over a rendered chat, which invites the chat to be visible behind it.
+       * No /chats, no /history, no welcome until the token exists.
+       */
+      function showGate(mode) {
+        root.classList.add('jb-gated');
+        list.innerHTML = '';
+        historySkeleton = null;
+        welcomeRow = null;
+
+        var card = el('div', 'jb-gate jb-glass');
+        var title = el('h2', 'jb-gate-title');
+        title.textContent = mode === 'expired' ? 'Your session ended' : 'Members only';
+        card.appendChild(title);
+        var copy = el('p', 'jb-gate-copy');
+        copy.textContent =
+          mode === 'expired'
+            ? 'Enter the email on your ProjectRE account to pick up where you left off.'
+            : 'Enter the email on your ProjectRE account to start chatting with James.';
+        card.appendChild(copy);
+
+        var row = el('div', 'jb-gate-row');
+        var emailInput = el('input', 'jb-gate-input', {
+          type: 'email',
+          placeholder: 'you@example.com',
+          'aria-label': 'Your member email',
+          autocomplete: 'email',
+        });
+        if (lastAuthEmail) emailInput.value = lastAuthEmail;
+        var submitBtn = el('button', 'jb-gate-btn', { type: 'button' });
+        submitBtn.textContent = 'Continue';
+        row.appendChild(emailInput);
+        row.appendChild(submitBtn);
+        card.appendChild(row);
+
+        var status = el('div', 'jb-gate-status', { role: 'status', 'aria-live': 'polite' });
+        card.appendChild(status);
+        list.appendChild(card);
+
+        /**
+         * THE THREE FAILURE STATES, distinct and actionable (ruled):
+         *  not_found      — the email is not a member here (fix the email)
+         *  denied         — retired or blank field (a account/GHL question)
+         *  lookup_failed  — could not check right now (RETRY — the only state
+         *                   where trying again without changing anything can
+         *                   succeed, so the only one with a retry control)
+         */
+        function showStatus(kind) {
+          status.setAttribute('data-kind', kind);
+          status.innerHTML = '';
+          var line = el('div');
+          if (kind === 'not_found') {
+            line.textContent = "We couldn't find that email in the member system. Check it matches the email on your ProjectRE account.";
+          } else if (kind === 'denied') {
+            line.textContent = 'This email does not currently have course access. If that seems wrong, contact support.';
+          } else if (kind === 'invalid_email') {
+            line.textContent = 'That does not look like an email address.';
+          } else {
+            line.textContent = "We couldn't check your access just now — this is on our side, not yours.";
+          }
+          status.appendChild(line);
+          if (kind === 'lookup_failed') {
+            var retry = el('button', 'jb-gate-retry', { type: 'button' });
+            retry.textContent = 'Try again';
+            retry.addEventListener('click', submit);
+            status.appendChild(retry);
+          }
+        }
+
+        var submitting = false;
+        function submit() {
+          if (submitting) return;
+          var email = emailInput.value.trim();
+          if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            showStatus('invalid_email');
+            return;
+          }
+          submitting = true;
+          submitBtn.disabled = true;
+          status.innerHTML = '';
+          safeFetch(apiUrl + '/auth', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: email }),
+          })
+            .then(function (res) {
+              return res.json().then(
+                function (body) {
+                  return { status: res.status, body: body };
+                },
+                function () {
+                  return { status: res.status, body: {} };
+                },
+              );
+            })
+            .then(function (result) {
+              submitting = false;
+              submitBtn.disabled = false;
+              if (result.status === 200 && result.body && result.body.token) {
+                lastAuthEmail = email;
+                authToken = result.body.token;
+                sessionSet(TOKEN_KEY, authToken);
+                startAuthedSession();
+                return;
+              }
+              lastAuthEmail = email;
+              var reason = (result.body && result.body.reason) || 'lookup_failed';
+              showStatus(reason === 'invalid_email' ? 'invalid_email' : reason);
+            })
+            .catch(function () {
+              submitting = false;
+              submitBtn.disabled = false;
+              showStatus('lookup_failed');
+            });
+        }
+
+        submitBtn.addEventListener('click', submit);
+        emailInput.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            submit();
+          }
+        });
+        window.setTimeout(function () {
+          if (emailInput.parentNode) emailInput.focus();
+        }, 0);
+      }
+
+      /**
+       * Mid-session expiry (S4, ruled): the server said 401. Clear the token
+       * (its ONE clearing site), stop the in-flight work, and gate again in
+       * 'expired' mode. The conversation is PRESERVED BY ARCHITECTURE rather
+       * than by widget state: the transcript lives server-side, ACTIVE_KEY
+       * survives in localStorage, and re-auth reruns boot — which lands in
+       * the same chat and repaints its history. The member returns to their
+       * conversation, not a fresh one.
+       */
+      var reAuthing = false; // several calls can 401 together; gate once
+      function authExpired(reason) {
+        if (reAuthing) return;
+        reAuthing = true;
+        authToken = null;
+        sessionRemove(TOKEN_KEY);
+        resetChatState();
+        showGate(reason === 'expired' ? 'expired' : 'initial');
+        window.setTimeout(function () {
+          reAuthing = false;
+        }, 0);
+      }
+
       clearRetiredKeys();
-      // Belt and braces: the chat box is already usable at this point, and
-      // nothing about resolving the chat list is allowed to change that.
-      try {
-        bootChats();
-      } catch (e) {
-        startPlaceholder();
+      authToken = sessionGet(TOKEN_KEY);
+      if (authToken) {
+        startAuthedSession();
+      } else {
+        showGate('initial');
       }
     }
 

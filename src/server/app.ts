@@ -221,6 +221,11 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   // without the gate is therefore an impossibility, not a bug: there is no
   // per-route opt-in to forget.
   //
+  // INTENDED PROPERTY, not an artifact of hook ordering (ruled — do not "fix"
+  // this into a 404): a URL with NO route also answers 401 to an
+  // unauthenticated caller, so route existence is never revealed. The 404 is
+  // information reserved for holders of a valid session.
+  //
   // THE EXEMPTION LIST IS DATA, in one place, and it is EXACTLY the ruled
   // four: '/', '/health', '/widget.js', plus the OPTIONS method (preflights
   // carry no credentials by design). /demo is DELIBERATELY NOT HERE — ruled:
@@ -230,7 +235,15 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   //
   // /auth is not an exemption FROM the gate — it IS the gate's front door
   // (the token has to come from somewhere), so it is a separate named
-  // constant rather than a fifth list entry.
+  // constant rather than a fifth list entry. RATIFIED.
+  //
+  // /demo BOOTSTRAP PARADOX, ruled deliberate: in production you cannot
+  // obtain a token without the widget and cannot load /demo without a token,
+  // so production /demo is effectively UNREACHABLE — the same outcome as
+  // ENABLE_DEMO_PAGE=false, reached differently. An ungated shell would let
+  // anyone load the page and start probing /auth; gating the shell removes
+  // that surface. A review path, if ever needed, is a future ruling — do not
+  // build one here.
   app.decorate('authGate', true); // discoverable marker for route audits
 
   const gateDisabled = !config.isProduction;

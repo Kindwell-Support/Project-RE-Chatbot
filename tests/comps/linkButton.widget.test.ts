@@ -39,6 +39,9 @@ async function render(markdown: string): Promise<HTMLElement> {
     });
   });
   vi.stubGlobal('fetch', fetchMock);
+  // Phase 3 S4 (announced re-point): seed the session token so this suite's
+  // subject (link rendering) is unchanged; the gate is pinned elsewhere.
+  window.sessionStorage.setItem('james-bot-token', 'jsdom-suite-token');
   delete (window as never as Record<string, unknown>).createJamesBot;
   new Function(WIDGET_SRC).call(window);
 

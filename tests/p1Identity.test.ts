@@ -63,9 +63,19 @@ const REGIONS: Region[] = [
     end: '        inFlight.length = 0;\n',
   },
   {
-    label: 'P1c sessionId declaration (supporting mechanism, not a request site)',
-    start: '    // The owner key is per-device and long-lived; the chat id is per-chat and',
-    end: '    var sessionId = null;\n',
+    // RE-POINTED (Phase 3 S4, announced): the span previously included
+    // `var deviceKey = getDeviceKey();` — deleted with the client-asserted
+    // owner it fed (ruled: the client stops asserting an owner entirely).
+    // The pinned MECHANISM — the declaration and its call-time contract
+    // comment — is unchanged; the span now starts at the comment's second
+    // line (its first named the departed owner key).
+    // Narrowed AGAIN in review: the first narrowing still bracketed the
+    // deleted deviceKey line (it sat between comment and declaration), so
+    // the pin is now the contract COMMENT as a region plus the DECLARATION
+    // as a line (in the line-pin test below with the /chat lines).
+    label: 'P1c sessionId call-time contract comment',
+    start: '    // changes on every switch. `sessionId` is whatever chat is active right',
+    end: '    // over it, so an in-flight request cannot post to the chat you just left.\n',
   },
   {
     label: 'P1c ensureChatId — the synchronous mint (supporting mechanism, not a request site)',
@@ -77,12 +87,21 @@ const REGIONS: Region[] = [
     start: '            // Read at CALL time, never closed over at render time: a form card',
     end: '            session_id: sessionId,\n',
   },
-  {
-    label: 'P1c payload site 2/3 — /chat message body reads via ensureChatId at call time',
-    start: '        var chatId = ensureChatId();',
-    end: '            session_id: chatId,\n',
-  },
 ];
+
+/**
+ * P1c payload site 2/3, RE-POINTED (Phase 3 S4, announced): the old span
+ * ran from `var chatId = ensureChatId();` through `session_id: chatId,`
+ * and so included the /chat request's HEADERS line — which Phase 3 changes
+ * by ruling (x-james-owner out, authorization in). The protected mechanism
+ * is the CALL-TIME chatId read, not the header beside it, so the pin
+ * becomes two exact LINES, each required exactly once in both revisions —
+ * for one line, presence-exactly-once IS the byte-identity claim, same as
+ * the /history pin.
+ */
+const SESSION_DECL_LINE = '    var sessionId = null;\n';
+const CHAT_MINT_LINE = '        var chatId = ensureChatId();\n';
+const CHAT_PAYLOAD_LINE = '            session_id: chatId,\n';
 
 /**
  * Payload site 3/3 — the /history URL. Pinned as a single LINE rather than a
@@ -124,6 +143,16 @@ describe(`P1 mechanisms are byte-identical to ${BASELINE_REV}`, () => {
       expect(now.length, 'the extracted region is suspiciously small').toBeGreaterThan(80);
     });
   }
+
+  it('payload site 2/3 — the /chat call-time chatId read, byte-identical as lines', () => {
+    for (const line of [SESSION_DECL_LINE, CHAT_MINT_LINE, CHAT_PAYLOAD_LINE]) {
+      expect(current.split(line).length - 1, `changed or duplicated: ${line.trim()}`).toBe(1);
+      expect(
+        baseline.split(line).length - 1,
+        `precondition: not what ${BASELINE_REV} shipped: ${line.trim()}`,
+      ).toBe(1);
+    }
+  });
 
   it('payload site 3/3 — the /history URL read, byte-identical as a line', () => {
     expect(
