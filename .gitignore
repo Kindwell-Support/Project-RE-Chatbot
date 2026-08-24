@@ -5,3 +5,4 @@ public/
 .DS_Store
 *.log
 widget/widget.js.pristine
+tools/qa/results/

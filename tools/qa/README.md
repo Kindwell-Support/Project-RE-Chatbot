@@ -8,6 +8,18 @@ python tools/qa/mutate.py          # do the tests catch the defects they target?
 python tools/qa/p1_identity.py     # are the P1 mechanisms still byte-identical?
 ```
 
+**Run mutate.py IN THE BACKGROUND — that is the default, foreground is the
+exception.** The run outgrew a 10-minute foreground window at 32 mutations and
+the set only grows; a foreground timeout kills it mid-mutation (the sidecar
+recovery has already had to fire for exactly this). Every run appends
+JSON-lines to `tools/qa/results/run-<stamp>.jsonl` after each mutation —
+crash-durable, so a killed run leaves a file that is VISIBLY partial: rows
+with no trailing `summary` line. **A file without a `summary` row is not a
+pass and must never be read as one.** `latest.json` points at the newest run.
+Results are per-rig evidence, gitignored, and survive session boundaries — a
+session boundary has already cost this project a matrix that had to be
+reconstructed from memory.
+
 ## The rule these exist to enforce
 
 An assertion is only worth what it *discriminates*. "It goes red" is not the

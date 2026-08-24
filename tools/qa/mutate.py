@@ -30,9 +30,50 @@ The driver prints this menu on every MISSED so the reader chooses rather than
 defaulting to (a). It matters in both directions: filing a (b) as a gap yields
 a vacuous test; filing an (a) as defended yields BUG-033.
 """
-import io, os, re, subprocess, sys
+import datetime
+import io, json, os, re, subprocess, sys
+
+# Unbuffered progress: a background run's output file must show the current
+# mutation while it runs, not an empty file until exit.
+sys.stdout.reconfigure(line_buffering=True)
 
 TARGET = 'widget/widget.js'
+
+# --- Durable results (operational ruling after FINDING-036) -----------------
+# Background execution is the DEFAULT; foreground is the exception (the run
+# outgrew the 10-minute foreground window at 32 mutations and Phase 3 only
+# grows the set). Every run appends JSON-lines to a timestamped file under
+# tools/qa/results/ AFTER EACH MUTATION — crash-durable, so a killed run
+# leaves a file that is VISIBLY partial: rows without a trailing `summary`
+# line. A partial file must never be read as a pass. `latest.json` points at
+# the newest run file. The directory is gitignored: results are per-rig
+# evidence, not repo history.
+RESULTS_DIR = os.path.join('tools', 'qa', 'results')
+
+
+def _now():
+    return datetime.datetime.now().isoformat(timespec='seconds')
+
+
+class ResultLog:
+    def __init__(self):
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        stamp = _now().replace(':', '-')
+        self.path = os.path.join(RESULTS_DIR, 'run-%s.jsonl' % stamp)
+        head = subprocess.run('git rev-parse HEAD', shell=True, capture_output=True,
+                              text=True).stdout.strip()
+        dirty = subprocess.run('git status --porcelain', shell=True, capture_output=True,
+                               text=True).stdout.strip()
+        self.write({'row': 'header', 'started': _now(), 'git_head': head,
+                    'git_dirty': bool(dirty), 'target': TARGET, 'suite': SUITE})
+        with io.open(os.path.join(RESULTS_DIR, 'latest.json'), 'w', encoding='utf-8') as f:
+            json.dump({'path': self.path}, f)
+
+    def write(self, obj):
+        with io.open(self.path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(obj) + '\n')
+            f.flush()
+            os.fsync(f.fileno())
 SUITE = ('tests/phase2Loading.widget.test.ts tests/phase2Touch.widget.test.ts '
          'tests/phase2RowIdentity.widget.test.ts tests/phase2Layout.widget.test.ts '
          'tests/multiChat.widget.test.ts tests/widget.test.ts')
@@ -382,8 +423,12 @@ def restore():
 pristine_artifact = build_artifact()
 assert pristine_artifact, 'the pristine source does not build'
 
+log = ResultLog()
+print('durable results -> %s' % log.path)
+
 failed, passed = run()
 print('BASELINE (unmutated): %s failed / %s passed' % (failed, passed))
+log.write({'row': 'baseline', 'failed': failed, 'passed': passed, 'at': _now()})
 assert failed == 0 and passed and passed > 0, 'baseline is not green'
 baseline_passed = passed
 
@@ -391,6 +436,8 @@ bad = []
 for name, old, new in MUTATIONS:
     if src.count(old) != 1:
         print('  SKIP  %s  (anchor matched %d times)' % (name, src.count(old)))
+        log.write({'row': 'mutation', 'name': name, 'verdict': 'SKIP_ANCHOR',
+                   'anchor_matches': src.count(old), 'at': _now()})
         bad.append(name)
         continue
     io.open(TARGET, 'w', encoding='utf-8', newline='').write(src.replace(old, new, 1))
@@ -399,6 +446,8 @@ for name, old, new in MUTATIONS:
         if mutated_artifact == pristine_artifact:
             print('  SKIPPED: INERT  %s  -> file changed, BUILD identical. '
                   'The mutation never happened; nothing is proven either way.' % name)
+            log.write({'row': 'mutation', 'name': name, 'verdict': 'SKIPPED_INERT',
+                       'at': _now()})
             bad.append(name + ' (inert)')
             continue
         failed, passed = run()
@@ -406,9 +455,11 @@ for name, old, new in MUTATIONS:
         restore()  # runs even if the driver itself blows up
     if failed is None:
         print('  INVALID %s  -> suite did not COLLECT (parse error). Not a catch.' % name)
+        log.write({'row': 'mutation', 'name': name, 'verdict': 'INVALID_NO_COLLECT', 'at': _now()})
         bad.append(name)
     elif passed == 0:
         print('  INVALID %s  -> 0 passed; nothing ran. Not a catch.' % name)
+        log.write({'row': 'mutation', 'name': name, 'verdict': 'INVALID_ZERO_PASSED', 'at': _now()})
         bad.append(name)
     elif failed == 0:
         print('  MISSED  %s  -> %d passed, 0 failed.' % (name, passed))
@@ -417,12 +468,19 @@ for name, old, new in MUTATIONS:
         print('            a) genuine coverage gap        -> write the test')
         print('            b) defeated by a live defence  -> mutate PAST the defence, re-score')
         print('            c) unpinned by construction    -> record why, write nothing')
+        log.write({'row': 'mutation', 'name': name, 'verdict': 'MISSED_NEEDS_DISPOSITION',
+                   'failed': failed, 'passed': passed, 'at': _now()})
         bad.append(name)
     else:
         print('  caught  %s  -> %d failed / %d passed' % (name, failed, passed))
+        log.write({'row': 'mutation', 'name': name, 'verdict': 'CAUGHT',
+                   'failed': failed, 'passed': passed, 'at': _now()})
 
 restore()
 os.remove(SIDECAR)  # a clean exit leaves no sidecar; leftovers mean a dirty death
+log.write({'row': 'summary', 'complete': True, 'finished': _now(),
+           'result': 'ALL_CAUGHT' if not bad else 'PROBLEMS',
+           'problems': bad, 'baseline_passed': baseline_passed})
 print()
 print('baseline passed count: %d' % baseline_passed)
 print('RESULT: %s' % ('ALL MUTATIONS CAUGHT' if not bad else 'PROBLEMS: ' + '; '.join(bad)))
