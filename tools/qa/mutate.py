@@ -9,6 +9,26 @@ STANDING RULE (INSPECTOR instance-eight): a collection failure reports as
 count mistakes "nothing ran" for "tests failed" — every mutation would look
 caught. So each run must ALSO report a non-zero PASSED count. A mutation that
 breaks parsing is reported as INVALID, not as a catch.
+
+STANDING RULE (FINDING-036): NOT CAUGHT is a QUESTION, not a verdict. A
+mutation defeated by a working defence and a mutation the tests missed report
+identically — the build genuinely changed both times, so the inert guard
+cannot discriminate them; only reading the code path can. Every NOT CAUGHT
+takes one of three dispositions before it is reported onward:
+    a) genuine coverage gap        -> write the test        (BUG-033 was this)
+    b) defeated by a live defence  -> mutate PAST the defence, re-score
+                                      (a skeleton injected inside
+                                      prependHistory was removed by
+                                      loadHistory's unconditional teardown
+                                      before any assertion ran — the fourth
+                                      teardown path working, not a gap)
+    c) unpinned by construction    -> record why, write nothing (the
+                                      belt-and-braces teardown itself: the
+                                      primaries make its deletion invisible,
+                                      exactly as its comment predicts)
+The driver prints this menu on every MISSED so the reader chooses rather than
+defaulting to (a). It matters in both directions: filing a (b) as a gap yields
+a vacuous test; filing an (a) as defended yields BUG-033.
 """
 import io, os, re, subprocess, sys
 
@@ -391,7 +411,12 @@ for name, old, new in MUTATIONS:
         print('  INVALID %s  -> 0 passed; nothing ran. Not a catch.' % name)
         bad.append(name)
     elif failed == 0:
-        print('  MISSED  %s  -> %d passed, 0 failed. The defect is NOT caught.' % (name, passed))
+        print('  MISSED  %s  -> %d passed, 0 failed.' % (name, passed))
+        print('          NOT CAUGHT is a question, not a verdict (FINDING-036).')
+        print('          Disposition required before reporting onward:')
+        print('            a) genuine coverage gap        -> write the test')
+        print('            b) defeated by a live defence  -> mutate PAST the defence, re-score')
+        print('            c) unpinned by construction    -> record why, write nothing')
         bad.append(name)
     else:
         print('  caught  %s  -> %d failed / %d passed' % (name, failed, passed))

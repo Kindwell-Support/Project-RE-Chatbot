@@ -44,6 +44,25 @@ This is not hypothetical — it has fired twice:
 The same rule applies to any gate, any driver, and any green claim made by hand:
 assert what PASSED, not merely the absence of failures.
 
+**NOT CAUGHT IS A QUESTION, NOT A VERDICT (FINDING-036).** A mutation defeated
+by a working defence and a mutation the tests missed report identically — the
+build genuinely changed both times, so the inert guard cannot tell them apart.
+Only reading the code path can. Every MISSED takes one of three dispositions
+before it is reported onward, and the driver prints the menu so nobody
+defaults to (a):
+
+- **(a) genuine coverage gap** → write the test. BUG-033 (qualifier Arm B,
+  load-bearing and unpinned) was this, and was nearly missed.
+- **(b) defeated by a live defence** → mutate *past* the defence, then
+  re-score. A skeleton injected inside `prependHistory` was removed by
+  `loadHistory`'s unconditional teardown before any assertion ran — the fourth
+  teardown path *working*, not a gap. Filing a (b) as (a) yields a vacuous
+  test.
+- **(c) unpinned by construction** → record why, write nothing. The
+  belt-and-braces teardown itself: deleting it goes unnoticed because the
+  primary paths work, exactly as its comment predicts. Its pin is the comment,
+  by design.
+
 Two further guards, both learned the hard way:
 
 - **The pristine source is read once, before anything is written**, and every
