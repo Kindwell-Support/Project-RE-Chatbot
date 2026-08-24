@@ -510,6 +510,112 @@ describe('FINDING-027 — late history prepends; duplication is the attack surfa
     expect(oldAt).toBeLessThan(liveAt);
   });
 
+  it('BUG-031 ACCEPTANCE (D.M3): a mid-array live exchange renders EXACTLY once', async () => {
+    // Two tabs are supported (A6). The other tab appends AFTER the member's
+    // live turn, so the live pair is no longer the snapshot's suffix — the
+    // exact shape a suffix matcher is structurally blind to. INSPECTOR's
+    // array, verbatim. The member's turn must render once; h1/h2 above it in
+    // order; the other tab's later turns are DISCARDED by rule (they arrived
+    // after the live turn and do not belong above it — they surface on the
+    // next natural refetch).
+    const server = makeServer({
+      chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
+      history: {},
+      holdHistory: true,
+      reply: 'live-answer',
+    });
+    boot(server.fetchMock);
+    await tick();
+    await send('live-question');
+
+    server.releaseHistory([
+      { role: 'user', content: 'h1' },
+      { role: 'assistant', content: 'h2' },
+      { role: 'user', content: 'live-question' },
+      { role: 'assistant', content: 'live-answer' },
+      { role: 'user', content: 'from-another-device' },
+      { role: 'assistant', content: 'other-reply' },
+      { role: 'user', content: 'live-question' },
+      { role: 'assistant', content: 'live-answer' },
+    ]);
+    await tick();
+
+    const texts = bubbleText();
+    expect(texts.filter((t) => t === 'live-question'), 'the member\'s own turn painted twice — or zero').toHaveLength(1);
+    expect(texts.filter((t) => t.includes('live-answer'))).toHaveLength(1);
+    const h1At = texts.findIndex((t) => t === 'h1');
+    const h2At = texts.findIndex((t) => t.includes('h2'));
+    const liveAt = texts.findIndex((t) => t === 'live-question');
+    expect(h1At, 'h1 was lost').not.toBe(-1);
+    expect(h1At).toBeLessThan(h2At);
+    expect(h2At).toBeLessThan(liveAt);
+    // The later-arriving turns are discarded, not smuggled in anywhere.
+    expect(texts.some((t) => t.includes('from-another-device'))).toBe(false);
+    expect(texts.some((t) => t.includes('other-reply'))).toBe(false);
+  });
+
+  it('BUG-031: FIRST occurrence wins — a later duplicate must not resurrect the earlier one', async () => {
+    // The greedy-in-the-other-direction trap the ruling names: cutting at the
+    // LAST occurrence would prepend the earlier copy of the live pair and
+    // paint the member's turn twice.
+    const server = makeServer({
+      chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
+      history: {},
+      holdHistory: true,
+      reply: 'live-answer',
+    });
+    boot(server.fetchMock);
+    await tick();
+    await send('live-question');
+
+    server.releaseHistory([
+      { role: 'user', content: 'live-question' },
+      { role: 'assistant', content: 'live-answer' },
+      { role: 'user', content: 'between' },
+      { role: 'assistant', content: 'between-reply' },
+      { role: 'user', content: 'live-question' },
+      { role: 'assistant', content: 'live-answer' },
+    ]);
+    await tick();
+
+    const texts = bubbleText();
+    expect(texts.filter((t) => t === 'live-question'), 'the earlier copy was prepended').toHaveLength(1);
+    // First occurrence is at index 0, so NOTHING precedes it: nothing prepends.
+    expect(texts.some((t) => t === 'between'), 'turns after the live exchange were prepended').toBe(false);
+  });
+
+  it('BUG-031 CONTROL: two identical ADJACENT historical pairs both survive', async () => {
+    // INSPECTOR's surviving control, kept green by ruling: a greedy matcher
+    // would eat four turns and leave one pair. The full-coverage/tail rule
+    // must not regress it.
+    const server = makeServer({
+      chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
+      history: {},
+      holdHistory: true,
+      reply: 'the answer',
+    });
+    boot(server.fetchMock);
+    await tick();
+    await send('go');
+
+    server.releaseHistory([
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: 'ok' },
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: 'ok' },
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: 'the answer' },
+    ]);
+    await tick();
+
+    const texts = bubbleText();
+    // Live pair (go/the answer) once; the two identical historical pairs both
+    // prepend: three 'go' total, two 'ok'.
+    expect(texts.filter((t) => t === 'go'), 'a historical go was eaten').toHaveLength(3);
+    expect(texts.filter((t) => t.includes('ok'))).toHaveLength(2);
+    expect(texts.filter((t) => t.includes('the answer'))).toHaveLength(1);
+  });
+
   it('CONTROL: identical TEXT that is genuinely historical is NOT dropped', async () => {
     // The trim compares the ALIGNED SUFFIX, not membership. A member who asked
     // "yes" a week ago and "yes" again live must see both — a dedupe by

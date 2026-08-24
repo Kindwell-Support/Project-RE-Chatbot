@@ -167,25 +167,16 @@ MUTATIONS = [
         """        var issuedBeforeStarted = true;""",
     ),
     (
-        'M15 the live-suffix trim removed: the race paints the member message twice',
-        """        var cut = 0;
-        var max = Math.min(liveTurns.length, messages.length);
-        for (var n = max; n >= 1; n--) {
-          var matches = true;
-          for (var i = 0; i < n; i++) {
-            var snap = messages[messages.length - n + i];
-            var live = liveTurns[i];
-            if (snap.role !== live.role || String(snap.content) !== String(live.content)) {
-              matches = false;
-              break;
-            }
-          }
-          if (matches) {
-            cut = n;
-            break;
-          }
-        }""",
-        """        var cut = 0;""",
+        'M15 the duplication defence disabled: the snapshot prepends verbatim',
+        # RE-POINTED for BUG-031: the original anchor was the suffix-trim
+        # loop, which the prefix rule replaced. Same defect, new site: with
+        # the scan disabled no cut point is ever found, so the whole snapshot
+        # prepends verbatim, live turns included - the original race
+        # duplication, reintroduced at the replacement mechanism.
+        """        var cutAt = messages.length; // no live turns found: prepend everything
+        if (liveTurns.length) {""",
+        """        var cutAt = messages.length; // no live turns found: prepend everything
+        if (false) {""",
     ),
     (
         'M16 welcome suppression inert: removeWelcome clears the ref but not the node',
@@ -212,6 +203,21 @@ MUTATIONS = [
         """          chat.last_message_at = new Date().toISOString();
           chats.unshift(chat);""",
         """          chats.unshift(chat);""",
+    ),
+    (
+        'M19 BUG-031 reintroduced: LAST occurrence wins instead of first',
+        """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {
+              cutAt = i; // FIRST qualifying occurrence wins
+              break;
+            }""",
+        """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {
+              cutAt = i; // mutation: keep scanning, so the LAST occurrence wins
+            }""",
+    ),
+    (
+        'M20 the full-coverage/tail qualifier dropped: any partial match cuts',
+        """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {""",
+        """            if (m > 0) {""",
     ),
 ]
 

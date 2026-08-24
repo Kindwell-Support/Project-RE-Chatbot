@@ -1595,32 +1595,67 @@
        * discarded. Before this, a member who typed during a slow /history had
        * their old conversation silently thrown away for the session.
        *
-       * The trim is the duplication defence (R3-c): the fetch can be ISSUED
-       * before the member sends and still be READ by the server after their
-       * turn landed, so the snapshot's tail can already contain the very
-       * turns this pane is showing. The longest snapshot suffix matching the
-       * pane's live turns (oldest-first) is dropped; identical TEXT deeper in
-       * history is untouched, because only the aligned suffix is compared.
+       * BUG-031 — the duplication defence is a PREFIX rule, not a suffix
+       * trim. The fetch can be ISSUED before the member sends and still be
+       * READ by the server after their turn landed, so the snapshot can
+       * already contain the very turns this pane is showing — and with a
+       * second tab or device appending after them (A6: two tabs are
+       * supported), those turns are NOT the snapshot's tail. A suffix matcher
+       * is structurally blind to a mid-array match, so the subject changed:
+       * prepend only the snapshot PREFIX that precedes the live exchange's
+       * FIRST occurrence, and discard the rest. Everything after the live
+       * exchange is either the live exchange itself or turns that arrived
+       * after it — and turns that arrived after the member's live turn do not
+       * belong ABOVE it in a chronological pane. Discarding them is correct,
+       * not lossy: they surface on the next natural refetch.
+       *
+       * A cut point is a snapshot index where the snapshot matches liveTurns
+       * (oldest-first) and the match either COVERS ALL live turns or EXTENDS
+       * TO THE SNAPSHOT'S END. Both arms are load-bearing:
+       *  - full coverage alone would miss the partial-persistence tail (the
+       *    member's second exchange still in flight, only the first written —
+       *    appendExchange writes user+assistant together, so a snapshot can
+       *    end mid-liveTurns but never mid-exchange);
+       *  - reaches-the-end alone would let a ONE-turn match anywhere cut the
+       *    snapshot, eating genuine history that merely repeats the member's
+       *    text ("yes", asked twice a week apart).
+       * FIRST occurrence, never last: with the live pair present twice the
+       * later cut would prepend the earlier copy and paint it twice.
+       *
+       * A mid-array PARTIAL match followed by other turns is inherently
+       * ambiguous (indistinguishable from genuine history that shares a
+       * prefix — the D.E4 class, ruled unscoreable) and is deliberately NOT a
+       * cut point.
+       *
+       * FINDING-032 (recorded, not fixed): the comparison is an EXACT string
+       * compare. Its correctness rests on two facts that live elsewhere — the
+       * widget trims input.value before echoing, and memory.ts stores
+       * verbatim — so today's server cannot produce a tail differing only by
+       * whitespace. If either end ever normalises (trimming server-side,
+       * collapsing whitespace, markdown-stripping), the compare stops
+       * matching and duplication returns. No test pins this because the input
+       * cannot currently occur.
        */
       function prependHistory(messages) {
-        var cut = 0;
-        var max = Math.min(liveTurns.length, messages.length);
-        for (var n = max; n >= 1; n--) {
-          var matches = true;
-          for (var i = 0; i < n; i++) {
-            var snap = messages[messages.length - n + i];
-            var live = liveTurns[i];
-            if (snap.role !== live.role || String(snap.content) !== String(live.content)) {
-              matches = false;
+        var cutAt = messages.length; // no live turns found: prepend everything
+        if (liveTurns.length) {
+          for (var i = 0; i < messages.length; i++) {
+            var m = 0;
+            while (
+              m < liveTurns.length &&
+              i + m < messages.length &&
+              messages[i + m].role === liveTurns[m].role &&
+              String(messages[i + m].content) === String(liveTurns[m].content)
+            ) {
+              m++;
+            }
+            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {
+              cutAt = i; // FIRST qualifying occurrence wins
               break;
             }
           }
-          if (matches) {
-            cut = n;
-            break;
-          }
         }
-        var keep = messages.slice(0, messages.length - cut);
+        var keep = messages.slice(0, cutAt);
         if (!keep.length) return;
         removeWelcome();
         // Built directly rather than through addBubble: addBubble appends and
