@@ -293,7 +293,35 @@ MUTATIONS = [
         removeWelcome();
         if (!keep.length) return;""",
     ),
+    (
+        'M31 qualifier ARM A removed: only extends-to-end cuts',
+        """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {""",
+        """            if (m > 0 && i + m === messages.length) {""",
+    ),
+    (
+        'M32 qualifier ARM B removed: only full coverage cuts (BUG-033)',
+        """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {""",
+        """            if (m > 0 && m === liveTurns.length) {""",
+    ),
 ]
+
+
+def build_artifact():
+    """The minified bundle of the CURRENT widget source, as esbuild emits it.
+
+    Adopted from INSPECTOR's sixth instrument error: a mutation that lands
+    inside a // comment changes the FILE but not the BUILD — the bundles are
+    byte-identical, the suite rightly stays green, and a driver that scores
+    that NOT CAUGHT is issuing a false negative against a working assertion.
+    That is how a correct fix gets "corrected". An inert mutation proves
+    nothing; it is a driver-authoring error and is reported as its own verdict.
+    """
+    p = subprocess.run('npx esbuild %s --bundle --minify --format=iife' % TARGET,
+                       capture_output=True, text=True, shell=True,
+                       encoding='utf-8', errors='replace')
+    if p.returncode != 0:
+        return None  # does not build — the mutation is broken, not inert
+    return p.stdout
 
 
 def run():
@@ -331,6 +359,9 @@ def restore():
     io.open(TARGET, 'w', encoding='utf-8', newline='').write(src)
 
 
+pristine_artifact = build_artifact()
+assert pristine_artifact, 'the pristine source does not build'
+
 failed, passed = run()
 print('BASELINE (unmutated): %s failed / %s passed' % (failed, passed))
 assert failed == 0 and passed and passed > 0, 'baseline is not green'
@@ -344,6 +375,12 @@ for name, old, new in MUTATIONS:
         continue
     io.open(TARGET, 'w', encoding='utf-8', newline='').write(src.replace(old, new, 1))
     try:
+        mutated_artifact = build_artifact()
+        if mutated_artifact == pristine_artifact:
+            print('  SKIPPED: INERT  %s  -> file changed, BUILD identical. '
+                  'The mutation never happened; nothing is proven either way.' % name)
+            bad.append(name + ' (inert)')
+            continue
         failed, passed = run()
     finally:
         restore()  # runs even if the driver itself blows up

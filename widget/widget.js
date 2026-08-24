@@ -1798,18 +1798,43 @@
        * genuine duplicates survive, turns that arrived after the member's
        * turn are still discarded.
        *
-       * Two ambiguities are inherent in (role, content) data and documented
-       * as unscoreable rather than half-fixed (the D.E4 class):
-       *  - a mid-array PARTIAL match followed by other turns is
-       *    indistinguishable from genuine history sharing a prefix, and is
-       *    deliberately NOT a cut point;
-       *  - a POST-live identical arrival (another device sends the same text
-       *    and receives the same deterministic reply before this fetch
-       *    resolves) is indistinguishable from the live copy itself; the last
-       *    occurrence would then be that arrival and the true live copy would
-       *    prepend. No rule over role+content alone can split those; message
-       *    ids in /history would, and that is a contract change this phase
-       *    may not make.
+       * TWO UNQUALIFIABLE SHAPES are inherent in (role, content) data and
+       * are ACCEPTED BY RULING (FINDING-034) — do not add a third arm, do not
+       * write a test for them:
+       *
+       *  - WRONG OCCURRENCE CHOSEN: a post-live identical arrival (another
+       *    device sends the same text and receives the same deterministic
+       *    reply before this fetch resolves) is indistinguishable from the
+       *    live copy; the last occurrence is then the arrival, and the true
+       *    live copy prepends. Needs a semantic coincidence to occur.
+       *
+       *  - NO OCCURRENCE QUALIFIES (INSPECTOR): the member sends twice while
+       *    /history is out, the server's read catches only the first
+       *    exchange, and ANY post-live turn from another tab lands after it.
+       *    The partial live run is then mid-array — arm A cannot fire (not
+       *    full coverage), arm B cannot fire (does not reach the end) — so
+       *    nothing is cut and the member's own first exchange prepends above
+       *    itself. Strictly more reachable: it needs no coincidence, only a
+       *    second tab being used.
+       *
+       * WHY NEITHER IS FIXED HEURISTICALLY: a third arm letting a partial run
+       * qualify mid-array cannot tell [q1, reply, other...] apart from
+       * genuine older history sharing that shape — so it would CUT genuine
+       * history in the mirror case, which is D.E2/D.E3, the failure that has
+       * already cost two corrections. And the asymmetry is the ruling:
+       * duplication is VISIBLE, bounded to the session, and fixed by a
+       * reload; deletion is SILENT and indistinguishable from data loss.
+       * When the data cannot decide, fail toward showing too much.
+       *
+       * THE DECIDABLE FIX, deferred, and costed here so nobody under-scopes
+       * it: message identity in the transcript retires this whole class —
+       * both shapes above, BUG-031's family, and FINDING-032's whitespace
+       * fragility — because the heuristic exists only because role+content is
+       * all we have. It needs TWO contract changes, not one: /history must
+       * return message ids, AND /chat must return the persisted ids of each
+       * turn so the widget can label its own live turns. /history alone does
+       * not suffice — the pane would have ids for the snapshot and none for
+       * itself.
        *
        * FINDING-032 (recorded, not fixed): the comparison is an EXACT string
        * compare. Its correctness rests on two facts that live elsewhere — the

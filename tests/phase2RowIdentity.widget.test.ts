@@ -448,6 +448,80 @@ describe('T-P2.4 (R3-b) — welcome suppressed when history exists, present when
   });
 });
 
+describe('welcome keying — DEDICATED coverage, both directions (M30)', () => {
+  // The M30 discrepancy: the hoisted-removeWelcome mutation was caught, but
+  // by an assertion living INSIDE a prefix-sharing duplication case — one
+  // refactor of that case away from unpinned. These two tests have the
+  // welcome as their ONLY subject.
+  //
+  // The keying, confirmed by design and not as a leftover of the D.E2
+  // symptom: keep.length is exactly "earlier-than-live history exists to
+  // display". Empty keep means everything in the snapshot is the live
+  // exchange or later — the pane is EQUIVALENT TO A FRESH CHAT, and S4.4
+  // rules the welcome stays for fresh chats. Removing it there would strip
+  // the greeting (and the contract-pinned disclaimer above the member's
+  // numbers) from a pane with nothing else above the fold.
+
+  it('keep NON-EMPTY: the prepend removes the welcome', async () => {
+    const server = makeServer({
+      chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
+      history: {},
+      holdHistory: true,
+      reply: 'live-a',
+    });
+    boot(server.fetchMock);
+    await tick();
+    await send('live-q');
+    expect(
+      bubbleText().some((t) => t.includes("I'm James")),
+      'precondition: the welcome is up before the snapshot lands',
+    ).toBe(true);
+
+    server.releaseHistory([
+      { role: 'user', content: 'earlier-q' },
+      { role: 'assistant', content: 'earlier-a' },
+      { role: 'user', content: 'live-q' },
+      { role: 'assistant', content: 'live-a' },
+    ]);
+    await tick();
+
+    expect(
+      bubbleText().some((t) => t.includes("I'm James")),
+      'the welcome sits above restored history',
+    ).toBe(false);
+    expect(bubbleText().some((t) => t.includes('earlier-q')), 'precondition: history really prepended').toBe(
+      true,
+    );
+  });
+
+  it('keep EMPTY: the welcome STAYS — the pane is equivalent to a fresh chat', async () => {
+    const server = makeServer({
+      chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
+      history: {},
+      holdHistory: true,
+      reply: 'live-a',
+    });
+    boot(server.fetchMock);
+    await tick();
+    await send('live-q');
+
+    // The snapshot holds ONLY the live exchange: nothing earlier-than-live
+    // exists, keep is empty, nothing prepends.
+    server.releaseHistory([
+      { role: 'user', content: 'live-q' },
+      { role: 'assistant', content: 'live-a' },
+    ]);
+    await tick();
+
+    const texts = bubbleText();
+    expect(
+      texts.some((t) => t.includes("I'm James")),
+      'the welcome vanished from an effectively-new chat',
+    ).toBe(true);
+    expect(texts.filter((t) => t === 'live-q'), 'precondition: no duplication either').toHaveLength(1);
+  });
+});
+
 describe('FINDING-027 — late history prepends; duplication is the attack surface (R3-c)', () => {
   it('pre-send snapshot WITHOUT the live turn: prepends above, exactly once each', async () => {
     const server = makeServer({
@@ -678,6 +752,46 @@ describe('FINDING-027 — late history prepends; duplication is the attack surfa
     expect(texts.filter((t) => t === 'go'), 'a historical go was eaten').toHaveLength(3);
     expect(texts.filter((t) => t.includes('ok'))).toHaveLength(2);
     expect(texts.filter((t) => t.includes('the answer'))).toHaveLength(1);
+  });
+
+  it('BUG-033 (ARM B): partial-persistence tail — two sends, snapshot caught only the first', async () => {
+    // THE UNPINNED LOAD-BEARING ARM. The member sends TWICE while /history is
+    // out; the server's read landed between the exchanges, so the snapshot
+    // ends with the FIRST live exchange: it extends to the snapshot's end but
+    // does NOT fully cover the live turns. Only qualifier arm B
+    // (extends-to-end) makes that a cut point. With arm B removed the
+    // occurrence fails to qualify, the whole snapshot prepends, and the
+    // member's first exchange paints twice.
+    //
+    // Acceptance (operator): removing arm B ALONE must turn exactly this test
+    // red. Removing arm A alone is caught by the separating case and the
+    // D.M3 acceptance, NOT by this one — the rows are independent.
+    const server = makeServer({
+      chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
+      history: {},
+      holdHistory: true,
+      reply: 'a1',
+    });
+    boot(server.fetchMock);
+    await tick();
+    await send('q1'); // first exchange completes; the reply is 'a1'
+    await send('q2'); // second exchange completes too; liveTurns = q1,a1,q2,a1
+
+    server.releaseHistory([
+      { role: 'user', content: 'old-q' },
+      { role: 'assistant', content: 'old-a' },
+      { role: 'user', content: 'q1' }, // the server read caught only this pair
+      { role: 'assistant', content: 'a1' },
+    ]);
+    await tick();
+
+    const texts = bubbleText();
+    expect(texts.filter((t) => t === 'q1'), 'the first exchange painted twice — arm B is gone').toHaveLength(1);
+    expect(texts.filter((t) => t === 'q2')).toHaveLength(1);
+    expect(texts.filter((t) => t.includes('old-q')), 'the genuinely old turn was lost').toHaveLength(1);
+    const oldAt = texts.findIndex((t) => t.includes('old-q'));
+    const q1At = texts.findIndex((t) => t === 'q1');
+    expect(oldAt, 'old history landed below the live turns').toBeLessThan(q1At);
   });
 
   it('CONTROL: identical TEXT that is genuinely historical is NOT dropped', async () => {
