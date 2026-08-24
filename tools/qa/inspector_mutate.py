@@ -52,6 +52,29 @@ known-recurring environment condition is worth hardening whether or not the
 cause is ever found.
 
 ----------------------------------------------------------------------------
+FINDING-036 - NOT CAUGHT IS A QUESTION, NOT A VERDICT.
+
+A mutation defeated by a WORKING DEFENCE is indistinguishable from a mutation
+the tests MISSED. Both report NOT CAUGHT. The inert-mutation guard does not
+cover it, because the build genuinely changed. The only discriminator is
+reading the code path.
+
+  The case: a skeleton injected inside prependHistory was removed by
+  loadHistory's unconditional clearHistorySkeleton() before any assertion ran -
+  the fourth teardown path doing its job, not a test failing to look. Mutating
+  PAST that defence caught it at 5 assertions.
+
+Every NOT CAUGHT gets one of three dispositions before it is reported:
+
+  (a) genuine coverage gap        -> write the test
+  (b) defeated by a live defence  -> mutate past the defence, then re-score
+  (c) unpinned by construction    -> record why, write nothing
+
+(c) is real and is not a gap: deleting a redundant belt-and-braces teardown goes
+unnoticed because the primaries work. A redundant defence is unobservable while
+they hold, so a test for it would measure nothing. Unpinned BY CONSTRUCTION is
+not unpinned by oversight.
+
 SHARED-TREE RULE. Mutating widget/, src/, tests/, sql/, tools/ or .agents/
 writes a path the other agent may be holding uncommitted work in, and a
 restore is not a checkout, so announce-before-checkout never covered it.
@@ -228,6 +251,11 @@ def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
             bad += 1
         print(f'{verdict:12}  {label}')
         print(f'{"":12}  {detail}')
+        if verdict == NOT_CAUGHT:
+            print(f'{"":12}  ^ FINDING-036: choose a disposition before reporting -')
+            print(f'{"":12}    (a) coverage gap -> write the test')
+            print(f'{"":12}    (b) defeated by a live defence -> mutate past it, re-score')
+            print(f'{"":12}    (c) unpinned by construction -> record why, write nothing')
     print(f'\nmutants that FAILED to catch their defect: {bad}')
     print('tree clean at end:', tree_clean())
     return bad
