@@ -513,11 +513,19 @@ describe('FINDING-027 — late history prepends; duplication is the attack surfa
   it('BUG-031 ACCEPTANCE (D.M3): a mid-array live exchange renders EXACTLY once', async () => {
     // Two tabs are supported (A6). The other tab appends AFTER the member's
     // live turn, so the live pair is no longer the snapshot's suffix — the
-    // exact shape a suffix matcher is structurally blind to. INSPECTOR's
-    // array, verbatim. The member's turn must render once; h1/h2 above it in
-    // order; the other tab's later turns are DISCARDED by rule (they arrived
-    // after the live turn and do not belong above it — they surface on the
-    // next natural refetch).
+    // exact shape a suffix matcher is structurally blind to.
+    //
+    // ENCODING CORRECTED with the last-occurrence ruling: the original
+    // 8-element D.M3 array was the RENDERED PANE (this 6-message snapshot
+    // plus the pane's own two live turns at the bottom) — the operator's
+    // five-case table only computes on that reading. An earlier version of
+    // this test fed the 8-element render in as the SNAPSHOT, a strictly
+    // different (and content-undecidable) fixture. Flagged for INSPECTOR to
+    // reconcile against its rig's D.M3 fixture.
+    //
+    // The member's turn must render once; h1/h2 above it in order; the other
+    // tab's later turns are DISCARDED by rule (they arrived after the live
+    // turn and do not belong above it — they surface on the next refetch).
     const server = makeServer({
       chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
       history: {},
@@ -535,8 +543,6 @@ describe('FINDING-027 — late history prepends; duplication is the attack surfa
       { role: 'assistant', content: 'live-answer' },
       { role: 'user', content: 'from-another-device' },
       { role: 'assistant', content: 'other-reply' },
-      { role: 'user', content: 'live-question' },
-      { role: 'assistant', content: 'live-answer' },
     ]);
     await tick();
 
@@ -554,34 +560,92 @@ describe('FINDING-027 — late history prepends; duplication is the attack surfa
     expect(texts.some((t) => t.includes('other-reply'))).toBe(false);
   });
 
-  it('BUG-031: FIRST occurrence wins — a later duplicate must not resurrect the earlier one', async () => {
-    // The greedy-in-the-other-direction trap the ruling names: cutting at the
-    // LAST occurrence would prepend the earlier copy of the live pair and
-    // paint the member's turn twice.
+  it('THE SEPARATING CASE (ordered): live text duplicated in genuine history, live pair mid-array', async () => {
+    // The construction the corrected ruling required before building: the
+    // live pair appears BOTH as a genuine historical duplicate (an identical
+    // calculator run a week ago — deterministic output makes this real) AND
+    // as the live exchange mid-array with another device's turns after it.
+    //
+    // Correct output: the genuine duplicate and the old pair PREPEND (the
+    // member really had that exchange), the device's post-live turns are
+    // discarded, and the member's text appears exactly TWICE — one genuine,
+    // one live. First-occurrence would cut at the genuine copy, leave an
+    // empty prefix, and throw every real turn away (3 -> 1).
     const server = makeServer({
       chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
       history: {},
       holdHistory: true,
-      reply: 'live-answer',
+      reply: 'sure',
     });
     boot(server.fetchMock);
     await tick();
-    await send('live-question');
+    await send('yes');
 
     server.releaseHistory([
-      { role: 'user', content: 'live-question' },
-      { role: 'assistant', content: 'live-answer' },
-      { role: 'user', content: 'between' },
-      { role: 'assistant', content: 'between-reply' },
-      { role: 'user', content: 'live-question' },
-      { role: 'assistant', content: 'live-answer' },
+      { role: 'user', content: 'yes' }, // genuine, a week old, identical
+      { role: 'assistant', content: 'sure' },
+      { role: 'user', content: 'other-old' },
+      { role: 'assistant', content: 'oo-reply' },
+      { role: 'user', content: 'yes' }, // THE live exchange
+      { role: 'assistant', content: 'sure' },
+      { role: 'user', content: 'from-device2' },
+      { role: 'assistant', content: 'dev2-reply' },
     ]);
     await tick();
 
     const texts = bubbleText();
-    expect(texts.filter((t) => t === 'live-question'), 'the earlier copy was prepended').toHaveLength(1);
-    // First occurrence is at index 0, so NOTHING precedes it: nothing prepends.
-    expect(texts.some((t) => t === 'between'), 'turns after the live exchange were prepended').toBe(false);
+    expect(texts.filter((t) => t === 'yes'), 'genuine history was eaten — or the live turn doubled').toHaveLength(2);
+    expect(texts.filter((t) => t.includes('other-old'))).toHaveLength(1);
+    expect(texts.some((t) => t.includes('from-device2')), 'post-live turns were prepended').toBe(false);
+    // Order: genuine yes, sure, other-old, oo-reply, then the live pair.
+    const firstYes = texts.findIndex((t) => t === 'yes');
+    const otherOld = texts.findIndex((t) => t.includes('other-old'));
+    const lastYes = texts.lastIndexOf('yes');
+    expect(firstYes).toBeLessThan(otherOld);
+    expect(otherOld).toBeLessThan(lastYes);
+    // THE SECOND D.E2 SYMPTOM (INSPECTOR, browser-verified): under the broken
+    // rule keep was empty, removeWelcome never fired, and the pane rendered
+    // as a brand-new chat — blank plus greeting. With genuine history
+    // prepended the welcome must be GONE, and for the right reason: keep is
+    // non-empty, which is exactly "earlier-than-live history exists".
+    expect(texts.some((t) => t.includes("I'm James")), 'the welcome sits above restored history').toBe(
+      false,
+    );
+  });
+
+  it('a POST-live pair sharing only a PREFIX with the live turns does not resurrect anything', async () => {
+    // Qualifier discipline under the last-occurrence scan: a partial match
+    // AFTER the live exchange (same question, different answer) must not
+    // become the cut point — that would prepend the live copy above itself.
+    const server = makeServer({
+      chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
+      history: {},
+      holdHistory: true,
+      reply: 'the answer',
+    });
+    boot(server.fetchMock);
+    await tick();
+    await send('my question');
+
+    server.releaseHistory([
+      { role: 'user', content: 'my question' }, // the live exchange
+      { role: 'assistant', content: 'the answer' },
+      { role: 'user', content: 'my question' }, // device2 asked the same...
+      { role: 'assistant', content: 'a different answer' }, // ...got a different reply
+    ]);
+    await tick();
+
+    const texts = bubbleText();
+    expect(texts.filter((t) => t === 'my question'), 'the live copy was prepended above itself').toHaveLength(1);
+    expect(texts.some((t) => t.includes('a different answer')), 'post-live turns painted').toBe(false);
+    // The welcome keying, other direction: NOTHING earlier-than-live exists
+    // to display (keep is empty), so this pane is equivalent to a fresh chat
+    // and the welcome STAYS. Together with the separating case's absence
+    // assertion, this pins removeWelcome to the RESULT — a version that
+    // removed it whenever a snapshot merely arrived would go red here.
+    expect(texts.some((t) => t.includes("I'm James")), 'the welcome vanished from an effectively-new chat').toBe(
+      true,
+    );
   });
 
   it('BUG-031 CONTROL: two identical ADJACENT historical pairs both survive', async () => {

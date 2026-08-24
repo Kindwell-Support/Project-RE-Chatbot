@@ -10,7 +10,7 @@ count mistakes "nothing ran" for "tests failed" — every mutation would look
 caught. So each run must ALSO report a non-zero PASSED count. A mutation that
 breaks parsing is reported as INVALID, not as a catch.
 """
-import io, re, subprocess, sys
+import io, os, re, subprocess, sys
 
 TARGET = 'widget/widget.js'
 SUITE = ('tests/phase2Loading.widget.test.ts tests/phase2Touch.widget.test.ts '
@@ -205,13 +205,17 @@ MUTATIONS = [
         """          chats.unshift(chat);""",
     ),
     (
-        'M19 BUG-031 reintroduced: LAST occurrence wins instead of first',
+        # RE-POINTED with the corrected ruling: LAST is now correct and FIRST
+        # is the defect - a live text that also appears earlier as genuine
+        # history makes the first occurrence the genuine pair, the prefix
+        # empty, and every real turn is discarded (the separating case).
+        'M19 BUG-031 regression: FIRST occurrence wins again, eating genuine history',
         """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {
-              cutAt = i; // FIRST qualifying occurrence wins
-              break;
+              cutAt = i; // LAST qualifying occurrence wins — keep scanning
             }""",
         """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {
-              cutAt = i; // mutation: keep scanning, so the LAST occurrence wins
+              cutAt = i;
+              break;
             }""",
     ),
     (
@@ -280,6 +284,15 @@ MUTATIONS = [
         """      document.addEventListener('click', onDocumentClick, true);""",
         """      void onDocumentClick;""",
     ),
+    (
+        'M30 the welcome removal unkeyed from the result: fires on any snapshot arrival',
+        """        var keep = messages.slice(0, cutAt);
+        if (!keep.length) return;
+        removeWelcome();""",
+        """        var keep = messages.slice(0, cutAt);
+        removeWelcome();
+        if (!keep.length) return;""",
+    ),
 ]
 
 
@@ -300,8 +313,18 @@ def run():
 # restore writes THAT — never a re-read of a file a crashed run may have left
 # mutated. An earlier version re-backed-up the target on each start and
 # silently promoted a stuck mutation into its own baseline.
+# A KILLED run cannot restore (finally does not survive SIGKILL — it has
+# happened: an interrupted driver left M12 on disk and the suite red). The
+# pristine source is persisted to a sidecar before any mutation; a leftover
+# sidecar on startup means the last run died dirty, and it is restored FIRST.
+SIDECAR = TARGET + '.pristine'
+if os.path.exists(SIDECAR):
+    print('RECOVERY: leftover %s found — restoring the pristine source first' % SIDECAR)
+    io.open(TARGET, 'w', encoding='utf-8', newline='').write(
+        io.open(SIDECAR, encoding='utf-8').read())
 src = io.open(TARGET, encoding='utf-8').read()
 assert "var pre = el('div', 'jb-side-empty');" not in src, 'target is already mutated'
+io.open(SIDECAR, 'w', encoding='utf-8', newline='').write(src)
 
 
 def restore():
@@ -337,6 +360,7 @@ for name, old, new in MUTATIONS:
         print('  caught  %s  -> %d failed / %d passed' % (name, failed, passed))
 
 restore()
+os.remove(SIDECAR)  # a clean exit leaves no sidecar; leftovers mean a dirty death
 print()
 print('baseline passed count: %d' % baseline_passed)
 print('RESULT: %s' % ('ALL MUTATIONS CAUGHT' if not bad else 'PROBLEMS: ' + '; '.join(bad)))

@@ -4,3 +4,4 @@ public/
 .env
 .DS_Store
 *.log
+widget/widget.js.pristine

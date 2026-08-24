@@ -1787,13 +1787,29 @@
        *  - reaches-the-end alone would let a ONE-turn match anywhere cut the
        *    snapshot, eating genuine history that merely repeats the member's
        *    text ("yes", asked twice a week apart).
-       * FIRST occurrence, never last: with the live pair present twice the
-       * later cut would prepend the earlier copy and paint it twice.
        *
-       * A mid-array PARTIAL match followed by other turns is inherently
-       * ambiguous (indistinguishable from genuine history that shares a
-       * prefix — the D.E4 class, ruled unscoreable) and is deliberately NOT a
-       * cut point.
+       * The LAST qualifying occurrence wins (ruling corrected from first):
+       * when the member's live text ALSO appears earlier as genuine history —
+       * an identical calculator run a week ago, with identical deterministic
+       * output — the first occurrence is that genuine pair, and cutting there
+       * leaves an empty prefix that throws every real turn away. The live
+       * exchange is the LATEST thing the pane knows it painted, so the last
+       * qualifying occurrence is it, and everything before it prepends:
+       * genuine duplicates survive, turns that arrived after the member's
+       * turn are still discarded.
+       *
+       * Two ambiguities are inherent in (role, content) data and documented
+       * as unscoreable rather than half-fixed (the D.E4 class):
+       *  - a mid-array PARTIAL match followed by other turns is
+       *    indistinguishable from genuine history sharing a prefix, and is
+       *    deliberately NOT a cut point;
+       *  - a POST-live identical arrival (another device sends the same text
+       *    and receives the same deterministic reply before this fetch
+       *    resolves) is indistinguishable from the live copy itself; the last
+       *    occurrence would then be that arrival and the true live copy would
+       *    prepend. No rule over role+content alone can split those; message
+       *    ids in /history would, and that is a contract change this phase
+       *    may not make.
        *
        * FINDING-032 (recorded, not fixed): the comparison is an EXACT string
        * compare. Its correctness rests on two facts that live elsewhere — the
@@ -1818,8 +1834,7 @@
               m++;
             }
             if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {
-              cutAt = i; // FIRST qualifying occurrence wins
-              break;
+              cutAt = i; // LAST qualifying occurrence wins — keep scanning
             }
           }
         }
