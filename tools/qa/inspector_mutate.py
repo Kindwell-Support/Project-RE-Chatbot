@@ -167,11 +167,25 @@ def esbuild_differs(path):
     if r.returncode != 0 or not os.path.exists(out):
         return None
     built = io.open(out, encoding='utf-8', errors='replace').read()
-    prev = getattr(esbuild_differs, '_baseline', None)
+    # The baseline is the PRISTINE build, captured once and never overwritten.
+    #
+    # It used to be the LAST build, which made a second identical mutation
+    # compare mutant-against-mutant and report INERT - a FALSE inert, the
+    # mirror of the false NOT CAUGHT this guard exists to prevent, and worse
+    # because FINDING-036's dispositions would have it skipped rather than
+    # investigated. Found by running two cycles of the same mutation in one
+    # process during the M30 housing check.
+    prev = getattr(esbuild_differs, '_pristine', None)
     if prev is None:
-        esbuild_differs._baseline = built
+        esbuild_differs._pristine = built
         return None
     return built != prev
+
+
+def reset_pristine():
+    """Forget the pristine build. Call ONLY on a verified-clean tree."""
+    if hasattr(esbuild_differs, '_pristine'):
+        del esbuild_differs._pristine
 
 
 def run_target(target: str) -> tuple[str, str, list[str]]:
@@ -211,6 +225,7 @@ def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
     print()
 
     # Prime the pristine build baseline before anything is mutated.
+    reset_pristine()
     for _p in {m[1] for m in mutants}:
         esbuild_differs(_p)
 
