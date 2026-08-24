@@ -14,7 +14,7 @@ import io, re, subprocess, sys
 
 TARGET = 'widget/widget.js'
 SUITE = ('tests/phase2Loading.widget.test.ts tests/phase2Touch.widget.test.ts '
-         'tests/phase2RowIdentity.widget.test.ts '
+         'tests/phase2RowIdentity.widget.test.ts tests/phase2Layout.widget.test.ts '
          'tests/multiChat.widget.test.ts tests/widget.test.ts')
 
 MUTATIONS = [
@@ -218,6 +218,26 @@ MUTATIONS = [
         'M20 the full-coverage/tail qualifier dropped: any partial match cuts',
         """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {""",
         """            if (m > 0) {""",
+    ),
+    (
+        'M21 the narrow threshold broken: overlay tier unreachable at 560',
+        """        root.classList.toggle('jb-w-narrow', w <= 560);""",
+        """        root.classList.toggle('jb-w-narrow', w <= 200);""",
+    ),
+    (
+        'M22 the zero-width guard removed: a hidden widget collapses to tight',
+        """        if (!w) return; // display:none or not yet laid out — keep last classes""",
+        """        """,
+    ),
+    (
+        'M23 the floor removed: the widget squeezes without limit',
+        """min-height:420px;min-width:300px;""",
+        """min-height:420px;""",
+    ),
+    (
+        'M24 the overlay rule unkeyed: absolute rail leaks into wide layouts',
+        """    '.jb-root.jb-w-narrow .jb-side{position:absolute;z-index:3;height:100%;width:216px;flex-basis:216px;',""",
+        """    '.jb-root .jb-side-mutated{position:static;}','.jb-side{position:absolute;z-index:3;height:100%;width:216px;flex-basis:216px;',""",
     ),
 ]
 

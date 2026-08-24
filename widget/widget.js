@@ -70,7 +70,11 @@
     '--jb-user-bg:var(--jb-accent);--jb-user-text:var(--jb-on-accent);',
     '--jb-bot-bg:rgba(255,255,255,0.04);--jb-bot-text:var(--jb-text-primary);--jb-bot-border:var(--jb-glass-border);',
     '--jb-ease:cubic-bezier(0.22,1,0.36,1);--jb-blur:24px;--jb-radius:18px;',
-    'position:relative;display:flex;flex-direction:column;height:100%;min-height:420px;overflow:hidden;',
+    /* S4.1 — the floor. Supported down to a 320px container; at 300px the
+       widget stops adapting (min-width) and the HOST page scrolls
+       horizontally instead. Stated consequence, not an accident: a scrollable
+       300px widget beats 280px of wrapped nonsense. */
+    'position:relative;display:flex;flex-direction:column;height:100%;min-height:420px;min-width:300px;overflow:hidden;',
     'background:var(--jb-bg-base);border:1px solid rgba(255,255,255,0.06);border-radius:var(--jb-radius);',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;',
     'font-size:15px;line-height:1.6;letter-spacing:normal;color:var(--jb-text-primary);',
@@ -260,8 +264,32 @@
 
     /* --- Responsive ---------------------------------------------------------- */
     /* Mobile: backdrop-filter is costlier per pixel, so soften the blur. */
-    '@media (max-width:520px){.jb-root{--jb-blur:14px;}.jb-bubble{max-width:92%;font-size:14.5px;}.jb-list{padding:14px 12px;}.jb-head{font-size:18px;padding:13px 15px;}.jb-form{margin:0 8px 8px;}.jb-calc{padding:13px;}}',
-    '@media (max-width:360px){.jb-form{gap:8px;padding:10px;}.jb-send{width:42px;height:42px;}}',
+    /* --- S4.1 CONTAINER TIERS ------------------------------------------
+       Every width breakpoint is keyed on jb-w-* classes toggled from the
+       ROOT'S OWN measured width, not on @media viewport queries. The widget
+       lives in a GHL lesson COLUMN: a 500px column in a 1400px viewport fires
+       no viewport query at all, so the rail stayed inline at 216px and the
+       conversation got ~284px — exactly the cramming the old 560px query
+       existed to prevent — and /demo renders full-width, so the whole class
+       was invisible on the review surface.
+       Tiers: jb-w-mid <=700 (S4.3 decram), jb-w-narrow <=560 (overlay rail),
+       jb-w-tight <=400 (compact composer). The old viewport tiers at 520 and
+       360 are CONSOLIDATED into narrow (560) and tight (400): container
+       width runs slightly ahead of the old viewport numbers because the
+       column is narrower than the screen that holds it.
+       Coarse-pointer rules stay @media — pointer is a device property, not a
+       width. */
+    '.jb-root.jb-w-mid .jb-form{margin:0 8px 8px;padding:10px;gap:8px;}',
+    '.jb-root.jb-w-mid .jb-send{width:40px;height:40px;}',
+    '.jb-root.jb-w-mid .jb-side{width:184px;flex-basis:184px;}',
+    '.jb-root.jb-w-mid .jb-bubble{max-width:92%;}',
+    '.jb-root.jb-w-narrow{--jb-blur:14px;}',
+    '.jb-root.jb-w-narrow .jb-bubble{font-size:14.5px;}',
+    '.jb-root.jb-w-narrow .jb-list{padding:14px 12px;}',
+    '.jb-root.jb-w-narrow .jb-head{font-size:18px;padding:13px 15px;}',
+    '.jb-root.jb-w-narrow .jb-calc{padding:13px;}',
+    '.jb-root.jb-w-tight .jb-form{gap:8px;padding:10px;}',
+    '.jb-root.jb-w-tight .jb-send{width:42px;height:42px;}',
 
     /* --- Reduced motion: kill drift, count-up (JS-gated), and all transforms.
        Keep opacity fades — they aid comprehension and don't trigger vestibular
@@ -395,9 +423,9 @@
     '.jb-hist-block .jb-skel{height:11px;}',
     /* Narrow hosts (a GHL lesson column) get the rail closed by default via
        the same collapsed class the toggle uses; nothing here is layout-only. */
-    '@media (max-width:560px){.jb-side{position:absolute;z-index:3;height:100%;',
+    '.jb-root.jb-w-narrow .jb-side{position:absolute;z-index:3;height:100%;width:216px;flex-basis:216px;',
     'background:var(--jb-bg-raised);box-shadow:0 8px 32px rgba(0,0,0,0.45);}',
-    '.jb-body{position:relative;}}',
+    '.jb-root.jb-w-narrow .jb-body{position:relative;}',
   ].join('');
 
   function injectStyles() {
@@ -797,6 +825,34 @@
       root.appendChild(header);
       root.appendChild(body);
       target.appendChild(root);
+
+      /**
+       * S4.1 — width classes from the root's OWN width. ResizeObserver where
+       * it exists (universal in practice); fallback is a mount-time measure
+       * plus window resize, which tracks column changes that come from
+       * viewport changes and misses only host-side column resizes at equal
+       * viewport — a degradation, not a different system: same classes,
+       * same CSS, nothing duplicated to drift.
+       *
+       * Lifecycle: the observer watches a node inside the widget's own
+       * subtree, so a GHL lesson swap that discards the subtree ends it —
+       * nothing external holds a reference. The document guard covers jsdom
+       * teardown (the MutationObserver class).
+       */
+      function applyWidthClasses() {
+        if (typeof document === 'undefined') return;
+        var w = root.clientWidth;
+        if (!w) return; // display:none or not yet laid out — keep last classes
+        root.classList.toggle('jb-w-mid', w <= 700);
+        root.classList.toggle('jb-w-narrow', w <= 560);
+        root.classList.toggle('jb-w-tight', w <= 400);
+      }
+      if (typeof window.ResizeObserver === 'function') {
+        new window.ResizeObserver(applyWidthClasses).observe(root);
+      } else {
+        window.addEventListener('resize', applyWidthClasses);
+      }
+      applyWidthClasses();
 
       // Collapsed state is remembered per device (W3).
       function applyCollapsed(collapsed) {
