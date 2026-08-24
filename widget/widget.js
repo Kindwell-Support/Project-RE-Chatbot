@@ -1347,17 +1347,18 @@
 
         // 'ready' and genuinely empty — the ONLY state this copy is true in.
         //
-        // And in practice that state is UNREACHABLE: R6b mints a placeholder
-        // the instant an empty list resolves, and every other path keeps the
-        // active chat in `rows`, so the rail always has at least one. Which is
-        // the finding, not an oversight — in the pre-fix build this branch
-        // could only ever fire during the loading window, so every appearance
-        // of "No chats yet" a member ever saw was a false one.
+        // KEEP THIS BRANCH (operator ruling; R-1 reversed). It LOOKS
+        // unreachable — R6b mints a placeholder the moment an empty list
+        // resolves, and BUG-024 mints the delete fallback synchronously — and
+        // an earlier pass concluded exactly that and slated it for deletion.
+        // The conclusion was wrong: at the time, deleting your only chat left
+        // the rail zero-row for the entire DELETE round trip (BUG-024), and
+        // this branch was the only thing that filled the gap. Two agents
+        // reproduced that window independently before the deletion shipped.
         //
-        // Retained as a defensive fallback rather than deleted: if a future
-        // path ever leaves no active chat, a rail that says nothing is worse
-        // than one that says this. It is not a state the UI can currently
-        // produce, and no test claims otherwise.
+        // A fallback with a proven history of firing is not dead code. Do not
+        // delete this on a reachability argument — that argument has already
+        // been wrong once.
         if (chatsState === 'ready' && !rows.length) {
           var empty = el('div', 'jb-side-empty');
           empty.textContent = 'No chats yet.';
@@ -1606,7 +1607,24 @@
         chats = chats.filter(function (chat) {
           return chat.id !== id;
         });
-        renderSidebar();
+        // BUG-024: the fallback is minted SYNCHRONOUSLY, before the DELETE is
+        // even issued. It used to live in the .then below, which left the rail
+        // zero-row — and the member chatless — for the whole round trip; both
+        // agents found the window independently. The deferral was ordering,
+        // not conditionality: the .then ran this fallback on success AND
+        // failure alike, so nothing is lost by running it now. It also
+        // removes the stale(op) window outright — there is no deferred
+        // callback left to go stale.
+        //
+        // Order matters within this branch: the switch (or placeholder) runs
+        // BEFORE beginOp, so the DELETE below registers under the NEW
+        // generation and is not aborted by its own chat-switch reset.
+        if (wasActive) {
+          if (chats.length) switchToChat(chats[0].id);
+          else startPlaceholder();
+        } else {
+          renderSidebar();
+        }
         var op = beginOp();
         chatsApi('/chats/' + encodeURIComponent(id), { method: 'DELETE' })
           .catch(function () {
@@ -1614,12 +1632,6 @@
           })
           .then(function () {
             endOp(op);
-            if (!wasActive || stale(op)) return;
-            if (chats.length) {
-              switchToChat(chats[0].id);
-              return;
-            }
-            startPlaceholder();
           });
       }
 
@@ -2225,6 +2237,14 @@
     // GHL swaps lesson content without a full page load — re-mount whenever
     // the target div reappears.
     var observer = new MutationObserver(function () {
+      // jsdom test teardown destroys `document` while this observer is still
+      // connected, and every late firing then throws a ReferenceError — noise
+      // that can bury a real failure in the run output. In a browser the
+      // document outlives the page, so the guard is a no-op there.
+      if (typeof document === 'undefined') {
+        observer.disconnect();
+        return;
+      }
       var target = document.querySelector(targetSelector);
       if (target && target.getAttribute('data-mounted') !== 'true') mount();
     });

@@ -234,8 +234,9 @@ describe('T-P2.2 — the rail distinguishes loading / empty / error', () => {
     // unreachable outright. That claim was too strong and the case could not
     // have caught it being wrong: it sampled only the boot, error and retry
     // paths, so it was measuring "these four states" while asserting "every
-    // state". The delete path does reach a zero-row rail — see the
-    // characterisation case below, and BUG-024.
+    // state". The delete path DID reach a zero-row rail (BUG-024, since
+    // fixed — see the case below), which is why the branch this copy lives in
+    // is retained by operator ruling.
     //
     // What is true, and what this now asserts, is still the substance of S1.1:
     // across every path where the rail LOADS, R6b's placeholder or the
@@ -270,20 +271,13 @@ describe('T-P2.2 — the rail distinguishes loading / empty / error', () => {
     );
   });
 
-  it('CHARACTERISATION (BUG-024): deleting the last chat DOES reach a zero-row rail', async () => {
-    // Not a defence of this behaviour — a record of it, pinned so the ruling on
-    // R-1 is taken against a measured fact rather than my earlier assertion.
-    //
-    // deleteChat removes the row and renders OPTIMISTICALLY, but the
-    // replacement placeholder is only minted in the .then after the DELETE
-    // round trip. For that whole round trip the rail has zero rows, and R6b's
-    // "the rail is never empty" does not hold. Today .jb-side-empty fills the
-    // gap with "No chats yet" — which is itself premature, since the archive
-    // has not been confirmed yet.
-    //
-    // WHEN THE FIX LANDS (mint the fallback synchronously) this case must be
-    // rewritten to assert a placeholder row appears with no empty frame. It is
-    // expected to change; that is the point of it.
+  it('BUG-024 FIXED: deleting the last chat mints its fallback SYNCHRONOUSLY', async () => {
+    // The predecessor of this case was a CHARACTERISATION: it pinned the
+    // zero-row window as measured fact (rows=0 and "No chats yet" for the
+    // whole DELETE round trip) so the ruling could be taken against evidence.
+    // The fix moved the fallback out of the .then — the deferral was ordering,
+    // not conditionality — so this now asserts the window is GONE, sampled
+    // through the round trip rather than at one instant.
     const waiting: Array<(v: unknown) => void> = [];
     const fetchMock = vi.fn((url: string, init?: any) => {
       const method = (init?.method ?? 'GET').toUpperCase();
@@ -310,17 +304,24 @@ describe('T-P2.2 — the rail distinguishes loading / empty / error', () => {
     document
       .querySelector<HTMLButtonElement>('#james-bot [aria-label="Confirm delete chat"]')!
       .click();
-    await tick(2);
 
-    // THE WINDOW. Both assertions describe current behaviour, not desired.
-    expect(chatRows().length, 'the zero-row window has closed on its own').toBe(0);
-    expect(emptyCopy().length, 'nothing fills the gap during the delete round trip').toBe(1);
+    // Sampled across the held round trip, not once: a fallback minted on the
+    // next microtask instead of synchronously would pass a single snapshot.
+    for (let i = 0; i < 4; i += 1) {
+      expect(chatRows().length, `zero-row window reopened (sample ${i})`).toBe(1);
+      expect(emptyCopy().length, `the empty copy showed mid-delete (sample ${i})`).toBe(0);
+      await tick(1);
+    }
+    expect(railText()).toContain('New chat');
+    // PRECONDITION for all of the above: the DELETE round trip really is being
+    // held open. Without this, a widget that never issued the DELETE at all
+    // would sail through the sampling loop.
+    expect(waiting.length, 'the DELETE was never issued — the samples measured nothing').toBe(1);
 
     waiting.splice(0).forEach((r) => r({ ok: true, status: 204, json: async () => null }));
     await tick();
 
-    // And it does heal, which is why this is a flash and not a dead end.
-    expect(chatRows().length, 'the placeholder never arrived').toBe(1);
+    expect(chatRows().length, 'the resolved delete disturbed the placeholder').toBe(1);
     expect(emptyCopy().length).toBe(0);
   });
 

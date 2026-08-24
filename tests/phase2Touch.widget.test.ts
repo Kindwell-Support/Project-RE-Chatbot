@@ -133,6 +133,35 @@ function declFor(selector: string, prop: string, opts: { coarse: boolean }): str
   return value;
 }
 
+/**
+ * BUG-026: the media queries whose BODY contains a rule for `selector`.
+ *
+ * This is the quantifier fix. The condition assertion used to run
+ * `.some(both-terms)` across EVERY coarse media query in the sheet — which
+ * measures the population, not the rule. With two coarse queries in the sheet
+ * (the .jb-chat-act reveal and the confirm-button padding), weakening ONLY the
+ * reveal's query to `(hover: none)` stayed green because the OTHER query still
+ * satisfied the .some(). Proven by INSPECTOR's paired mutation. Wrong-subject
+ * instance nine: an assertion quantified over a POPULATION when the claim is
+ * about a SPECIFIC MEMBER.
+ *
+ * Resolving the query THROUGH the rule it contains makes the subject the rule.
+ */
+function mediaQueriesContaining(selector: string): CSSMediaRule[] {
+  return sheetRules().filter((rule): rule is CSSMediaRule => {
+    const media = rule as CSSMediaRule;
+    if (!media.cssRules || media.conditionText === undefined) return false;
+    return Array.from(media.cssRules).some((inner) => {
+      const style = inner as CSSStyleRule;
+      if (!style.selectorText) return false;
+      return style.selectorText
+        .split(',')
+        .map((sel) => sel.trim())
+        .includes(selector);
+    });
+  });
+}
+
 const railRows = () => Array.from(document.querySelectorAll('#james-bot .jb-chat-row'));
 const rowById = (id: string | null) => {
   const found = document.querySelector(`#james-bot .jb-chat-row[data-chat-id="${id}"]`);
@@ -168,20 +197,31 @@ describe('T-P2.3 — rename and delete are reachable under a coarse pointer', ()
     ).toBe('1');
   });
 
-  it('the reveal is conditioned on BOTH hover:none and pointer:coarse', async () => {
-    // Either alone leaves a real device class out: a stylus is fine-pointer but
-    // hoverless, and some touch laptops report coarse while still hovering.
+  it('THE RULE that reveals .jb-chat-act carries BOTH hover:none and pointer:coarse', async () => {
+    // Either term alone leaves a real device class out: a stylus is
+    // fine-pointer but hoverless, and some touch laptops report coarse while
+    // still hovering. The two terms are alternatives (comma = OR), so the rule
+    // fires for either class — and losing one term silently un-fixes S2.1 for
+    // that class.
+    //
+    // Resolved THROUGH the rule (BUG-026), never via a sheet-wide .some():
+    // with two coarse queries in the sheet, a population quantifier stays
+    // green when only this one is weakened.
     boot(makeServer({ chats: [{ id: CHAT_A, title: 'Chat A' }] }).fetchMock);
     await tick();
 
-    const conditions = sheetRules()
-      .map((r) => String((r as CSSMediaRule).conditionText ?? ''))
-      .filter((c) => COARSE.test(c));
-
-    expect(conditions.length, 'no coarse-pointer media query was injected').toBeGreaterThan(0);
-    expect(conditions.some((c) => /hover:\s*none/.test(c) && /pointer:\s*coarse/.test(c))).toBe(
-      true,
+    const queries = mediaQueriesContaining('.jb-chat-act');
+    expect(queries.length, 'no media query contains a .jb-chat-act rule at all').toBe(1);
+    const condition = String(queries[0].conditionText);
+    expect(condition, 'hoverless devices (stylus) lost the reveal').toMatch(/hover:\s*none/);
+    expect(condition, 'coarse-but-hovering devices (touch laptops) lost the reveal').toMatch(
+      /pointer:\s*coarse/,
     );
+    // And the rule inside it is the reveal, not some other .jb-chat-act rule.
+    const inner = Array.from(queries[0].cssRules)
+      .map((r) => (r as CSSStyleRule))
+      .find((r) => r.selectorText?.includes('.jb-chat-act'));
+    expect(inner?.style.getPropertyValue('opacity').trim(), 'the rule is not the reveal').toBe('1');
   });
 
   it('the actions exist in the DOM to be revealed at all', async () => {
@@ -205,6 +245,16 @@ describe('T-P2.3 — rename and delete are reachable under a coarse pointer', ()
     const coarse = declFor('.jb-chat-confirm-yes', 'padding', { coarse: true });
     expect(fine, 'precondition: there is a fine-pointer default to grow from').not.toBeNull();
     expect(coarse, 'touch gets no larger target than a mouse').not.toBe(fine);
+
+    // Same audit as the reveal (BUG-026's "check the same shape" order):
+    // declFor's COARSE regex is an OR, so it would still find this padding
+    // under a query weakened to hover:none only. Tie the condition to the
+    // rule here too.
+    const queries = mediaQueriesContaining('.jb-chat-confirm-yes');
+    expect(queries.length, 'no media query contains the confirm tap-target rule').toBe(1);
+    const condition = String(queries[0].conditionText);
+    expect(condition).toMatch(/hover:\s*none/);
+    expect(condition).toMatch(/pointer:\s*coarse/);
   });
 });
 

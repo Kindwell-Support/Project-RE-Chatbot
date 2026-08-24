@@ -122,6 +122,38 @@ MUTATIONS = [
         """            renamingId = null;
             confirmingId = confirmingId || chat.id;""",
     ),
+    (
+        'M12 BUG-024 reintroduced: delete fallback deferred to the .then again',
+        """        if (wasActive) {
+          if (chats.length) switchToChat(chats[0].id);
+          else startPlaceholder();
+        } else {
+          renderSidebar();
+        }
+        var op = beginOp();
+        chatsApi('/chats/' + encodeURIComponent(id), { method: 'DELETE' })
+          .catch(function () {
+            /* the row is already gone from the rail; a failed archive re-appears on reload */
+          })
+          .then(function () {
+            endOp(op);
+          });""",
+        """        renderSidebar();
+        var op = beginOp();
+        chatsApi('/chats/' + encodeURIComponent(id), { method: 'DELETE' })
+          .catch(function () {
+            /* the row is already gone from the rail; a failed archive re-appears on reload */
+          })
+          .then(function () {
+            endOp(op);
+            if (!wasActive || stale(op)) return;
+            if (chats.length) {
+              switchToChat(chats[0].id);
+              return;
+            }
+            startPlaceholder();
+          });""",
+    ),
 ]
 
 
