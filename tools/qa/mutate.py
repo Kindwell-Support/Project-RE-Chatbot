@@ -239,6 +239,47 @@ MUTATIONS = [
         """    '.jb-root.jb-w-narrow .jb-side{position:absolute;z-index:3;height:100%;width:216px;flex-basis:216px;',""",
         """    '.jb-root .jb-side-mutated{position:static;}','.jb-side{position:absolute;z-index:3;height:100%;width:216px;flex-basis:216px;',""",
     ),
+    (
+        # RE-POINTED: the scrim's dedicated handler was DELETED as dead code -
+        # the document CAPTURE listener fires before any bubble reaches the
+        # scrim, so it could never be the acting mechanism and this driver
+        # proved it (the original M25 was MISSED: scrim taps closed via the
+        # outside-click path with the handler inert). The live defect is the
+        # outside-click listener treating scrim taps as inside the drawer.
+        'M25 scrim taps treated as inside the drawer: the backdrop goes dead',
+        """        if (side.contains(event.target) || sideToggle.contains(event.target)) return;""",
+        """        if (side.contains(event.target) || sideToggle.contains(event.target) || event.target === scrim) return;""",
+    ),
+    (
+        'M26 Escape no longer closes the drawer',
+        """      root.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        closeDrawer();
+      });""",
+        """      root.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+      });""",
+    ),
+    (
+        'M27 the drawer survives a chat switch (reset entry removed)',
+        """        drawerOpen = false;
+        applyDrawer();
+        // 9a. Any open delete confirmation (S2.2). Same reasoning as the""",
+        """        // 9a. Any open delete confirmation (S2.2). Same reasoning as the""",
+    ),
+    (
+        'M28 the focus rule ignores the pointer: coarse devices get the keyboard',
+        """        var coarse =
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(hover: none), (pointer: coarse)').matches;
+        if (!coarse) input.focus();""",
+        """        input.focus();""",
+    ),
+    (
+        'M29 outside clicks pass through: the document listener is gone',
+        """      document.addEventListener('click', onDocumentClick, true);""",
+        """      void onDocumentClick;""",
+    ),
 ]
 
 

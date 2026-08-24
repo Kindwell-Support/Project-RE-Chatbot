@@ -299,6 +299,7 @@
     '.jb-row{animation:jb-fade 200ms var(--jb-ease) both;}',
     '.jb-calc{animation:jb-fade 220ms var(--jb-ease) both;}',
     '.jb-send,.jb-btn,.jb-input,.jb-control{transition:none;}',
+    '.jb-side{transition:none;}',
     '.jb-send:active,.jb-btn:active{transform:none;}',
     /* Feedback stays, motion goes: the skeleton holds still and the button
        label alone says "Calculating…" (the spinner is not built at all — see
@@ -423,9 +424,27 @@
     '.jb-hist-block .jb-skel{height:11px;}',
     /* Narrow hosts (a GHL lesson column) get the rail closed by default via
        the same collapsed class the toggle uses; nothing here is layout-only. */
+    /* S4.2 — below the narrow tier the rail is a DRAWER: closed by default,
+       slid in by the header toggle, dismissed by scrim tap, outside click, or
+       Escape. The old behaviour had no scrim and no exit but the toggle. */
     '.jb-root.jb-w-narrow .jb-side{position:absolute;z-index:3;height:100%;width:216px;flex-basis:216px;',
-    'background:var(--jb-bg-raised);box-shadow:0 8px 32px rgba(0,0,0,0.45);}',
+    'background:var(--jb-bg-raised);box-shadow:0 8px 32px rgba(0,0,0,0.45);',
+    'transform:translateX(-105%);transition:transform 200ms var(--jb-ease);}',
+    '.jb-root.jb-w-narrow.jb-drawer-open .jb-side{transform:translateX(0);}',
+    /* The desktop collapse preference must not leave a width-0 drawer: at
+       narrow, the transform is the only thing that hides the rail. */
+    '.jb-root.jb-w-narrow .jb-side.jb-side-collapsed{width:216px;flex-basis:216px;border-right:1px solid var(--jb-glass-border);}',
     '.jb-root.jb-w-narrow .jb-body{position:relative;}',
+    /* The scrim: sits between the conversation and the drawer, tap closes.
+       Display-gated on BOTH classes so it can never shade a wide layout. */
+    '.jb-scrim{display:none;}',
+    '.jb-root.jb-w-narrow.jb-drawer-open .jb-scrim{display:block;position:absolute;inset:0;z-index:2;',
+    'background:rgba(0,0,0,0.45);}',
+    /* S4.2 scroll lock — scoped INSIDE the widget subtree, never the host
+       page: the drawer covers the widget, not the portal, so the page behind
+       keeps scrolling and nothing outlives a GHL lesson swap by construction.
+       Derived from the same class as the drawer, so they cannot desync. */
+    '.jb-root.jb-drawer-open .jb-list{overflow:hidden;}',
   ].join('');
 
   function injectStyles() {
@@ -820,7 +839,9 @@
 
       main.appendChild(list);
       main.appendChild(form);
+      var scrim = el('div', 'jb-scrim', { 'aria-hidden': 'true' });
       body.appendChild(side);
+      body.appendChild(scrim);
       body.appendChild(main);
       root.appendChild(header);
       root.appendChild(body);
@@ -846,6 +867,15 @@
         root.classList.toggle('jb-w-mid', w <= 700);
         root.classList.toggle('jb-w-narrow', w <= 560);
         root.classList.toggle('jb-w-tight', w <= 400);
+        // Crossing a tier re-derives the drawer. Leaving narrow CLEARS the
+        // flag, not just the class: a flag that survived the wide layout
+        // would silently reopen the drawer on the next narrowing — a drawer
+        // nobody asked for, covering the conversation.
+        if (!isNarrow()) {
+          drawerOpen = false;
+          applyCollapsed(storageGet(COLLAPSE_KEY) === '1');
+        }
+        applyDrawer();
       }
       if (typeof window.ResizeObserver === 'function') {
         new window.ResizeObserver(applyWidthClasses).observe(root);
@@ -854,7 +884,34 @@
       }
       applyWidthClasses();
 
-      // Collapsed state is remembered per device (W3).
+      function isNarrow() {
+        return root.classList.contains('jb-w-narrow');
+      }
+
+      /**
+       * S4.2/S4.5 — the drawer's ONE renderer. The root class (which carries
+       * the scrim and the scroll lock in CSS) is DERIVED from the flag here,
+       * so flag and presentation cannot desync. `drawerOpen` is transient
+       * per-chat-ish state and joins resetChatState; the persisted COLLAPSE
+       * preference is a different thing (how I like my rail) and applies only
+       * at wide widths.
+       */
+      function applyDrawer() {
+        var open = Boolean(drawerOpen) && isNarrow();
+        root.classList.toggle('jb-drawer-open', open);
+        if (isNarrow()) {
+          side.setAttribute('aria-hidden', open ? 'false' : 'true');
+          sideToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+      }
+
+      function closeDrawer() {
+        if (!drawerOpen) return;
+        drawerOpen = false;
+        applyDrawer();
+      }
+
+      // Collapsed state is remembered per device (W3) — wide widths only.
       function applyCollapsed(collapsed) {
         if (collapsed) side.classList.add('jb-side-collapsed');
         else side.classList.remove('jb-side-collapsed');
@@ -863,10 +920,50 @@
       }
       applyCollapsed(storageGet(COLLAPSE_KEY) === '1');
       sideToggle.addEventListener('click', function () {
+        if (isNarrow()) {
+          // The drawer. NOT persisted: a reload must open on the
+          // conversation, never under a drawer left standing.
+          drawerOpen = !drawerOpen;
+          applyDrawer();
+          return;
+        }
         var collapsed = !side.classList.contains('jb-side-collapsed');
         applyCollapsed(collapsed);
         storageSet(COLLAPSE_KEY, collapsed ? '1' : '0');
       });
+
+      // The scrim needs NO click handler of its own: the document capture
+      // listener below fires before any bubble could reach one, and the scrim
+      // is outside the drawer, so a scrim tap IS an outside click. A dedicated
+      // handler here would be dead code that no test could distinguish from
+      // the working mechanism — the mutation driver proved exactly that.
+
+      // Escape closes the drawer — unless an inner control already used it
+      // (the rename input and the delete confirm both preventDefault their
+      // Escape), so cancelling a rename does not also yank the drawer away.
+      root.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        closeDrawer();
+      });
+
+      /**
+       * Outside click. This is the ONE registration outside the widget's
+       * subtree, and it is a listener, not a DOM write: nothing about the
+       * page is mutated. It self-removes on the first event after the
+       * subtree is discarded (a GHL lesson swap has no unmount hook to tell
+       * us sooner), so at most one dead no-op firing survives a swap.
+       */
+      function onDocumentClick(event) {
+        if (typeof document === 'undefined') return; // jsdom teardown
+        if (!root.isConnected) {
+          document.removeEventListener('click', onDocumentClick, true);
+          return;
+        }
+        if (!drawerOpen || !isNarrow()) return;
+        if (side.contains(event.target) || sideToggle.contains(event.target)) return;
+        closeDrawer();
+      }
+      document.addEventListener('click', onDocumentClick, true);
 
       // Scroll-anchoring: only follow new messages when the member is already
       // at the bottom, so a long answer can't yank them out of what they're
@@ -1048,6 +1145,13 @@
        */
       var titleRefetchTimer = null;
       /**
+       * S4.2/S4.5 — the drawer below the narrow tier. Transient, never
+       * persisted, joins resetChatState. Distinct from the persisted collapse
+       * preference: one is "how I like my rail", the other is "a panel is
+       * momentarily covering things".
+       */
+      var drawerOpen = false;
+      /**
        * Generation counter — bumped by every reset. Async callbacks capture
        * the generation they began in and bail if it has moved.
        *
@@ -1203,6 +1307,14 @@
         list.scrollTop = 0;
         // 9. Any half-open inline rename in the rail.
         renamingId = null;
+        // 9aa. The drawer (S4.5): a reset lands the member in a fresh pane,
+        //      and a drawer left standing would cover the very thing the
+        //      switch produced. Closing it here is also what gives
+        //      close-on-chat-pick for free — every switch runs this reset.
+        //      The scroll-lock class is DERIVED from the flag in applyDrawer,
+        //      so the two cannot desync.
+        drawerOpen = false;
+        applyDrawer();
         // 9a. Any open delete confirmation (S2.2). Same reasoning as the
         //     rename, with more at stake: a half-taken DESTRUCTIVE question
         //     must not survive into another chat, where the row it refers to
@@ -1796,6 +1908,21 @@
           });
       }
 
+      /**
+       * Q4 (ruled) — ONE pointer-aware focus rule for both switch paths.
+       * On fine pointers, switching and new-chat both refocus the composer.
+       * On coarse pointers NEITHER does — focusing pops a keyboard over half
+       * the pane, and a member who tapped an old chat almost certainly came
+       * to READ it. Consistency is one RULE, not one behaviour regardless of
+       * cost.
+       */
+      function refocusComposer() {
+        var coarse =
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(hover: none), (pointer: coarse)').matches;
+        if (!coarse) input.focus();
+      }
+
       /** Switch chats: full reset, then repaint from the server (W4). */
       function switchToChat(id) {
         if (!id || id === sessionId) return;
@@ -1803,6 +1930,7 @@
         persistActive(id);
         renderSidebar();
         loadHistory();
+        refocusComposer();
       }
 
       /**
@@ -1814,7 +1942,7 @@
        */
       function startNewChat() {
         startPlaceholder();
-        input.focus();
+        refocusComposer();
       }
 
       /**

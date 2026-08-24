@@ -239,3 +239,246 @@ describe('S4.1 — the tier CSS is keyed to the classes, per rule', () => {
     expect(declOf('.jb-root.jb-w-tight .jb-send', 'width')).toBe('42px');
   });
 });
+
+// ---------------------------------------------------------------------------
+// S4.2 — the drawer. Booted at a narrow width via the same stubbed observer.
+// ---------------------------------------------------------------------------
+
+function bootWithChats(chats: Array<{ id: string; title: string | null }>) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (u: string, init?: any) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (String(u).includes('/history')) return json(200, { messages: [] });
+      if (String(u).endsWith('/chats') && method === 'GET') {
+        return json(200, chats.map((c) => ({ ...c, created_at: 'x', last_message_at: 'x' })));
+      }
+      if (String(u).endsWith('/chat')) return json(200, { output: 'ok' });
+      return json(404, {});
+    }),
+  );
+  vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+  loadWidget();
+  const div = document.createElement('div');
+  div.id = 'james-bot';
+  document.body.appendChild(div);
+  (window as any).createJamesBot({ apiUrl: 'https://api.example.com', target: '#james-bot' });
+}
+
+const CHAT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const CHAT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const tick = async (times = 6) => {
+  for (let i = 0; i < times; i += 1) await new Promise((r) => setTimeout(r, 0));
+};
+const toggle = () => document.querySelector<HTMLButtonElement>('#james-bot .jb-side-toggle')!;
+const scrim = () => document.querySelector<HTMLElement>('#james-bot .jb-scrim')!;
+const side = () => document.querySelector<HTMLElement>('#james-bot .jb-side')!;
+const drawerOpen = () => root().classList.contains('jb-drawer-open');
+
+async function bootNarrowWithTwoChats() {
+  bootWithChats([
+    { id: CHAT_A, title: 'Chat A' },
+    { id: CHAT_B, title: 'Chat B' },
+  ]);
+  await tick();
+  setWidth(500);
+}
+
+describe('T-P2.5 — the overlay rail dismisses on scrim tap, outside click, and Escape', () => {
+  it('opens via the header toggle, closed by default on entering narrow', async () => {
+    await bootNarrowWithTwoChats();
+
+    expect(drawerOpen(), 'the drawer opened itself on entering narrow').toBe(false);
+    expect(side().getAttribute('aria-hidden')).toBe('true');
+
+    toggle().click();
+
+    expect(drawerOpen()).toBe(true);
+    expect(side().getAttribute('aria-hidden')).toBe('false');
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('scrim tap closes', async () => {
+    await bootNarrowWithTwoChats();
+    toggle().click();
+    expect(drawerOpen(), 'precondition').toBe(true);
+
+    scrim().click();
+
+    expect(drawerOpen(), 'the scrim did nothing').toBe(false);
+  });
+
+  it('a click OUTSIDE the drawer closes it — including outside the widget', async () => {
+    await bootNarrowWithTwoChats();
+    toggle().click();
+    expect(drawerOpen(), 'precondition').toBe(true);
+
+    // The host page, not the widget: the capture listener on document.
+    document.body.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+    expect(drawerOpen(), 'a host-page click left the drawer standing').toBe(false);
+  });
+
+  it('a click INSIDE the drawer does NOT close it', async () => {
+    await bootNarrowWithTwoChats();
+    toggle().click();
+
+    side().dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+    expect(drawerOpen(), 'clicking the drawer itself dismissed it').toBe(true);
+  });
+
+  it('Escape closes', async () => {
+    await bootNarrowWithTwoChats();
+    toggle().click();
+
+    root().dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+
+    expect(drawerOpen(), 'Escape did nothing').toBe(false);
+  });
+
+  it("Escape that CANCELS A RENAME does not also yank the drawer away", async () => {
+    // The rename input preventDefaults its Escape; the drawer handler defers
+    // to defaultPrevented. One keypress, one cancellation.
+    await bootNarrowWithTwoChats();
+    toggle().click();
+    document
+      .querySelector<HTMLButtonElement>('#james-bot [aria-label="Rename chat"]')!
+      .click();
+    await tick();
+    const field = document.querySelector<HTMLInputElement>('#james-bot .jb-chat-rename-input')!;
+    expect(field, 'precondition: a rename is open').not.toBeNull();
+
+    field.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    await tick();
+
+    expect(
+      document.querySelector('#james-bot .jb-chat-rename-input'),
+      'the rename did not cancel',
+    ).toBeNull();
+    expect(drawerOpen(), 'one Escape closed two things').toBe(true);
+  });
+
+  it('leaving the narrow tier drops the drawer class; re-entering starts closed', async () => {
+    await bootNarrowWithTwoChats();
+    toggle().click();
+    expect(drawerOpen(), 'precondition').toBe(true);
+
+    setWidth(800);
+    expect(drawerOpen(), 'the drawer class survived into the wide layout').toBe(false);
+
+    setWidth(500);
+    expect(drawerOpen(), 're-entering narrow reopened a drawer nobody asked for').toBe(false);
+  });
+
+  it('the toggle at narrow does NOT write the collapse preference', async () => {
+    // Drawer state is transient; a reload must open on the conversation. The
+    // persisted key belongs to the wide-layout collapse alone.
+    await bootNarrowWithTwoChats();
+    window.localStorage.removeItem('james-bot-sidebar-collapsed');
+
+    toggle().click();
+    toggle().click();
+
+    expect(
+      window.localStorage.getItem('james-bot-sidebar-collapsed'),
+      'the drawer persisted itself',
+    ).toBeNull();
+  });
+});
+
+describe('T-P2.6 — the drawer joins resetChatState', () => {
+  it('picking a chat from the open drawer closes it (the reset does it)', async () => {
+    await bootNarrowWithTwoChats();
+    toggle().click();
+    expect(drawerOpen(), 'precondition').toBe(true);
+
+    document
+      .querySelector<HTMLElement>(`#james-bot .jb-chat-row[data-chat-id="${CHAT_B}"]`)!
+      .querySelector<HTMLButtonElement>('.jb-chat-open')!
+      .click();
+    await tick();
+
+    expect(drawerOpen(), 'the drawer covered the chat the member just picked').toBe(false);
+  });
+
+  it('"+ New chat" closes it the same way', async () => {
+    await bootNarrowWithTwoChats();
+    toggle().click();
+
+    document.querySelector<HTMLButtonElement>('#james-bot .jb-new')!.click();
+    await tick();
+
+    expect(drawerOpen()).toBe(false);
+  });
+
+  it('the scroll lock is DERIVED: same class carries drawer, scrim and lock', async () => {
+    // Per-rule (BUG-026 discipline): the lock rule is keyed on the drawer
+    // class, and the scrim's visibility on drawer AND narrow — so neither can
+    // exist without the state that justifies it.
+    await bootNarrowWithTwoChats();
+    expect(declOf('.jb-root.jb-drawer-open .jb-list', 'overflow')).toBe('hidden');
+    expect(declOf('.jb-root.jb-w-narrow.jb-drawer-open .jb-scrim', 'display')).toBe('block');
+    // And the scrim is inert outside the drawer state.
+    expect(declOf('.jb-scrim', 'display')).toBe('none');
+  });
+});
+
+describe('Q4 — pointer-aware focus, one rule for both switch paths', () => {
+  function stubPointer(coarse: boolean) {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((q: string) => ({
+        matches: /hover:\s*none|pointer:\s*coarse/.test(q) ? coarse : false,
+        media: q,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })),
+    );
+  }
+
+  it('fine pointer: switching AND new-chat both refocus the composer', async () => {
+    stubPointer(false);
+    await bootNarrowWithTwoChats();
+    (document.activeElement as HTMLElement | null)?.blur?.();
+
+    document
+      .querySelector<HTMLElement>(`#james-bot .jb-chat-row[data-chat-id="${CHAT_B}"]`)!
+      .querySelector<HTMLButtonElement>('.jb-chat-open')!
+      .click();
+    await tick();
+    expect(document.activeElement?.className).toContain('jb-input');
+
+    (document.activeElement as HTMLElement).blur();
+    document.querySelector<HTMLButtonElement>('#james-bot .jb-new')!.click();
+    await tick();
+    expect(document.activeElement?.className).toContain('jb-input');
+  });
+
+  it('coarse pointer: NEITHER path refocuses — no keyboard over the pane', async () => {
+    stubPointer(true);
+    await bootNarrowWithTwoChats();
+    (document.activeElement as HTMLElement | null)?.blur?.();
+
+    document
+      .querySelector<HTMLElement>(`#james-bot .jb-chat-row[data-chat-id="${CHAT_B}"]`)!
+      .querySelector<HTMLButtonElement>('.jb-chat-open')!
+      .click();
+    await tick();
+    expect(
+      document.activeElement?.className ?? '',
+      'switching popped the keyboard over the conversation',
+    ).not.toContain('jb-input');
+
+    document.querySelector<HTMLButtonElement>('#james-bot .jb-new')!.click();
+    await tick();
+    expect(document.activeElement?.className ?? '', 'new-chat popped the keyboard').not.toContain(
+      'jb-input',
+    );
+  });
+});
+

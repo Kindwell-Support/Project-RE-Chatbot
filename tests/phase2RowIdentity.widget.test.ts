@@ -402,7 +402,7 @@ describe('S3.3 — title propagation: refetch-once, never polling', () => {
   });
 });
 
-describe('R3-b — welcome suppressed when a transcript exists (S4.4 pulled forward)', () => {
+describe('T-P2.4 (R3-b) — welcome suppressed when history exists, present when it does not', () => {
   it('a restored chat opens on its history, not on "Hi! I\'m James…"', async () => {
     const server = makeServer({
       chats: [{ id: CHAT_A, title: 'Deal in Tacoma', last_message_at: minsAgo(60) }],
