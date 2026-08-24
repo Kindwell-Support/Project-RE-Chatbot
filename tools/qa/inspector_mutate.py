@@ -90,7 +90,14 @@ def score(counts: str) -> tuple[str, str]:
 
 
 def tree_clean() -> bool:
-    return run('git status --porcelain').stdout.strip() == ''
+    """
+    Clean, ignoring this tool's own byproducts. Importing the module writes
+    tools/qa/__pycache__, which made the very first self-test abort on a tree
+    the tool itself had just dirtied - a guard that fires on its own footprint
+    is a guard people learn to bypass.
+    """
+    lines = [l for l in run('git status --porcelain').stdout.splitlines() if l.strip()]
+    return [l for l in lines if '__pycache__' not in l and not l.endswith('.pyc')] == []
 
 
 def restore(paths: list[str]) -> None:
