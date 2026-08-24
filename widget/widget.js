@@ -307,6 +307,15 @@
     '.jb-chat-open{flex:1 1 auto;min-width:0;text-align:left;background:none;border:none;cursor:pointer;',
     'font:inherit;font-size:12.5px;color:var(--jb-text-secondary);padding:8px 6px;',
     'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    /* S3.1/S3.2 — row identity. The title and its timestamp stack inside the
+       open button so the whole row surface stays one tap target; the time is
+       part of the row's identity, not a separate control. */
+    '.jb-chat-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.jb-chat-time{display:block;font-size:10.5px;line-height:1.3;color:var(--jb-text-tertiary);margin-top:1px;font-weight:400;}',
+    /* The EPHEMERAL placeholder reads as a different kind of thing from a real
+       row whose title merely has not arrived: italic, dimmed, and no
+       timestamp (it has no last_message_at — nothing has happened in it). */
+    '.jb-chat-pending .jb-chat-title{font-style:italic;color:var(--jb-text-tertiary);}',
     '.jb-chat-active .jb-chat-open{color:var(--jb-text-primary);font-weight:600;}',
     '.jb-chat-act{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px 5px;border-radius:6px;',
     'color:var(--jb-text-tertiary);font:inherit;font-size:12px;line-height:1;opacity:0;',
@@ -960,6 +969,29 @@
        */
       var historySkeleton = null;
       /**
+       * R3-b — the welcome bubble's row, so suppression can remove it when a
+       * transcript exists. The NODE dies with list.innerHTML on reset; the
+       * REFERENCE is cleared in resetChatState (FINDING-019 class).
+       */
+      var welcomeRow = null;
+      /**
+       * FINDING-027 — the turns painted into THIS pane since the last reset,
+       * as {role, content}. A late /history snapshot can already contain the
+       * newest of these (the fetch was ISSUED before the member sent, but the
+       * server read the table AFTER their turn landed), and prepending it
+       * verbatim would paint their message twice. The prepend trims the
+       * snapshot suffix that matches these before inserting.
+       */
+      var liveTurns = [];
+      /**
+       * S3.3 — the single pending title refetch, or null. REGISTRY state like
+       * `chats` and `chatsState`, deliberately NOT in resetChatState: the
+       * refetch repairs the rail's titles, which outlive any one conversation,
+       * and cancelling it on a chat switch would lose the title of the chat
+       * just left. Single-flight: while one is pending, no second is armed.
+       */
+      var titleRefetchTimer = null;
+      /**
        * Generation counter — bumped by every reset. Async callbacks capture
        * the generation they began in and bail if it has moved.
        *
@@ -1016,7 +1048,21 @@
 
       /** The static welcome — local and instant, and re-shown on every reset. */
       function showWelcome() {
-        addBubble(OPENING_MESSAGE, 'bot');
+        welcomeRow = addBubble(OPENING_MESSAGE, 'bot').row;
+      }
+
+      /**
+       * R3-b (S4.4 pulled forward by ruling): the welcome is SUPPRESSED when a
+       * transcript exists — a returning member must not read "Hi! I'm James…"
+       * above yesterday's conversation. Only visibility changes; the
+       * contract-pinned OPENING_MESSAGE string is untouched, and new chats and
+       * placeholders still open on it.
+       */
+      function removeWelcome() {
+        if (!welcomeRow) return;
+        var row = welcomeRow;
+        welcomeRow = null;
+        if (row.parentNode) row.parentNode.removeChild(row);
       }
 
       function setBusy(state) {
@@ -1072,6 +1118,19 @@
         //     NEXT chat's skeleton on screen forever. Enumerated here rather
         //     than cleared at a call site, per the rule this list exists for.
         historySkeleton = null;
+        // 3c. The welcome row reference (R3-b): its node went with the
+        //     innerHTML above; a live reference would make the next
+        //     removeWelcome a no-op on a detached node (FINDING-019 class).
+        //     showWelcome below re-sets it.
+        welcomeRow = null;
+        // 3d. The live-turn record (FINDING-027): it describes the pane just
+        //     cleared. Carrying it into the next chat would let that chat's
+        //     prepend trim MESSAGES IT NEVER SHOWED.
+        liveTurns = [];
+        // NOT reset, alongside chats/chatsState: titleRefetchTimer. It is
+        // registry work — the title it fetches belongs to the rail, not to
+        // the conversation being left, and its callback touches only
+        // registry state.
         // 4. Pending/typing indicators: their rows went with the DOM above;
         //    this clears the room-warming class they set on the ROOT, which
         //    would otherwise persist into the next chat.
@@ -1142,6 +1201,33 @@
         placeholderId = uuid();
         sessionId = placeholderId; // NOT persistActive — placeholders are ephemeral
         renderSidebar();
+      }
+
+      /**
+       * "just now" / "5m ago" / "2h ago" / "Yesterday" / "4d ago" / a date.
+       * Returns NULL for anything unparsable rather than a NaN string — the
+       * caller simply renders no time element (R3-d).
+       *
+       * Staleness bound, stated: times are computed at RENDER, and the rail
+       * re-renders on member interactions (sends, switches, refetches), never
+       * on a timer. An idle tab's "2h ago" can age without updating until the
+       * next interaction; that is the accepted cost of having no timer loop.
+       */
+      function relativeTime(iso) {
+        if (!iso) return null;
+        var t = Date.parse(iso);
+        if (isNaN(t)) return null;
+        var s = Math.floor((Date.now() - t) / 1000);
+        if (s < 60) return 'just now';
+        var m = Math.floor(s / 60);
+        if (m < 60) return m + 'm ago';
+        var h = Math.floor(m / 60);
+        if (h < 24) return h + 'h ago';
+        var d = Math.floor(h / 24);
+        if (d === 1) return 'Yesterday';
+        if (d < 7) return d + 'd ago';
+        var date = new Date(t);
+        return date.getMonth() + 1 + '/' + date.getDate() + '/' + date.getFullYear();
       }
 
       function chatLabel(chat) {
@@ -1246,8 +1332,23 @@
           return row;
         }
 
+        if (chat.pending) row.className += ' jb-chat-pending';
         var open = el('button', 'jb-chat-open', { type: 'button' });
-        open.textContent = chatLabel(chat);
+        var titleSpan = el('span', 'jb-chat-title');
+        titleSpan.textContent = chatLabel(chat);
+        open.appendChild(titleSpan);
+        // S3.1 — relative time from last_message_at, which every server row
+        // carries and nothing read until now. Tolerant of absence BY DESIGN
+        // (R3-d): locally synthesized rows (the started-race merge, the kept
+        // active chat, placeholders) have no timestamp, and "NaN ago" would be
+        // worse than nothing. A placeholder never shows one — nothing has
+        // happened in it.
+        var rel = chat.pending ? null : relativeTime(chat.last_message_at);
+        if (rel) {
+          var time = el('span', 'jb-chat-time');
+          time.textContent = rel;
+          open.appendChild(time);
+        }
         open.setAttribute('title', chatLabel(chat));
         open.addEventListener('click', function () {
           if (chat.pending) return; // already here
@@ -1489,10 +1590,67 @@
         handle.bubble.appendChild(retry);
       }
 
+      /**
+       * FINDING-027 — a late snapshot is PREPENDED above the live turns, not
+       * discarded. Before this, a member who typed during a slow /history had
+       * their old conversation silently thrown away for the session.
+       *
+       * The trim is the duplication defence (R3-c): the fetch can be ISSUED
+       * before the member sends and still be READ by the server after their
+       * turn landed, so the snapshot's tail can already contain the very
+       * turns this pane is showing. The longest snapshot suffix matching the
+       * pane's live turns (oldest-first) is dropped; identical TEXT deeper in
+       * history is untouched, because only the aligned suffix is compared.
+       */
+      function prependHistory(messages) {
+        var cut = 0;
+        var max = Math.min(liveTurns.length, messages.length);
+        for (var n = max; n >= 1; n--) {
+          var matches = true;
+          for (var i = 0; i < n; i++) {
+            var snap = messages[messages.length - n + i];
+            var live = liveTurns[i];
+            if (snap.role !== live.role || String(snap.content) !== String(live.content)) {
+              matches = false;
+              break;
+            }
+          }
+          if (matches) {
+            cut = n;
+            break;
+          }
+        }
+        var keep = messages.slice(0, messages.length - cut);
+        if (!keep.length) return;
+        removeWelcome();
+        // Built directly rather than through addBubble: addBubble appends and
+        // follows the bottom, and a prepend must do neither.
+        var frag = document.createDocumentFragment();
+        keep.forEach(function (m) {
+          var row = el('div', 'jb-row ' + (m.role === 'user' ? 'jb-user' : 'jb-bot'));
+          var bubble = el('div', 'jb-bubble');
+          if (m.role === 'user') bubble.textContent = m.content;
+          else renderMarkdownInto(bubble, m.content);
+          row.appendChild(bubble);
+          frag.appendChild(row);
+        });
+        var before = list.scrollHeight;
+        list.insertBefore(frag, list.firstChild);
+        // Scroll compensation: the member is reading their own exchange, and
+        // content growing ABOVE it must not shove it out of view.
+        list.scrollTop += list.scrollHeight - before;
+      }
+
       /** Repaint the transcript for whichever chat is active. Never gates the UI. */
       function loadHistory() {
         if (!sessionId) return;
         var op = beginOp();
+        // R3-c GATE, captured at ISSUE time: only a fetch that was already out
+        // when the member committed content may prepend. A fetch issued AFTER
+        // they sent (the pre-send error's Retry, clicked late) reads a table
+        // that already holds their turn, and prepending it would need the trim
+        // to be perfect rather than a second line of defence.
+        var issuedBeforeStarted = !started;
         // Guarded on `started` even though every call site today reaches here
         // with it false (boot returns early when it is true; switchToChat
         // resets it). That keeps S1.2's rule true BY CONSTRUCTION rather than
@@ -1517,7 +1675,15 @@
             if (stale(op)) return; // the member switched away mid-flight
             clearHistorySkeleton();
             if (!data || !data.messages || !data.messages.length) return;
-            if (started) return; // member got there first; don't reorder their chat
+            if (started) {
+              // FINDING-027: the member got there first — their conversation
+              // keeps its place, and the older transcript lands ABOVE it.
+              if (issuedBeforeStarted) prependHistory(data.messages);
+              return;
+            }
+            // R3-b: a transcript exists, so the welcome does not (S4.4 pulled
+            // forward by ruling — suppression only, the string is untouched).
+            removeWelcome();
             data.messages.forEach(function (m, idx) {
               var handle = addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
               handle.row.style.animationDelay = Math.min(idx * 40, 320) + 'ms';
@@ -2079,14 +2245,19 @@
             dismiss();
             // Echo the server's own transcript line so the chat matches what a
             // later /history replay will show.
-            if (result.data.user_message) addBubble(result.data.user_message, 'user');
+            if (result.data.user_message) {
+              addBubble(result.data.user_message, 'user');
+              liveTurns.push({ role: 'user', content: String(result.data.user_message) });
+            }
             // The result card transitions in with the existing entry animation
             // and the lead-figure count-up, straight out of the skeleton.
             addBubble(result.data.output || "I didn't catch that — try again.", 'bot', {
               animate: true,
             });
+            liveTurns.push({ role: 'assistant', content: String(result.data.output || '') });
             materialisePlaceholder();
             bumpActiveChat();
+            scheduleTitleRefetch();
           })
           .catch(function () {
             if (stale(op)) return;
@@ -2105,7 +2276,12 @@
           form.classList.remove('jb-armed');
         }
         markStarted();
-        if (!skipEcho) addBubble(text, 'user');
+        if (!skipEcho) {
+          addBubble(text, 'user');
+          // FINDING-027: recorded once per ECHO, so a retry (skipEcho) does
+          // not double it — the bubble it describes is still on screen.
+          liveTurns.push({ role: 'user', content: text });
+        }
         setBusy(true);
         var removeTyping = addTyping();
         // Tracked so a chat switch can abort the request AND stop the thinking
@@ -2146,11 +2322,13 @@
             }
             removeTyping();
             addBubble(data.output || "I didn't catch that — try again.", 'bot', { animate: true });
+            liveTurns.push({ role: 'assistant', content: String(data.output || '') });
             // The model decides a form is warranted; the response carries the
             // descriptor. Rendered after the reply so the copy reads first.
             if (data.render_form) renderCalculatorForm(data.render_form);
             materialisePlaceholder();
             bumpActiveChat();
+            scheduleTitleRefetch();
           })
           .catch(function () {
             if (stale(op)) return;
@@ -2187,10 +2365,66 @@
         for (var i = 0; i < chats.length; i++) {
           if (chats[i].id !== sessionId) continue;
           var chat = chats.splice(i, 1)[0];
+          // R3-d: mirror the server's last_message_at bump locally, for the
+          // same reason the row moves to the top without waiting for a
+          // reload — a chat answered seconds ago reading "2h ago" while
+          // sitting first in the rail looks broken.
+          chat.last_message_at = new Date().toISOString();
           chats.unshift(chat);
           renderSidebar();
           return;
         }
+      }
+
+      /**
+       * S3.3 — REFETCH-ONCE, the decided alternative to carrying the title in
+       * the /chat response. Generation is detached AFTER the reply is sent
+       * (touchChat().then(generateChatTitle), first exchange only, guarded by
+       * the in-memory pre-turn history), so a response-carried title would
+       * mean awaiting an OpenAI round trip on the member's answer path — the
+       * exact thing Phase 1 forbids — and the /chat contract is pinned anyway.
+       *
+       * NOT POLLING, by construction: armed only from a completed turn whose
+       * active chat is still untitled, single-flight, and if generation is
+       * slower than the delay the next completed turn arms one more. Bounded
+       * by member actions; an idle widget never fetches.
+       *
+       * The refetch is SILENT registry repair: chatsState is not flipped to
+       * 'loading', so a populated rail never flashes back to skeletons. On
+       * success it also settles an 'error' rail — fresher evidence than the
+       * failure. No beginOp: a chat switch must not abort it (the title
+       * belongs to the rail, not the chat being left), and the torn-down
+       * widget hazard (R3-a, the MutationObserver class) is covered by the
+       * document guard.
+       */
+      function scheduleTitleRefetch() {
+        if (titleRefetchTimer) return; // single-flight
+        var active = null;
+        for (var i = 0; i < chats.length; i++) {
+          if (chats[i].id === sessionId) active = chats[i];
+        }
+        if (!active || active.title) return; // titled already — nothing to fetch
+        titleRefetchTimer = window.setTimeout(function () {
+          titleRefetchTimer = null;
+          if (typeof document === 'undefined') return; // torn down (jsdom)
+          chatsApi('/chats', { method: 'GET' })
+            .then(function (rows) {
+              if (typeof document === 'undefined') return;
+              var server = Array.isArray(rows) ? rows : (rows && rows.chats) || [];
+              // Same active-chat preservation refreshChatList applies: the
+              // list must never drop the chat the member is sitting in.
+              var keepActive = sessionId && sessionId !== placeholderId;
+              for (var j = 0; j < server.length; j++) {
+                if (server[j].id === sessionId) keepActive = false;
+              }
+              chats = keepActive ? [{ id: sessionId, title: null }].concat(server) : server;
+              chatsState = 'ready';
+              renderSidebar();
+            })
+            .catch(function () {
+              /* cosmetic — the next completed turn arms one more attempt */
+            });
+        }, 4000);
       }
 
       form.addEventListener('submit', function (event) {

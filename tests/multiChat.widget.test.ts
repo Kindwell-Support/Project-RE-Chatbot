@@ -126,8 +126,14 @@ function boot(fetchMock: any) {
 }
 
 const railRows = () => Array.from(document.querySelectorAll('#james-bot .jb-chat-row'));
+/**
+ * RE-POINTED (Phase 2 S3.1): rows now carry a relative timestamp INSIDE the
+ * open button, so .jb-chat-open's textContent is "title + time" once a chat
+ * has real activity. These helpers are ABOUT the title, so they read the
+ * .jb-chat-title element — the subject did not change, its address did.
+ */
 const railLabels = () =>
-  railRows().map((row) => row.querySelector('.jb-chat-open')?.textContent ?? '');
+  railRows().map((row) => row.querySelector('.jb-chat-title')?.textContent ?? '');
 const activeRow = () => document.querySelector('#james-bot .jb-chat-active');
 const bubbles = () => Array.from(document.querySelectorAll('#james-bot .jb-bubble'));
 const chatInput = () => document.querySelector<HTMLInputElement>('#james-bot .jb-input')!;
@@ -165,7 +171,7 @@ function clickDelete(row: Element) {
 }
 
 function clickRowByLabel(label: string) {
-  const row = railRows().find((r) => (r.querySelector('.jb-chat-open')?.textContent ?? '') === label);
+  const row = railRows().find((r) => (r.querySelector('.jb-chat-title')?.textContent ?? '') === label);
   row!.querySelector<HTMLButtonElement>('.jb-chat-open')!.click();
 }
 

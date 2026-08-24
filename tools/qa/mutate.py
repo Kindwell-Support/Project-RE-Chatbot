@@ -14,6 +14,7 @@ import io, re, subprocess, sys
 
 TARGET = 'widget/widget.js'
 SUITE = ('tests/phase2Loading.widget.test.ts tests/phase2Touch.widget.test.ts '
+         'tests/phase2RowIdentity.widget.test.ts '
          'tests/multiChat.widget.test.ts tests/widget.test.ts')
 
 MUTATIONS = [
@@ -153,6 +154,64 @@ MUTATIONS = [
             }
             startPlaceholder();
           });""",
+    ),
+    (
+        'M13 FINDING-027 reverted: late history discarded instead of prepended',
+        """              if (issuedBeforeStarted) prependHistory(data.messages);
+              return;""",
+        """              return;""",
+    ),
+    (
+        'M14 R3-c gate removed: post-send fetches prepend too',
+        """        var issuedBeforeStarted = !started;""",
+        """        var issuedBeforeStarted = true;""",
+    ),
+    (
+        'M15 the live-suffix trim removed: the race paints the member message twice',
+        """        var cut = 0;
+        var max = Math.min(liveTurns.length, messages.length);
+        for (var n = max; n >= 1; n--) {
+          var matches = true;
+          for (var i = 0; i < n; i++) {
+            var snap = messages[messages.length - n + i];
+            var live = liveTurns[i];
+            if (snap.role !== live.role || String(snap.content) !== String(live.content)) {
+              matches = false;
+              break;
+            }
+          }
+          if (matches) {
+            cut = n;
+            break;
+          }
+        }""",
+        """        var cut = 0;""",
+    ),
+    (
+        'M16 welcome suppression inert: removeWelcome clears the ref but not the node',
+        """      function removeWelcome() {
+        if (!welcomeRow) return;
+        var row = welcomeRow;
+        welcomeRow = null;
+        if (row.parentNode) row.parentNode.removeChild(row);
+      }""",
+        """      function removeWelcome() {
+        if (!welcomeRow) return;
+        welcomeRow = null;
+      }""",
+    ),
+    (
+        'M17 the title refetch POLLS: the timer rearms itself forever',
+        """        titleRefetchTimer = window.setTimeout(function () {
+          titleRefetchTimer = null;""",
+        """        titleRefetchTimer = window.setTimeout(function fire() {
+          titleRefetchTimer = window.setTimeout(fire, 4000);""",
+    ),
+    (
+        'M18 R3-d bump stamp removed: a just-answered chat keeps its stale age',
+        """          chat.last_message_at = new Date().toISOString();
+          chats.unshift(chat);""",
+        """          chats.unshift(chat);""",
     ),
 ]
 

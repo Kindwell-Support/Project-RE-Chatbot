@@ -537,10 +537,13 @@ describe('T-P2.1 — a skeleton never appears under a member\'s own message', ()
     ).toBe(true);
   });
 
-  it('and it does not come BACK when the held /history finally lands', async () => {
-    // The second half of the same guarantee. Tearing the skeleton down on send
-    // is worthless if the in-flight response re-paints one, or paints the old
-    // transcript over the live message.
+  it('and when the held /history lands, it PREPENDS above the live message', async () => {
+    // RE-POINTED for FINDING-027 (ruled): the snapshot used to be DISCARDED
+    // here, and this case asserted the discard. The ruling replaced discard
+    // with prepend — a member who typed during a slow /history no longer
+    // loses their old conversation for the session. What this case still
+    // pins from its first life: no skeleton comes back, and the member's
+    // live message keeps its place (now: LAST, below the restored turns).
     const server = makeServer({
       chats: [{ id: CHAT_A, title: 'Deal in Tacoma' }],
       history: { [CHAT_A]: [{ role: 'user', content: 'old question' }] },
@@ -554,11 +557,15 @@ describe('T-P2.1 — a skeleton never appears under a member\'s own message', ()
     await tick();
 
     expect(histSkeleton().length).toBe(0);
-    // The `started` guard: restored history must not reorder a live chat.
-    expect(bubbleText().some((t) => t.includes('old question')), 'history painted over a live chat').toBe(
-      false,
-    );
-    expect(bubbleText().some((t) => t.includes('actually, new question'))).toBe(true);
+    const texts = bubbleText();
+    const oldAt = texts.findIndex((t) => t.includes('old question'));
+    const liveAt = texts.findIndex((t) => t.includes('actually, new question'));
+    expect(oldAt, 'FINDING-027: the old transcript was discarded').not.toBe(-1);
+    expect(liveAt).not.toBe(-1);
+    expect(oldAt, 'history landed BELOW the live message').toBeLessThan(liveAt);
+    // Exactly once each — prepend must not duplicate either side.
+    expect(texts.filter((t) => t.includes('old question'))).toHaveLength(1);
+    expect(texts.filter((t) => t.includes('actually, new question'))).toHaveLength(1);
   });
 
   it('CONTROL: with no send, the skeleton IS shown and then replaced by history', async () => {
