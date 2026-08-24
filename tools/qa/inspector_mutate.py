@@ -84,6 +84,9 @@ serve it through the harness instead.
 from __future__ import annotations
 import io, os, re, shutil, subprocess, sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mutation_lock as LOCK
+
 REPO = os.environ.get('QA_REPO', 'D:/CODE/Project-RE-Chatbot')
 
 CAUGHT, NOT_CAUGHT, INVALID, SKIPPED = 'CAUGHT', 'NOT CAUGHT', 'INVALID', 'SKIPPED'
@@ -201,6 +204,9 @@ def run_target(target: str) -> tuple[str, str, list[str]]:
     return verdict, detail, named
 
 
+BRACKET_PATHS = ['widget/', 'tests/', 'src/']
+
+
 def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
     """
     mutants: iterable of (label, file, target_suite, catches, [(old, new), ...])
@@ -221,10 +227,17 @@ def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
         print(f'BASELINE {"GREEN" if ok else "NOT GREEN"}  {target}: {detail}')
         if not ok:
             print('ABORT: target is not green before mutation.')
+            LOCK.release()
             return -1
     print()
 
     # Prime the pristine build baseline before anything is mutated.
+    # THE LOCK covers this whole cycle INCLUDING restore. One lock, both rigs.
+    target0 = mutants[0][1] if mutants else os.path.join(REPO, 'widget', 'widget.js')
+    LOCK.acquire('INSPECTOR', target0, 'inspector_mutate')
+    bracket_before = LOCK.tree_state_hash(BRACKET_PATHS)
+    print('bracket BEFORE: %s' % bracket_before)
+
     reset_pristine()
     for _p in {m[1] for m in mutants}:
         esbuild_differs(_p)
@@ -257,6 +270,7 @@ def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
         restore(paths)
         if not tree_clean():
             print('ABORT: tree not clean after restore.')
+            LOCK.release()
             return -1
 
     print('================ MUTATION SUMMARY ================')
@@ -273,6 +287,16 @@ def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
             print(f'{"":12}    (c) unpinned by construction -> record why, write nothing')
     print(f'\nmutants that FAILED to catch their defect: {bad}')
     print('tree clean at end:', tree_clean())
+
+    LOCK.release()
+    bracket_after = LOCK.tree_state_hash(BRACKET_PATHS)
+    print('bracket AFTER : %s' % bracket_after)
+    if bracket_after != bracket_before:
+        # Read-side counterpart to the lock: catches the tree moving for ANY
+        # reason, including this driver failing to restore.
+        print('TREE MOVED DURING THE CYCLE - DISCARD THESE RESULTS.')
+        return -1
+    print('TREE HELD - results trustworthy')
     return bad
 
 
