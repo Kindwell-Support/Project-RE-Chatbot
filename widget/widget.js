@@ -2651,10 +2651,26 @@
        * The refetch is SILENT registry repair: chatsState is not flipped to
        * 'loading', so a populated rail never flashes back to skeletons. On
        * success it also settles an 'error' rail — fresher evidence than the
-       * failure. No beginOp: a chat switch must not abort it (the title
-       * belongs to the rail, not the chat being left), and the torn-down
-       * widget hazard (R3-a, the MutationObserver class) is covered by the
-       * document guard.
+       * failure.
+       *
+       * NO beginOp — and the ABSENCE is load-bearing, not an oversight
+       * (INSPECTOR-verified): a chat switch must not abort this fetch,
+       * because the title belongs to the RAIL, not to the chat being left.
+       * Registering it would put it under resetChatState's abort sweep and
+       * the title of the chat just left would be lost on every switch.
+       *
+       * TEARDOWN SAFETY is two separate facts — do not credit one with the
+       * other's job (FINDING-035, same class as FINDING-029):
+       *  - the `typeof document` guards below exist for JSDOM TEARDOWN only.
+       *    In a real browser `document` is never undefined; that branch is
+       *    unreachable in production.
+       *  - production safety after a GHL lesson swap rests on renderSidebar()
+       *    TOLERATING DETACHED NODES: the timer fires against a discarded
+       *    subtree, renderSidebar writes into it, and nothing throws
+       *    (INSPECTOR attacked this directly). That tolerance is load-bearing
+       *    and currently implicit — a renderSidebar refactor that starts
+       *    requiring a connected DOM (measuring, querying upward, observing)
+       *    removes the REAL protection while both guards here stay green.
        */
       function scheduleTitleRefetch() {
         if (titleRefetchTimer) return; // single-flight
@@ -2665,10 +2681,10 @@
         if (!active || active.title) return; // titled already — nothing to fetch
         titleRefetchTimer = window.setTimeout(function () {
           titleRefetchTimer = null;
-          if (typeof document === 'undefined') return; // torn down (jsdom)
+          if (typeof document === 'undefined') return; // jsdom teardown ONLY — unreachable in a browser (FINDING-035)
           chatsApi('/chats', { method: 'GET' })
             .then(function (rows) {
-              if (typeof document === 'undefined') return;
+              if (typeof document === 'undefined') return; // jsdom teardown ONLY (FINDING-035)
               var server = Array.isArray(rows) ? rows : (rows && rows.chats) || [];
               // Same active-chat preservation refreshChatList applies: the
               // list must never drop the chat the member is sitting in.
