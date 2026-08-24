@@ -16,10 +16,11 @@ hold the fake against this, not the admin UI.
 
 Contact search and contact-by-id both answer 200, so the token carries a
 contacts-read scope but NOT the custom-field-definitions scope. This is a scope
-problem, not a data problem. Consequence below (§3): the Course Access field
-**id** is inferred from values, not confirmed from definitions — either the
-token gains the definitions scope (preferred: one probe re-run pins it) or the
-client confirms the id out of band.
+problem, not a data problem.
+
+**CLOSED 2026-08-25**: `locations/customFields.readonly` added to the token;
+the endpoint now answers 200 and §3 is confirmed from it directly. Kept here
+as originally reported so the 401's shape stays on record.
 
 ## 2. THE SHAPE
 
@@ -29,12 +30,52 @@ field types: plain string (dropdowns, text), array of strings (multi-selects,
 even single-valued ones: `["2-5"]`), number (dates as epoch millis — search
 shape only), string dates (`"2025-01-31"` — by-id shape only).
 
-## 3. Course Access = field id `axyDeZQxj7gMCtV1FyxS` (inferred, see §1)
+## 3. Course Access = field id `axyDeZQxj7gMCtV1FyxS` — CONFIRMED
 
-Evidence: it is the only field carrying `"Project Flip"` on the normal contact
-and `"Retired Member"` on the retired contact — exact dropdown labels, same id,
-in both shapes of both contacts. Strong, but inferred from values; the 401
-blocks definitional confirmation.
+**CONFIRMED 2026-08-25 from the definitions response itself**, after
+`locations/customFields.readonly` was added to the token (closing §1's scope
+failure). `GET /locations/{id}/customFields` now returns, verbatim:
+
+```json
+{
+  "id": "axyDeZQxj7gMCtV1FyxS",
+  "name": "Course Access",
+  "model": "contact",
+  "fieldKey": "contact.course_access",
+  "dataType": "SINGLE_OPTIONS",
+  "parentId": "MoeM92Lp8xZSnOVTymqc",
+  "locationId": "EDY094ip0U3HwMFQYsVy",
+  "dateAdded": "2026-06-22T14:55:01.151Z",
+  "standard": false,
+  "picklistOptions": [
+    "Retired Member", "Project Flip", "Project Broker",
+    "Project Private Money", "Project Wholesale", "Free Unlimited"
+  ]
+}
+```
+
+Name, fieldKey (`contact.course_access` — matching the admin UI), dataType
+(single dropdown), the exact six ruled option labels, and a dateAdded matching
+the June 2026 sheet-import provenance.
+
+THE ORIGINAL INFERENCE, preserved deliberately — it is how the id would be
+re-derived if this ever has to be done again without the scope (later
+confirmed correct): it was the only field carrying `"Project Flip"` on the
+normal contact and `"Retired Member"` on the retired contact — exact dropdown
+labels, same id, in both shapes of both contacts.
+
+DUPLICATE-FIELD CHECK (one read, rules out right-values-wrong-field): of 41
+contact custom fields, exactly ONE resembles Course Access in the gating
+sense. The other two name-matches are an unrelated DATE field ("Imported
+Access Date Field") and an unrelated survey question containing the word
+"access". No duplicate exists for the inference to have landed on.
+
+OPTIONS-VS-STORED CHECK: both sampled stored values ("Project Flip",
+"Retired Member") appear verbatim in `picklistOptions`. Two contacts is a
+sample, not the population; the rule NORMALIZES but does not VALIDATE against
+the option set, so a sheet-imported value outside the current list would
+ALLOW as unknown — consistent with the deny-list design, stated here as a
+property rather than discovered later as a surprise.
 
 ## 4. LABELS, not keys — consistent across all three
 
@@ -166,5 +207,9 @@ and each of the four is TESTED, not merely asserted, in tests/ghlAccess.test.ts.
 If a cleared contact becomes available, one probe run pins the real
 representation.
 
-Open item for Abdullah: the definitions-scope 401 (§1). Preferred close: add
-the scope, re-run the probe once, replace "inferred" with "confirmed" in §3.
+~~Open item: the definitions-scope 401 (§1).~~ CLOSED 2026-08-25 — scope
+added, probe re-run, §3 confirmed from the definitions response. The boot
+probe's self-upgrade path was EXECUTED live rather than assumed: correct id →
+`verified` (INFO log), deliberately wrong id → `wrong_id` with the loud
+every-member-will-be-denied ERROR at startup. C-1 is closed on all three legs:
+configured id, boot verification, runtime tripwire.
