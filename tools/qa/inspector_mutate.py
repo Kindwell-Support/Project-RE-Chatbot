@@ -118,6 +118,39 @@ def apply_mutation(path: str, pairs: list[tuple[str, str]]) -> str | None:
     return None
 
 
+
+def esbuild_differs(path):
+    """
+    Did this mutation actually change the BUILT artifact?
+
+    Guards the INERT-MUTATION trap. An edit appended after a `//` comment lands
+    INSIDE the comment: the file changes, the behaviour does not, and the run
+    reports NOT CAUGHT for a defect that was never introduced. That is the
+    eight-false-CAUGHTs error inverted - a false NEGATIVE from a mutation that
+    never happened - and it produced a wrong "the corrected ruling is unpinned"
+    claim about BUG-031's M31, caught only when the two bundles were compared
+    and found byte-identical.
+
+    Marker-grepping is not integrity-checking: the marker survived, the effect
+    did not. This compares the built output instead.
+
+    Returns True (changed), False (inert), or None when the check cannot apply.
+    """
+    if not path.replace('\\', '/').endswith('widget/widget.js'):
+        return None
+    import tempfile
+    out = os.path.join(tempfile.gettempdir(), 'qa_effect_probe.js')
+    r = run('npx esbuild "%s" --bundle --minify --format=iife --outfile="%s"' % (path, out))
+    if r.returncode != 0 or not os.path.exists(out):
+        return None
+    built = io.open(out, encoding='utf-8', errors='replace').read()
+    prev = getattr(esbuild_differs, '_baseline', None)
+    if prev is None:
+        esbuild_differs._baseline = built
+        return None
+    return built != prev
+
+
 def run_target(target: str) -> tuple[str, str, list[str]]:
     """Run a suite, retrying ONCE on a collection failure (FINDING-030)."""
     out = run(f'npx vitest run {target}').stdout
@@ -154,6 +187,10 @@ def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
             return -1
     print()
 
+    # Prime the pristine build baseline before anything is mutated.
+    for _p in {m[1] for m in mutants}:
+        esbuild_differs(_p)
+
     summary = []
     for label, path, target, catches, pairs in mutants:
         print(f'--- {label}')
@@ -162,6 +199,15 @@ def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
         if refused:
             print(f'    -> {SKIPPED}: {refused}\n')
             summary.append((label, SKIPPED, refused))
+            restore(paths)
+            continue
+        if esbuild_differs(path) is False:
+            # The file changed but the build did not: the edit is inert.
+            # Report it, never score it - an inert mutation proves nothing,
+            # and scoring it NOT CAUGHT slanders a working assertion.
+            print(f'    -> {SKIPPED}: INERT - built artifact unchanged '
+                  '(edit landed in a comment, or was stripped by minify)\n')
+            summary.append((label, SKIPPED, 'inert: built artifact unchanged'))
             restore(paths)
             continue
         verdict, detail, named = run_target(target)
