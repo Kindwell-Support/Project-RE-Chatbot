@@ -16,6 +16,8 @@ import {
 import { getHistory, appendExchange } from './memory.js';
 import { logExchange } from './logging.js';
 import { OWNER_KEY_HEADER, OwnerKeyError, resolveOwnerKey } from './ownerKey.js';
+import { mintToken, verifyToken } from './sessionToken.js';
+import { createGhlClient, decideAccess, type GhlClient } from './ghl.js';
 import {
   archiveChat,
   ChatLimitError,
@@ -67,6 +69,8 @@ export interface AppDeps {
   propertyProvider?: PropertyDataProvider;
   /** Census demographics provider (§14.10) — same seam pattern; tests inject a fake, production builds from CENSUS_API_KEY. */
   censusProvider?: DemographicsProviderLike;
+  /** GHL access-gating client (Phase 3) — same seam pattern. */
+  ghlClient?: GhlClient;
 }
 
 /**
@@ -111,6 +115,17 @@ export function ifNoneMatchMatches(
       return value === '*' || value === target;
     });
 }
+
+/**
+ * S3 — the gate's surface, as DATA (ruled): exactly these paths are exempt,
+ * plus the OPTIONS method handled in the hook. INSPECTOR pins this list at
+ * exactly four entries (three paths + OPTIONS); adding one is a deliberate
+ * test change and a RULING, never a quiet edit. /demo is absent by ruling.
+ */
+export const AUTH_EXEMPT_PATHS = Object.freeze(['/', '/health', '/widget.js'] as const);
+
+/** /auth is the gate's own front door, not an exemption from it. */
+export const AUTH_ENTRY_PATH = '/auth';
 
 /**
  * Build the Fastify app. Clients are created lazily so the app can be built
@@ -183,7 +198,12 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       // owner-key header must be allow-listed for the same reason: a custom
       // header makes every /chats call a preflighted request.
       reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-      reply.header('Access-Control-Allow-Headers', `content-type, ${OWNER_KEY_HEADER}`);
+      // S3: `authorization` carries the session token — the production
+      // credential. x-james-owner LEFT this list with the client-asserted
+      // owner: the dev fallback is same-origin (local /demo), so it never
+      // needs CORS, and allow-listing it in production would advertise a
+      // header production refuses anyway.
+      reply.header('Access-Control-Allow-Headers', 'content-type, authorization');
       reply.header('Access-Control-Max-Age', '86400');
       reply.code(204).send();
     }
@@ -194,6 +214,112 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   // The bare domain is the first thing anyone opens after a deploy. Without
   // this it answered `Route GET:/ not found`, which reads like a broken app
   // when the service is in fact healthy. Say what this is and where to look.
+  // --- S3: THE GATE — default-on BY CONSTRUCTION -------------------------
+  //
+  // One app-level hook, registered before any route and run by Fastify for
+  // EVERY route on this instance, present and future. A route added later
+  // without the gate is therefore an impossibility, not a bug: there is no
+  // per-route opt-in to forget.
+  //
+  // THE EXEMPTION LIST IS DATA, in one place, and it is EXACTLY the ruled
+  // four: '/', '/health', '/widget.js', plus the OPTIONS method (preflights
+  // carry no credentials by design). /demo is DELIBERATELY NOT HERE — ruled:
+  // an exempt /demo is a public ungated chatbot on a metered API sitting
+  // beside a gated one. Any future exemption is a RULING, not a code
+  // decision.
+  //
+  // /auth is not an exemption FROM the gate — it IS the gate's front door
+  // (the token has to come from somewhere), so it is a separate named
+  // constant rather than a fifth list entry.
+  app.decorate('authGate', true); // discoverable marker for route audits
+
+  const gateDisabled = !config.isProduction;
+
+  app.addHook('preHandler', async (request, reply) => {
+    if (request.method === 'OPTIONS') return; // ruled exempt: preflights
+    const pathname = request.url.split('?')[0];
+    if ((AUTH_EXEMPT_PATHS as readonly string[]).includes(pathname)) return;
+    if (pathname === AUTH_ENTRY_PATH) return;
+    // DEV/LOCAL: the gate is a PRODUCTION property. Non-production keeps the
+    // Phase 1/2 posture (device headers, open /history) so local review and
+    // the existing suites exercise the real handlers; production behaviour is
+    // tested through production-config instances. Keyed off isProduction
+    // alone — no dedicated flag exists for production to flip.
+    if (gateDisabled) return;
+
+    const auth = request.headers.authorization;
+    const bearer =
+      typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!bearer) {
+      reply.code(401);
+      return reply.send({ error: 'A member session is required.', reason: 'missing_token' });
+    }
+    const verdict = verifyToken(bearer, config.sessionSigningKey ?? '', Date.now());
+    if (!verdict.ok) {
+      // The three S2 reasons, verbatim — expired is the re-auth case and S4
+      // renders it differently from the attack observations. The body names
+      // the reason and NOTHING else: no email, no hint whether any email
+      // exists in GHL — a denied member and a probing attacker read the same
+      // bytes. (Mid-flight expiry policy, stated: tokens are checked at
+      // ARRIVAL; a token expiring while a response streams completes the
+      // response — bounded by the 90s calculator ceiling — and the NEXT call
+      // answers 401 expired, which is the widget's re-auth signal.)
+      reply.code(401);
+      return reply.send({ error: 'Not authorized.', reason: verdict.reason });
+    }
+  });
+
+  // --- S3: POST /auth — email in, token out ------------------------------
+  let ghl = deps.ghlClient;
+  const getGhl = (): GhlClient | null => {
+    if (ghl) return ghl;
+    if (!config.ghlApiToken) return null;
+    ghl = createGhlClient(config, { logger: app.log as never });
+    return ghl;
+  };
+
+  app.post<{ Body: { email?: unknown } }>(AUTH_ENTRY_PATH, async (request, reply) => {
+    const submitted =
+      typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : '';
+    if (!submitted || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submitted)) {
+      reply.code(400);
+      return { error: 'A valid email address is required.', reason: 'invalid_email' };
+    }
+    const client = getGhl();
+    if (!client || !config.sessionSigningKey) {
+      // Unconfigured gate = DENY with the retryable reason. Never fail open.
+      request.log.error('auth requested but GHL client or signing key unconfigured');
+      reply.code(503);
+      return { error: 'Could not verify access right now — try again shortly.', reason: 'lookup_failed' };
+    }
+
+    const decision = decideAccess(await client.lookupCourseAccess(submitted));
+    if (decision.allow) {
+      // Bound to the VERIFIED email: the lookup exact-matches the contact's
+      // primary email against `submitted` (lowercased), so the verified
+      // address and the submitted one are equal by construction — if the
+      // matching rule ever loosens, mint from the CONTACT's email, not this.
+      return { token: mintToken(submitted, config.sessionSigningKey, Date.now()), email: submitted };
+    }
+    // The three ruled member-facing cases, distinct BY RULING (S1 brief):
+    // not-found, denied, and could-not-check are different problems a member
+    // can act on differently. This is the deliberate exception to the
+    // no-existence-leak posture of the preHandler 401s, and the unconditional
+    // rate limits are what keep it from being an enumeration oracle.
+    switch (decision.reason) {
+      case 'not_found':
+        reply.code(403);
+        return { error: "We couldn't find that email in the member system.", reason: 'not_found' };
+      case 'denied':
+        reply.code(403);
+        return { error: 'This email does not currently have course access.', reason: 'denied' };
+      case 'lookup_failed':
+      default:
+        reply.code(503);
+        return { error: 'Could not verify access right now — try again shortly.', reason: 'lookup_failed' };
+    }
+  });
+
   app.get('/', async (_request, reply) => {
     reply.header('Content-Type', 'application/json; charset=utf-8');
     return {
@@ -362,7 +488,10 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     code: (n: number) => unknown;
   }): string | null => {
     try {
-      return resolveOwnerKey(request);
+      return resolveOwnerKey(request, {
+        ...(config.sessionSigningKey ? { sessionSigningKey: config.sessionSigningKey } : {}),
+        allowDeviceFallback: !config.isProduction,
+      });
     } catch (err) {
       if (err instanceof OwnerKeyError) {
         reply.code(400);
@@ -516,7 +645,10 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     // working conversation, it just cannot self-heal its chats row.
     let ownerKey: string | undefined;
     try {
-      ownerKey = resolveOwnerKey(request);
+      ownerKey = resolveOwnerKey(request, {
+        ...(config.sessionSigningKey ? { sessionSigningKey: config.sessionSigningKey } : {}),
+        allowDeviceFallback: !config.isProduction,
+      });
     } catch {
       ownerKey = undefined;
     }

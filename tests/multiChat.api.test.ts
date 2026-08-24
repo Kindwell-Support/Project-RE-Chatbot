@@ -41,31 +41,43 @@ function appWith(seed: ChatRecord[], options: { failChats?: boolean } = {}) {
 
 const auth = (owner: string) => ({ [OWNER_KEY_HEADER]: owner });
 
-describe('resolveOwnerKey — the single seam Phase 3 replaces (R3)', () => {
+/**
+ * RE-POINTED (Phase 3 S3): resolveOwnerKey grew its ruled second parameter —
+ * the seam finally took its Phase 3 shape. These cases now exercise the
+ * DEV FALLBACK path (allowDeviceFallback: true, which callers derive from
+ * !config.isProduction); the token path and the production posture are pinned
+ * in tests/phase3Gate.test.ts. The subjects below are unchanged: the device
+ * key shape rules and the never-guess-ambiguity rule.
+ */
+const DEV_OPTS = { allowDeviceFallback: true } as const;
+
+describe('resolveOwnerKey — the single seam, now in its Phase 3 shape (R3)', () => {
   it('returns the device key from the header', () => {
-    expect(resolveOwnerKey({ headers: auth(OWNER_A) })).toBe(OWNER_A);
+    expect(resolveOwnerKey({ headers: auth(OWNER_A) }, DEV_OPTS)).toBe(OWNER_A);
   });
 
   it('throws when the header is absent — never a shared "anonymous" owner', () => {
     // A fallback owner would pool every keyless client into ONE owner, letting
     // each of them list and delete the others' chats.
-    expect(() => resolveOwnerKey({ headers: {} })).toThrow(OwnerKeyError);
+    expect(() => resolveOwnerKey({ headers: {} }, DEV_OPTS)).toThrow(OwnerKeyError);
   });
 
   it('REJECTS a non-device key, which is the Phase 3 pre-seeding defence', () => {
-    // Phase 3 rewrites owner_key to 'email:<verified-addr>'. If arbitrary keys
-    // were accepted now, an attacker could create chats under a victim's
-    // future key TODAY and have them appear in that member's sidebar the
-    // moment real authentication arrives.
-    expect(() => resolveOwnerKey({ headers: auth('email:victim@example.com') })).toThrow(
+    // The dev fallback accepts EXACTLY the device shape. An asserted
+    // email:<addr> header must never mint an owner — email owners come only
+    // from verified tokens, so an attacker cannot plant chats under a
+    // victim's owner key by asserting it. (The original comment described a
+    // planned key REWRITE; superseded — owner_key is email:<verified> from
+    // the first write, table empty, no migration.)
+    expect(() => resolveOwnerKey({ headers: auth('email:victim@example.com') }, DEV_OPTS)).toThrow(
       OwnerKeyError,
     );
-    expect(() => resolveOwnerKey({ headers: auth('device:not-a-uuid') })).toThrow(OwnerKeyError);
+    expect(() => resolveOwnerKey({ headers: auth('device:not-a-uuid') }, DEV_OPTS)).toThrow(OwnerKeyError);
   });
 
   it('a repeated header is ambiguity, and ambiguity is never guessed', () => {
     expect(() =>
-      resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: [OWNER_A, OWNER_B] } }),
+      resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: [OWNER_A, OWNER_B] } }, DEV_OPTS),
     ).toThrow(OwnerKeyError);
   });
 });

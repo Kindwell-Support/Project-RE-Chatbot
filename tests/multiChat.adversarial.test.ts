@@ -93,6 +93,12 @@ describe('B1 — cross-owner reads and mutations answer 404, never confirm exist
   });
 });
 
+// RE-POINTED (Phase 3 S3): resolveOwnerKey took its ruled second parameter.
+// These cases pin the DEV-FALLBACK path (the production token path lives in
+// tests/phase3Gate.test.ts); their subjects — key shape, ambiguity-never-
+// guessed, bearer-capability semantics — are unchanged.
+const DEV_OPTS = { allowDeviceFallback: true } as const;
+
 describe('B3/G — owner key forgeability and the Phase 3 pre-seeding defence', () => {
   it('an email-shaped owner key is REJECTED — Phase 3 cannot be pre-seeded', () => {
     // The defence that matters most for Phase 3: if arbitrary keys were
@@ -100,13 +106,13 @@ describe('B3/G — owner key forgeability and the Phase 3 pre-seeding defence', 
     // have them appear in the victim sidebar the moment Phase 3 rewrites
     // that member key to exactly that value.
     expect(() =>
-      resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: 'email:victim@example.com' } }),
+      resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: 'email:victim@example.com' } }, DEV_OPTS),
     ).toThrow(OwnerKeyError);
   });
 
   it('a REPEATED header is ambiguity and is never guessed', () => {
     expect(() =>
-      resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: [OWNER_A, OWNER_B] } }),
+      resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: [OWNER_A, OWNER_B] } }, DEV_OPTS),
     ).toThrow(OwnerKeyError);
   });
 
@@ -114,7 +120,7 @@ describe('B3/G — owner key forgeability and the Phase 3 pre-seeding defence', 
     // Stated explicitly because Phase 3 inherits it: the key is client-chosen,
     // travels in a header, and is bound to nothing. Holding another device
     // uuid IS being that device. Unguessable, not unforgeable.
-    expect(resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: OWNER_B } })).toBe(OWNER_B);
+    expect(resolveOwnerKey({ headers: { [OWNER_KEY_HEADER]: OWNER_B } }, DEV_OPTS)).toBe(OWNER_B);
   });
 });
 

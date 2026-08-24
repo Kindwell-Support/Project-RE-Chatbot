@@ -68,13 +68,13 @@ describe('I2 — origin probe table', () => {
     expect(methods, 'the owner-key routes need GET').toContain('GET');
   });
 
-  it('I1: allow-headers gained the owner header ONLY — no wildcard, no widening', async () => {
+  it('I1: allow-headers are the credential pair ONLY — no wildcard, no widening (S3: authorization replaced x-james-owner)', async () => {
     const res = await preflight(ALLOWED);
     const headers = String(res.headers['access-control-allow-headers'] ?? '')
       .split(',')
       .map((h) => h.trim().toLowerCase())
       .sort();
     expect(headers, 'allow-headers widened beyond content-type + the owner key')
-      .toEqual(['content-type', 'x-james-owner']);
+      .toEqual(['authorization', 'content-type']);
   });
 });

@@ -20,7 +20,10 @@ function corsVerdict(methods: string, headers: string): 'pass' | 'fail' {
   const m = String(methods).split(',').map((s) => s.trim()).sort();
   const h = String(headers).split(',').map((s) => s.trim().toLowerCase()).sort();
   const okM = JSON.stringify(m) === JSON.stringify(['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST']);
-  const okH = JSON.stringify(h) === JSON.stringify(['content-type', 'x-james-owner']);
+  // RE-POINTED (Phase 3 S3): authorization is the production credential
+  // header; x-james-owner left with the client-asserted owner. Its RETURN is
+  // now a defect this verdict catches — the widened-headers arm below.
+  const okH = JSON.stringify(h) === JSON.stringify(['authorization', 'content-type']);
   return okM && okH ? 'pass' : 'fail';
 }
 
@@ -52,14 +55,14 @@ describe('H1 — every re-point still goes red on its original defect', () => {
   });
 
   it('CORS catches a wildcard and any widening', () => {
-    expect(corsVerdict('GET, POST, PATCH, DELETE, OPTIONS', 'content-type, x-james-owner'))
+    expect(corsVerdict('GET, POST, PATCH, DELETE, OPTIONS', 'content-type, authorization'))
       .toBe('pass');
     for (const [label, m, h] of [
       ['wildcard headers', 'GET, POST, PATCH, DELETE, OPTIONS', '*'],
-      ['wildcard methods', '*', 'content-type, x-james-owner'],
-      ['PUT smuggled in', 'GET, POST, PUT, PATCH, DELETE, OPTIONS', 'content-type, x-james-owner'],
-      ['authorization widened', 'GET, POST, PATCH, DELETE, OPTIONS', 'content-type, x-james-owner, authorization'],
-      ['owner header dropped', 'GET, POST, PATCH, DELETE, OPTIONS', 'content-type'],
+      ['wildcard methods', '*', 'content-type, authorization'],
+      ['PUT smuggled in', 'GET, POST, PUT, PATCH, DELETE, OPTIONS', 'content-type, authorization'],
+      ['x-james-owner REintroduced', 'GET, POST, PATCH, DELETE, OPTIONS', 'content-type, authorization, x-james-owner'],
+      ['authorization dropped', 'GET, POST, PATCH, DELETE, OPTIONS', 'content-type'],
     ] as const) {
       expect(corsVerdict(m, h), `THE DEFECT (${label}) is no longer caught`).toBe('fail');
     }

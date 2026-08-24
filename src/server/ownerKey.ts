@@ -1,43 +1,32 @@
 /**
- * Chat ownership resolution — THE single seam (Phase 1 ruling R3).
+ * Chat ownership resolution — THE single seam (Phase 1 ruling R3), now in its
+ * PHASE 3 SHAPE: the note that sat here since Phase 1 is finally the code.
  *
- * PHASE 3 IS THIS MODULE'S CALLER-IN-WAITING. When GHL email gating lands,
- * Phase 3 replaces the BODY of `resolveOwnerKey` with a verified-token lookup
- * and nothing else in the codebase changes: no route handler reads an owner
- * key from a query string, a body, or a header directly, so every listing and
- * mutation path inherits verified identity the moment this function returns
- * one. Phase 3 also rewrites stored `device:<uuid>` values to
- * `email:<verified-addr>` in place, which is why `chats.owner_key` is an
- * unconstrained TEXT column.
+ * The client no longer asserts an owner on production paths. Identity is the
+ * HMAC-signed session token (minted by POST /auth after GHL verification,
+ * carried as `Authorization: Bearer`); this function verifies it and returns
+ * `email:<verified>`. Forgery requires the signing key, not a guessed string.
+ * The token lives in sessionStorage — deliberately not a cookie (the widget
+ * is third-party to the API origin; cookie blocking would break it) — so it
+ * survives refresh and dies on tab close.
  *
- * WHY A HEADER AND NOT A QUERY PARAM: the owner key is an unguessable BEARER
- * CAPABILITY this phase — whoever holds it can list and delete those chats.
- * Query strings land in web-server access logs, proxy logs and Referer
- * headers; a header does not. It is also the shape Phase 3 wants (an
- * Authorization-style credential), so the transport does not change under it.
+ * `device:<uuid>` via x-james-owner survives as the LOCAL/DEV FALLBACK ONLY,
+ * gated on `allowDeviceFallback` which callers derive from
+ * `!config.isProduction` — NODE_ENV alone, no dedicated flag production could
+ * flip (a dev path reachable in production by configuration is a gate with a
+ * bypass; reaching ours means redefining the deployment as non-production).
+ *
+ * SUPERSEDED and deleted from the old note, so nobody builds it: the planned
+ * in-place rewrite of stored `device:` keys to `email:` keys. The Phase 3
+ * brief rules owner_key is `email:<verified>` FROM THE FIRST WRITE — the
+ * chats table is empty, so chats follow the member across devices by
+ * construction. No migration, no claim step.
+ *
+ * WHY HEADERS AND NOT QUERY PARAMS, unchanged from Phase 1: credentials in
+ * query strings land in access logs, proxy logs and Referer headers.
  */
 
-/**
- * PHASE 3 DESTINATION — ruled, not yet built. Do not build toward the old
- * shape:
- *
- *   - The client STOPS asserting an owner. There is no owner header from the
- *     widget at all.
- *   - After email verification against GHL, the server issues a SIGNED token
- *     bound to the verified email. This function verifies that signature and
- *     returns `email:<verified>`. Forgery then requires the signing key, not
- *     just a guessed string.
- *   - The token lives in sessionStorage and rides a header — deliberately not
- *     a cookie: the widget is third-party to the API origin, and cookie
- *     blocking would break it outright. sessionStorage survives a refresh and
- *     dies on tab close, which is the intended lifetime.
- *   - DEVICE_KEY_RE and `device:<uuid>` survive ONLY as the local/dev
- *     fallback, never as a production owner.
- *
- * Nothing in the current implementation fights that: the seam already has one
- * caller-facing shape (`resolveOwnerKey(request): string`), every route reads
- * the owner only through it, and `chats.owner_key` is unconstrained TEXT.
- */
+import { verifyToken } from './sessionToken.js';
 
 /** Thrown when a request carries no usable owner key. Handlers map this to 400. */
 export class OwnerKeyError extends Error {
@@ -67,16 +56,50 @@ interface OwnerKeyRequest {
   headers?: Record<string, string | string[] | undefined>;
 }
 
+export interface OwnerKeyOptions {
+  /** The HMAC key tokens verify against. Absent = no token can verify. */
+  sessionSigningKey?: string;
+  /** Dev/local ONLY — callers pass `!config.isProduction`, never a flag of
+   * its own. In production this is false by construction. */
+  allowDeviceFallback: boolean;
+  /** Injectable clock for expiry tests. */
+  now?: number;
+}
+
+function singleHeader(raw: string | string[] | undefined): string | undefined {
+  // A repeated header arrives as an array; two different asserted values is
+  // ambiguity, and ambiguity is never guessed.
+  return Array.isArray(raw) ? (raw.length === 1 ? raw[0] : undefined) : raw;
+}
+
 /**
  * The owner key for this request, or throw. Never returns a fallback or a
  * shared "anonymous" value: pooling keyless clients under one owner would
  * make every one of them able to list and delete the others' chats.
+ *
+ * TOKEN FIRST, ALWAYS: a valid `Authorization: Bearer` yields
+ * `email:<verified>` and any x-james-owner header alongside it is IGNORED —
+ * the client stopped asserting owners, so an asserted one must never shadow
+ * a verified one. The device path exists only when no token is presented AND
+ * the caller allows the dev fallback.
  */
-export function resolveOwnerKey(request: OwnerKeyRequest): string {
-  const raw = request.headers?.[OWNER_KEY_HEADER];
-  // A repeated header arrives as an array; two different asserted owners is
-  // ambiguity, and ambiguity is never guessed.
-  const value = Array.isArray(raw) ? (raw.length === 1 ? raw[0] : undefined) : raw;
+export function resolveOwnerKey(request: OwnerKeyRequest, opts: OwnerKeyOptions): string {
+  const auth = singleHeader(request.headers?.authorization);
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+    const verdict = verifyToken(auth.slice(7), opts.sessionSigningKey ?? '', opts.now ?? Date.now());
+    if (!verdict.ok) {
+      // The preHandler already 401s these before any handler runs; this
+      // throw is belt-and-braces for direct callers and unit paths.
+      throw new OwnerKeyError(`session token ${verdict.reason}`);
+    }
+    return `email:${verdict.email}`;
+  }
+
+  if (!opts.allowDeviceFallback) {
+    throw new OwnerKeyError('a session token is required');
+  }
+
+  const value = singleHeader(request.headers?.[OWNER_KEY_HEADER]);
   if (typeof value !== 'string' || !value.trim()) {
     throw new OwnerKeyError(`${OWNER_KEY_HEADER} header is required`);
   }

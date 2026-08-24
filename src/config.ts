@@ -45,6 +45,12 @@ export interface AppConfig {
    * triviality — a missing key that degraded to a predictable token would
    * look gated and not be. */
   sessionSigningKey?: string;
+  /** S3: the auth gate and the dev fallback both key off THIS and nothing
+   * else — no dedicated flag exists for production to flip (structural
+   * requirement: a dev-only path production can reach by configuration is a
+   * gate with a bypass; reaching ours requires redefining the deployment as
+   * non-production, which changes everything else too). */
+  isProduction: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -73,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ghlLocationId: env.GHL_LOCATION_ID ?? 'EDY094ip0U3HwMFQYsVy',
     ghlCourseAccessFieldId: env.GHL_COURSE_ACCESS_FIELD_ID ?? 'axyDeZQxj7gMCtV1FyxS',
     ...(env.SESSION_SIGNING_KEY ? { sessionSigningKey: env.SESSION_SIGNING_KEY } : {}),
+    isProduction: env.NODE_ENV === 'production',
   };
 }
 
