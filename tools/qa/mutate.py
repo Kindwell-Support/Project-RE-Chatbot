@@ -26,6 +26,17 @@ takes one of three dispositions before it is reported onward:
                                       belt-and-braces teardown itself: the
                                       primaries make its deletion invisible,
                                       exactly as its comment predicts)
+    d) INVALID MEASUREMENT         -> the window was DISTURBED; the result is
+                                      void, not a verdict. Re-run in
+                                      isolation before reporting anything.
+                                      Canonical case: M25 came back MISSED
+                                      because the tree was restored INSIDE
+                                      its measurement window by another
+                                      process, so its suite ran against an
+                                      unmutated file; re-verified alone it
+                                      was CAUGHT at 1 failed / 38 passed.
+                                      A disturbed measurement says nothing
+                                      about coverage in either direction.
 The driver prints this menu on every MISSED so the reader chooses rather than
 defaulting to (a). It matters in both directions: filing a (b) as a gap yields
 a vacuous test; filing an (a) as defended yields BUG-033.
@@ -629,6 +640,7 @@ for name, old, new in MUTATIONS:
         print('            a) genuine coverage gap        -> write the test')
         print('            b) defeated by a live defence  -> mutate PAST the defence, re-score')
         print('            c) unpinned by construction    -> record why, write nothing')
+        print('            d) INVALID MEASUREMENT         -> window disturbed; void, re-run alone')
         log.write({'row': 'mutation', 'name': name, 'verdict': 'MISSED_NEEDS_DISPOSITION',
                    'failed': failed, 'passed': passed, 'at': _now()})
         bad.append(name)

@@ -86,7 +86,7 @@ reading the code path.
   the fourth teardown path doing its job, not a test failing to look. Mutating
   PAST that defence caught it at 5 assertions.
 
-Every NOT CAUGHT gets one of three dispositions before it is reported:
+Every NOT CAUGHT gets one of FOUR dispositions before it is reported:
 
   (a) genuine coverage gap        -> write the test
   (b) defeated by a live defence  -> mutate past the defence, then re-score
@@ -311,6 +311,9 @@ def mutate(mutants, paths: list[str], require_clean: bool = True) -> int:
         if verdict == NOT_CAUGHT:
             print(f'{"":12}  ^ FINDING-036: choose a disposition before reporting -')
             print(f'{"":12}    (a) coverage gap -> write the test')
+            # (d) added by MASON per operator ruling (FINDING-036 fourth
+            # disposition). Menu text only — no logic touched.
+            print(f'{"":12}    (d) INVALID MEASUREMENT -> window disturbed; void, re-run alone')
             print(f'{"":12}    (b) defeated by a live defence -> mutate past it, re-score')
             print(f'{"":12}    (c) unpinned by construction -> record why, write nothing')
     print(f'\nmutants that FAILED to catch their defect: {bad}')

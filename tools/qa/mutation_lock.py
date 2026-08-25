@@ -22,9 +22,11 @@ Usage (both drivers, identically):
                     # stale-reclaim, which restores the sidecar FIRST
 
 Refusal is informative: the blocked agent is told WHO holds the lock and since
-WHEN, so it knows who to wait for. Stale locks (holder PID gone, or older than
-STALE_AFTER_MINUTES) are reclaimable — but reclaiming runs the previous
-holder's sidecar restore first and says so loudly. Silent reclamation would
+WHEN, so it knows who to wait for. Stale locks are reclaimable only when the
+holder's PID looks GONE **and** the lock is older than STALE_AFTER_MINUTES
+(BUG-044 — both, not either: a live holder misreported as dead was reclaimed
+once and its measurement corrupted). Reclaiming runs the previous holder's
+sidecar restore first and says so loudly. Silent reclamation would
 reintroduce exactly the corruption the lock exists to prevent.
 """
 import datetime
@@ -72,16 +74,34 @@ def acquire(rig, target, driver_version):
             pass
         holder_alive = _pid_alive(held.get('pid', -1))
         fresh = age_min is not None and age_min < STALE_AFTER_MINUTES
-        if holder_alive and fresh:
+        # BUG-044: reclaim requires BOTH conditions, not either. This used to
+        # refuse only when (alive AND fresh), so a holder MISREPORTED as dead
+        # inside its freshness window was reclaimed and its running
+        # measurement corrupted — which happened: "HELD by MASON (pid 5572,
+        # alive=False)" was read off a LIVE run, reclaimed, and the tree
+        # restored out from under it (M25 came back a false MISSED).
+        #
+        # _pid_alive works in the scratch case and its misreport is
+        # UNEXPLAINED. Rather than chase it, the liveness check is demoted to
+        # ADVISORY: a lock is reclaimable only when the holder looks dead AND
+        # the lock has aged past STALE_AFTER_MINUTES. A check we cannot
+        # explain must not be load-bearing on a destructive path; the clock
+        # is the thing we can trust.
+        if holder_alive or fresh:
             print('MUTATION LOCK HELD by %s (pid %s) since %s (%.0f min ago), driver %s.'
                   % (held.get('rig', '?'), held.get('pid', '?'), started,
                      age_min if age_min is not None else -1,
                      held.get('driver_version', '?')))
             print('Refusing to start. Wait for that cycle; do not delete the lock by hand.')
+            print('(BUG-044: refusal now needs only ONE of alive/fresh — a holder '
+                  'misreported as dead inside its window is still protected.)')
             sys.exit(2)
-        # Stale: holder dead or past threshold. Reclaim = restore FIRST, loudly.
-        print('STALE LOCK RECLAIM: holder %s (pid %s, alive=%s) started %s.'
-              % (held.get('rig', '?'), held.get('pid', '?'), holder_alive, started))
+        # Stale: holder looks dead AND the lock has aged out (BUG-044 — both
+        # required). Reclaim = restore FIRST, loudly.
+        print('STALE LOCK RECLAIM: holder %s (pid %s, alive=%s) started %s, age %s min '
+              '(dead AND older than %s min — both required since BUG-044).'
+              % (held.get('rig', '?'), held.get('pid', '?'), holder_alive, started,
+                 'unknown' if age_min is None else int(age_min), STALE_AFTER_MINUTES))
         stale_target = held.get('target', target)
         sidecar = stale_target + '.pristine'
         if os.path.exists(sidecar):
