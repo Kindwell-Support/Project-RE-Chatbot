@@ -93,6 +93,34 @@ describe('S3 — default-on: the exemption list is exactly the ruled four', () =
     await app.close();
   });
 
+  it('FINDING-037: EVERY registered route is exempt or gated — derived, not listed', async () => {
+    // The route set comes from the app itself (onRoute accessor), so a route
+    // added tomorrow lands in this sweep by construction — the explicit-list
+    // form of this claim narrowed silently when a route landed unlisted.
+    const { app } = prodApp();
+    await app.ready();
+    const routes = (app as never as { registeredRoutes: Array<{ method: string; url: string }> })
+      .registeredRoutes;
+    expect(routes.length, 'the accessor observed nothing — it must precede registration').toBeGreaterThan(5);
+    // Precondition: the accessor really sees the metered surface.
+    expect(routes.some((r) => r.url === '/chat' && r.method === 'POST')).toBe(true);
+    expect(routes.some((r) => r.url === '/chats/:id')).toBe(true);
+
+    for (const r of routes) {
+      if (r.method === 'OPTIONS') continue; // ruled exempt
+      const concrete = r.url.replace(/:[^/]+/g, CHAT_A);
+      const res = await app.inject({ method: r.method as never, url: concrete });
+      const exempt =
+        (AUTH_EXEMPT_PATHS as readonly string[]).includes(r.url) || r.url === AUTH_ENTRY_PATH;
+      if (exempt) {
+        expect(res.statusCode, `${r.method} ${r.url} is exempt but answered 401`).not.toBe(401);
+      } else {
+        expect(res.statusCode, `${r.method} ${r.url} is REACHABLE without a session`).toBe(401);
+      }
+    }
+    await app.close();
+  });
+
   it('a route that DOES NOT EXIST is also gated — the gate outranks routing knowledge', async () => {
     // By-construction evidence: the hook is app-level, so even an unmatched
     // URL never reveals whether a route exists to an unauthenticated caller.

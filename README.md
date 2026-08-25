@@ -85,12 +85,29 @@ strips `<script>` here:
 <div id="james-bot" style="width:100%;height:700px;"></div>
 ```
 
-**2. Loader** — paste into the membership site's **Header Tracking Code**
-(Settings → Advanced → Header Tracking Code; this field does NOT strip
-scripts). NOTE: an earlier DEPLOY.md said "Business Profile" — the two
-documents disagreed because this snippet never lived in version control.
-Confirm the field on paste: the correct one is the SITE-level header code for
-the members portal, not an account-level field.
+WHERE it goes, confirmed in the rendered DOM: the lesson's **Custom Code
+Editor** — the `<>` button on the Lesson Description toolbar. NOT the Lesson
+Media "</>" slot, which looks right and rejects anything that is not an
+iframe ("Invalid iframe HTML") — it is the obvious-looking wrong answer.
+Verified surviving intact in the rendered lesson (id and inline style both
+kept; GHL wraps placeholder text in a `<p>`, harmless — the widget replaces
+the div's contents on mount):
+
+```html
+<div id="james-bot" style="width:100%;height:700px"><p>Loading…</p></div>
+```
+
+**2. Loader** — paste into **Course → Settings → Advanced → "Tracking Codes
+(Header/Footer)" → Header Tracking Code tab** (confirmed live in the portal;
+this field does NOT strip scripts). PER-COURSE, not site-wide — every course
+that embeds the bot needs its own copy, and stale copies in other courses
+keep running independently (see the launch checklist in DEPLOY.md).
+
+That same Advanced panel also has a **"Custom Javascript" tab — deliberately
+NOT used**: Header Tracking Code injects into `<head>` with known timing,
+which is what the loader's `s.onload` + the widget's MutationObserver
+SPA-survival mechanism were built against. Custom Javascript's execution
+timing is undocumented, and we are not guessing at it.
 
 ```html
 <!-- James Dainard AI Mentor loader (Phase 3) -->

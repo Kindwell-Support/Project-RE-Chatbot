@@ -139,10 +139,30 @@ there — this section used to carry its own copy, the two drifted (different
 settings page, different heights, different loader shape), and the live
 snippet existed in neither. One canonical copy, one place.
 
-Summary only: a `<div id="james-bot">` in each lesson body, plus the loader
-from README pasted into the membership site's Header Tracking Code. Since
-Phase 3 there is NO memberEmail in the snippet — the widget verifies the
-member itself against GHL Course Access and mints a session token.
+Summary only: a `<div id="james-bot">` in each lesson body (the Description
+toolbar's Custom Code Editor, NOT the Lesson Media iframe slot), plus the
+loader from README pasted into **Course → Settings → Advanced → Tracking
+Codes (Header/Footer) → Header Tracking Code** — PER-COURSE, confirmed live;
+this file previously said "Business Profile", which was wrong. Since Phase 3
+there is NO memberEmail in the snippet — the widget verifies the member
+itself against GHL Course Access and mints a session token.
+
+## Launch checklist (Phase 3 merge)
+
+- [ ] **Remove or update the OLD Project Flip loader snippet.** The header
+      tracking code is per-course, so Project Flip's existing embed carries
+      its own independent pre-Phase-3 copy. After the gated API deploys, that
+      old snippet still loads the widget — pointed at an API its requests can
+      no longer reach as configured. Members in Project Flip get a bot that
+      cannot connect unless its snippet is replaced with the canonical one
+      from README (or removed) AT LAUNCH.
+- [ ] Set production secrets in the DO dashboard before merge:
+      GHL_API_TOKEN, SESSION_SIGNING_KEY (app.yaml declares both as SECRET).
+- [ ] ENABLE_DEMO_PAGE: Abdullah rules before merge (production /demo is
+      unreachable behind the gate either way — the bootstrap paradox is
+      deliberate).
+- [ ] Paste the canonical README snippet into each NEW course embedding the
+      bot (per-course, one copy each).
 
 ## 4. After deploy — update ALLOWED_ORIGINS
 

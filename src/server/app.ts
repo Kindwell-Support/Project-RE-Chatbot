@@ -134,6 +134,23 @@ export const AUTH_ENTRY_PATH = '/auth';
 export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
 
+  // FINDING-037: the registered ROUTE SET, derivable the way the exemption
+  // list already is. This onRoute hook is registered BEFORE any route, so it
+  // observes every registration buildApp makes — including Fastify's
+  // auto-added HEAD twins. (INSPECTOR derived neither: printRoutes renders a
+  // radix trie whose nodes do not correspond to routes, and an onRoute hook
+  // added AFTER buildApp observes nothing because registration is internal.)
+  // With this, "every registered route is either exempt or gated" is
+  // assertable without an explicit list — the form of coverage claim that
+  // NARROWED SILENTLY when a new route landed unlisted, which is the exact
+  // failure default-on exists to prevent, one layer up.
+  const registeredRoutes: Array<{ method: string; url: string }> = [];
+  app.addHook('onRoute', (route) => {
+    const methods = Array.isArray(route.method) ? route.method : [route.method];
+    for (const m of methods) registeredRoutes.push({ method: String(m), url: route.url });
+  });
+  app.decorate('registeredRoutes', registeredRoutes);
+
   let openai = deps.openai;
   let supabase = deps.supabase;
   // Transient 429s/5xx from OpenAI otherwise surface to the member as
