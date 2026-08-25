@@ -38,6 +38,8 @@
     '',
     'I can answer questions related to REI, or I can perform calculations based on my BRRRR, Flip, Land Acquisition and Construction Calculators.',
     '',
+    'I can also pull comparable sales to help you determine ARV on a property. Just give me the full street address, including city and state.',
+    '',
     'Let me know how I can help.',
     '',
     'Quick note before we start: everything here is education and estimates only, not financial or investment advice. Always verify your own numbers before acting on a deal.',
@@ -193,7 +195,7 @@
     /* --- Composer ------------------------------------------------------------ */
     '.jb-form{display:flex;gap:10px;align-items:center;padding:12px;flex:0 0 auto;margin:0 10px 10px;border-radius:14px;}',
     /* 16px font keeps iOS Safari from zooming the page on focus. */
-    '.jb-input{flex:1 1 auto;min-width:0;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    '.jb-input{flex:1 1 auto;min-width:0;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
     'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:16px;font-family:inherit;outline:none;transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
     '.jb-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-input::placeholder{color:var(--jb-text-tertiary);}',
@@ -447,7 +449,7 @@
     '.jb-gate-title{font-size:17px;font-weight:700;margin:0 0 6px;color:var(--jb-text-primary);}',
     '.jb-gate-copy{font-size:13.5px;line-height:1.55;color:var(--jb-text-secondary);margin:0 0 14px;}',
     '.jb-gate-row{display:flex;gap:8px;}',
-    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:11px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
     'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:16px;font-family:inherit;outline:none;}',
     '.jb-gate-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:10px;padding:11px 18px;background:var(--jb-accent);',
@@ -551,6 +553,11 @@
        outrank the (0,1,1) layer. Both sides are !important, so specificity
        decides and source order is NOT relied on (verified, not assumed). */
     '.jb-root .jb-input,.jb-root .jb-gate-input,.jb-root .jb-control{font-size:16px !important;}',
+    /* Padding, same (0,2,0) tier. Declared per-control rather than as one
+       shared rule because the VERTICAL values legitimately differ (12 vs
+       11) and a shared shorthand would flatten that difference. */
+    '.jb-root .jb-input{padding:12px 18px !important;}',
+    '.jb-root .jb-gate-input{padding:11px 18px !important;}',
     '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:14px !important;font-weight:700 !important;}',
     '.jb-root .jb-calc-cancel{font-size:14px !important;}',
     '.jb-root .jb-adv-toggle{font-size:13px !important;font-weight:700 !important;}',
