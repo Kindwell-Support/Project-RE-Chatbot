@@ -15,6 +15,49 @@ carried into the GREEN message with its severity).
 
 ---
 
+## FINDING-047 — jsdom cannot resolve percentage font-sizes; `font-size: 100%` reads back as `medium`
+
+- **Status**: OPEN (harness limitation, not a product bug)
+- **Severity**: medium — it silently disarms assertions rather than failing them
+- **Registered by**: MASON, on operator instruction, number operator-assigned.
+  Written into INSPECTOR's register with that provenance stated because this
+  log is canonical for numbering.
+
+jsdom does not compute percentage `font-size` against the parent's computed
+size. `getComputedStyle(el).fontSize` on an element under
+`font-size: 100%` returns the keyword `medium`, not a pixel value.
+
+**How it surfaced.** BUG-046's fix was verified with a hostile-container
+fixture reproducing the portal rule
+`.membership-preview-remote input { font-size: 100% }`. Six assertions passed.
+The seventh — the CONTROL, asserting an *undefended* input inside the same
+container really does render oversized — returned `medium` and failed. Without
+that control the whole file would have passed against a fixture that never
+applied any pressure: **an assertion structurally incapable of failing**, the
+eighth-instance shape.
+
+**Why it will recur.** Percentage typography is normal in browser-normalize
+resets (`font: 100%/1.15`, `font-size: 100%` on form controls is Tailwind
+preflight and normalize.css alike). Any future jsdom test whose fixture uses a
+percentage font-size is inert and will report success.
+
+**The resolution, and it is a split, not a fix.** Neither harness is made to
+cover the other's ground:
+
+| harness | proves | cannot prove |
+|---|---|---|
+| jsdom | the CASCADE — specificity, `!important`, source order | anything resolving a percentage |
+| real Chrome (puppeteer-core, `tools`-free scratch script) | percentage resolution, UA form-control defaults (`<select>`) | nothing here; it is the stronger instrument, just slower |
+
+`tests/bug046FormTypography.test.ts` states the split in its docblock so the
+next reader does not "simplify" the Chrome step away.
+
+**Standing consequence.** A jsdom assertion about a computed value derived
+from a percentage is void. If a fixture needs one, the check belongs in a real
+engine, and the jsdom half must say what it is NOT proving.
+
+---
+
 ## FINDING-006 — a literal U+0008 inside a regex literal, and the class behind it
 
 - **Status**: CLOSED (repaired + swept)
