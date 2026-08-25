@@ -54,6 +54,20 @@ services:
       - key: NODE_ENV
         scope: RUN_TIME
         value: production
+      # --- GHL access gating (Phase 3). Secrets set in the DO dashboard. ---
+      - key: GHL_API_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      - key: GHL_LOCATION_ID
+        scope: RUN_TIME
+        value: EDY094ip0U3HwMFQYsVy
+      # Inferred until the definitions scope lands (reports/GHL_FIELD_SHAPE.md)
+      - key: GHL_COURSE_ACCESS_FIELD_ID
+        scope: RUN_TIME
+        value: axyDeZQxj7gMCtV1FyxS
+      - key: SESSION_SIGNING_KEY
+        scope: RUN_TIME
+        type: SECRET
       # /demo — the widget hosted on the API origin for testing without GHL.
       # Flip to "false" (or remove) once the GHL embed is live if you don't
       # want a public demo page.

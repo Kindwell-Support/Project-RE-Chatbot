@@ -25,7 +25,7 @@ import { runFlipTool } from '../src/agent/toolRunners.js';
 import { makeFakeOpenAI, makeFakeSupabase, flushDetached } from './helpers/fakes.js';
 
 const ALLOWED = 'https://preacademy.app.clientclub.net';
-const config = loadConfig({
+const config = loadConfig({ NODE_ENV: 'test',
   ALLOWED_ORIGINS: ALLOWED,
   OPENAI_API_KEY: 'test-not-a-real-key',
   SUPABASE_URL: 'https://example.supabase.co',

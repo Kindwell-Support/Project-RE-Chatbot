@@ -73,35 +73,54 @@ the Supabase project: `sql/setup.sql` (chat_messages — applied) and
 
 The server serves its own widget bundle at `GET /widget.js`, so no separate CDN is required. Set `ALLOWED_ORIGINS` (comma-separated) — CORS is allow-listed, never `*`.
 
-## GHL embed
+## GHL embed — THE live snippet (Phase 3 final)
 
-**1. Lesson body** (Project Flip → AI Mentor → Ask James) — content only, GHL strips `<script>` here:
+This section is CANONICAL — DEPLOY.md defers here. Both halves below are the
+exact text to paste; the host is the real deployment, not a placeholder.
+
+**1. Lesson body** (each lesson that should show the bot) — content only, GHL
+strips `<script>` here:
 
 ```html
 <div id="james-bot" style="width:100%;height:700px;"></div>
 ```
 
-**2. Loader** — paste into **Project Flip → Settings → Advanced → Header Tracking Code** (this field does NOT strip scripts). Replace `YOUR-DEPLOYED-HOST` with the deployed API URL, no trailing slash:
+WHERE it goes, confirmed in the rendered DOM: the lesson's **Custom Code
+Editor** — the `<>` button on the Lesson Description toolbar. NOT the Lesson
+Media "</>" slot, which looks right and rejects anything that is not an
+iframe ("Invalid iframe HTML") — it is the obvious-looking wrong answer.
+Verified surviving intact in the rendered lesson (id and inline style both
+kept; GHL wraps placeholder text in a `<p>`, harmless — the widget replaces
+the div's contents on mount):
 
 ```html
-<!-- James Dainard AI Mentor loader -->
+<div id="james-bot" style="width:100%;height:700px"><p>Loading…</p></div>
+```
+
+**2. Loader** — paste into **Course → Settings → Advanced → "Tracking Codes
+(Header/Footer)" → Header Tracking Code tab** (confirmed live in the portal;
+this field does NOT strip scripts). PER-COURSE, not site-wide — every course
+that embeds the bot needs its own copy, and stale copies in other courses
+keep running independently (see the launch checklist in DEPLOY.md).
+
+That same Advanced panel also has a **"Custom Javascript" tab — deliberately
+NOT used**: Header Tracking Code injects into `<head>` with known timing,
+which is what the loader's `s.onload` + the widget's MutationObserver
+SPA-survival mechanism were built against. Custom Javascript's execution
+timing is undocumented, and we are not guessing at it.
+
+```html
+<!-- James Dainard AI Mentor loader (Phase 3) -->
 <script>
 (function () {
-  var API_URL = 'https://YOUR-DEPLOYED-HOST';
+  var API_URL = 'https://re-chatbot-vvtnk.ondigitalocean.app';
   var s = document.createElement('script');
   s.src = API_URL + '/widget.js';
   s.async = true;
   s.onload = function () {
     window.createJamesBot({
       apiUrl: API_URL,
-      target: '#james-bot',
-      // GHL does NOT interpolate {{contact.email}} in tracking code —
-      // read the member email from the membership app's localStorage instead.
-      memberEmail: (function () {
-        try {
-          return JSON.parse(localStorage.getItem('common') || '{}').email || 'unknown';
-        } catch (e) { return 'unknown'; }
-      })()
+      target: '#james-bot'
     });
   };
   document.head.appendChild(s);
@@ -109,7 +128,14 @@ The server serves its own widget bundle at `GET /widget.js`, so no separate CDN 
 </script>
 ```
 
-The widget renders its input box immediately (no backend round-trip), survives GHL's SPA lesson swaps via a `data-mounted` guard + `MutationObserver`, and keeps working if a history load fails.
+No `memberEmail`: since Phase 3 the widget collects and VERIFIES the member's
+email itself (GHL Course Access gate + signed session token), so the old
+localStorage email sniff is gone. `createJamesBot` still ACCEPTS a
+`memberEmail` option for older pasted snippets — it is ignored for identity.
+
+The widget renders immediately, gates chat access behind member verification,
+survives GHL's SPA lesson swaps via a `data-mounted` guard + `MutationObserver`,
+and keeps working if a history load fails.
 
 ## Project layout
 

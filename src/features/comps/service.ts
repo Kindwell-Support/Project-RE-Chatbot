@@ -129,6 +129,38 @@ export function createDailyRunBudget(dailyCap: number): RunBudgetLike {
   };
 }
 
+/**
+ * Per-member comps budget, LAYERED UNDER the global daily counter
+ * (unconditional item): the global cap alone was a one-request DoS — 50
+ * lookups from one caller exhausted every member's allowance for the day.
+ * Now one member can burn at most `memberCap` of the shared pool.
+ *
+ * Order is deliberate: the MEMBER window is checked first (cheap, and a
+ * member-denied lookup must not consume global budget), and the member slot
+ * is only charged when the GLOBAL grant succeeds too — neither counter leaks
+ * on the other's denial.
+ */
+export function createMemberScopedBudget(
+  globalBudget: RunBudgetLike,
+  memberCap: number,
+): (memberKey: string) => RunBudgetLike {
+  const perMember = new Map<string, { day: string; used: number }>();
+  return (memberKey: string): RunBudgetLike => ({
+    tryConsume(now: Date): boolean {
+      const today = now.toISOString().slice(0, 10);
+      let rec = perMember.get(memberKey);
+      if (!rec || rec.day !== today) {
+        rec = { day: today, used: 0 };
+        perMember.set(memberKey, rec);
+      }
+      if (rec.used >= memberCap) return false;
+      if (!globalBudget.tryConsume(now)) return false;
+      rec.used += 1;
+      return true;
+    },
+  });
+}
+
 export interface RunCompsDeps {
   provider: PropertyDataProvider;
   cache?: CompsCacheLike;

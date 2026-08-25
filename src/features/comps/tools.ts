@@ -189,10 +189,27 @@ export async function runCompsToolHandler(
     // exist is one the member typed.
     return {
       rendered_block: rendered,
+      // FINDING-023: the trailing clause here — "if the member wants deal
+      // numbers run, they supply their own ARV and you call set_manual_arv" —
+      // was being PARAPHRASED into the coaching line, so the member saw the
+      // same instruction twice, sandwiching the disclaimer: once as the
+      // structural COMPS_ARV_CLOSE inside rendered_block, and again in the
+      // model's own words after it.
+      //
+      // It is removed rather than reworded. Prescribed copy that lives in a
+      // prompt is a REQUEST, not a constraint (the standing principle), and
+      // this request also arrived nearer the point of generation than the
+      // system prompt's own prohibition on mentioning an ARV in that line —
+      // so it won. The routing it duplicated (call set_manual_arv when the
+      // member volunteers a figure) is a STANDING rule in the system prompt,
+      // which is where a rule that holds on every turn belongs; restating it
+      // per tool result bought nothing and cost member-facing copy.
+      //
+      // "This tool does NOT produce an ARV" STAYS — that half is the BUG-014
+      // guard against the model claiming comps yield one.
       instruction:
         'Relay rendered_block to the member VERBATIM — do not re-derive, summarise, or alter any number in ' +
-        'it. You may add ONE short coaching line after it. This tool does NOT produce an ARV: if the member ' +
-        'wants deal numbers run, they supply their own ARV and you call set_manual_arv.',
+        'it. You may add ONE short coaching line after it. This tool does NOT produce an ARV.',
     };
   }
 

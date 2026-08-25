@@ -1,11 +1,12 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { buildApp } from '../src/server/app.js';
 import { loadConfig } from '../src/config.js';
+import { mintToken } from '../src/server/sessionToken.js';
 import { makeFakeOpenAI, makeFakeSupabase, flushDetached } from './helpers/fakes.js';
 
 const ALLOWED = 'https://preacademy.app.clientclub.net';
 
-const config = loadConfig({
+const config = loadConfig({ NODE_ENV: 'test',
   ALLOWED_ORIGINS: `${ALLOWED}, https://staging.example.com`,
   OPENAI_API_KEY: 'test',
   SUPABASE_URL: 'https://example.supabase.co',
@@ -28,8 +29,28 @@ describe('I1: CORS preflight (the old build returned 500 here)', () => {
     });
     expect(res.statusCode).toBe(204);
     expect(res.headers['access-control-allow-origin']).toBe(ALLOWED);
-    expect(res.headers['access-control-allow-methods']).toBe('POST, OPTIONS');
-    expect(res.headers['access-control-allow-headers']).toBe('content-type');
+    // Phase 1 multi-chat widened this: /chats needs GET (list), PATCH
+    // (rename) and DELETE (soft delete), and the owner-key header must be
+    // allow-listed or the browser blocks every one of them at the preflight.
+    // Asserted as a SET, not a string, so the order of the header value is
+    // not accidentally load-bearing.
+    expect(
+      String(res.headers['access-control-allow-methods'])
+        .split(',')
+        .map((m) => m.trim())
+        .sort(),
+    ).toEqual(['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST']);
+    expect(
+      String(res.headers['access-control-allow-headers'])
+        .split(',')
+        .map((h) => h.trim().toLowerCase())
+        .sort(),
+      // RE-POINTED (Phase 3 S3): `authorization` carries the session token —
+      // the production credential. x-james-owner left the list with the
+      // client-asserted owner it carried; the dev fallback is same-origin and
+      // never preflights. Still EXACTLY the headers production uses: the
+      // tightness is the point, not the particular names.
+    ).toEqual(['authorization', 'content-type']);
   });
 
   it('second allow-listed origin (comma-separated env) also passes', async () => {
@@ -193,31 +214,44 @@ describe('/demo — the widget hosted on the API origin (no GHL needed)', () => 
     expect(res.body).toContain("apiUrl: ''");
   });
 
-  it('is OFF in production unless ENABLE_DEMO_PAGE=true', async () => {
-    const prodConfig = loadConfig({
+  it('in PRODUCTION the auth gate outranks ENABLE_DEMO_PAGE — /demo never serves without a token', async () => {
+    // RE-POINTED (Phase 3 S3). This test asserted "/demo 404s in production
+    // without the flag". The gate is default-on in production and /demo is
+    // NOT exempt (ruled), so an unauthenticated GET answers 401 BEFORE the
+    // flag can matter — an exempt /demo would be a public ungated chatbot on
+    // a metered API. The flag's effect is only observable behind a valid
+    // token: off -> 404, on -> 200. All three arms pinned.
+    const prodEnv = {
       ALLOWED_ORIGINS: ALLOWED,
-      OPENAI_API_KEY: 'test',
-      SUPABASE_URL: 'https://example.supabase.co',
-      SUPABASE_SERVICE_ROLE_KEY: 'test',
+      OPENAI_API_KEY: 'k',
+      SUPABASE_URL: 'https://x.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'k',
       NODE_ENV: 'production',
-    } as NodeJS.ProcessEnv);
-    const prodApp = buildApp(prodConfig);
-    const res = await prodApp.inject({ method: 'GET', url: '/demo' });
-    expect(res.statusCode).toBe(404);
-    await prodApp.close();
+      SESSION_SIGNING_KEY: 'cors-prod-signing-key-0123456789-abcdef',
+    };
+    const token = mintToken('member@example.com', prodEnv.SESSION_SIGNING_KEY, Date.now());
 
-    const demoOn = loadConfig({
-      ALLOWED_ORIGINS: ALLOWED,
-      OPENAI_API_KEY: 'test',
-      SUPABASE_URL: 'https://example.supabase.co',
-      SUPABASE_SERVICE_ROLE_KEY: 'test',
-      NODE_ENV: 'production',
-      ENABLE_DEMO_PAGE: 'true',
-    } as NodeJS.ProcessEnv);
-    const demoApp = buildApp(demoOn);
-    const res2 = await demoApp.inject({ method: 'GET', url: '/demo' });
-    expect(res2.statusCode).toBe(200);
-    await demoApp.close();
+    const gated = buildApp(loadConfig(prodEnv as NodeJS.ProcessEnv));
+    const noToken = await gated.inject({ method: 'GET', url: '/demo' });
+    expect(noToken.statusCode, 'the gate did not outrank the flag').toBe(401);
+    const offWithToken = await gated.inject({
+      method: 'GET',
+      url: '/demo',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(offWithToken.statusCode, 'flag off must 404 behind the gate').toBe(404);
+    await gated.close();
+
+    const enabled = buildApp(
+      loadConfig({ NODE_ENV: 'test', ...prodEnv, ENABLE_DEMO_PAGE: 'true' } as NodeJS.ProcessEnv),
+    );
+    const onWithToken = await enabled.inject({
+      method: 'GET',
+      url: '/demo',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(onWithToken.statusCode, 'flag on must serve behind the gate').toBe(200);
+    await enabled.close();
   });
 });
 
@@ -234,7 +268,7 @@ describe('GET / — the bare domain is not a scary 404', () => {
   });
 
   it('says how to turn the demo page on when it is disabled', async () => {
-    const prodConfig = loadConfig({
+    const prodConfig = loadConfig({ NODE_ENV: 'test',
       ALLOWED_ORIGINS: ALLOWED,
       OPENAI_API_KEY: 'test',
       SUPABASE_URL: 'https://example.supabase.co',

@@ -43,6 +43,12 @@ function inputBox(): HTMLInputElement | null {
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  window.sessionStorage.clear();
+  // Phase 3 S4 (announced re-point, uniform across widget suites): the
+  // widget now gates on a session token before ANY chat UI. Seeding one
+  // keeps each suite's original subject - chat behaviour - unchanged;
+  // the gate's own behaviour is pinned in phase3Widget.test.ts.
+  window.sessionStorage.setItem('james-bot-token', 'jsdom-suite-token');
   vi.restoreAllMocks();
 });
 
@@ -108,9 +114,14 @@ describe('I5: the input box renders without waiting on any network call', () => 
     (window as any).createJamesBot({ apiUrl: 'https://api.example.com', target: '#james-bot' });
 
     expect(fetchMock, 'history was never requested').toHaveBeenCalled();
-    expect(order, 'a network call was issued before the input box existed').toEqual([
-      'fetch-after-render',
-    ]);
+    // ORDERING, not call count. Mount now issues two non-blocking calls
+    // (history for the remembered chat, and the chat list); what this pins is
+    // that EVERY one of them happens after the input box exists.
+    expect(order.length, 'no network call was issued at mount').toBeGreaterThan(0);
+    expect(
+      order.filter((entry) => entry !== 'fetch-after-render'),
+      'a network call was issued before the input box existed',
+    ).toEqual([]);
   });
 
   it('renders the send button and the opening message locally, with no network reply', () => {
@@ -156,7 +167,13 @@ describe('I5: the input box renders without waiting on any network call', () => 
     expect(document.querySelectorAll('#james-bot .jb-chip'), 'chip row is back').toHaveLength(0);
     // Exactly one bubble on first load, and one input row. Nothing else.
     expect(document.querySelectorAll('#james-bot .jb-bubble')).toHaveLength(1);
-    expect(document.querySelectorAll('#james-bot button')).toHaveLength(1); // Send only
+    // Scoped to the CONVERSATION PANE. This asserted "1 button, Send only"
+    // against the whole widget until Phase 1 multi-chat added sidebar chrome
+    // (new-chat, collapse, per-row rename/delete). The intent being pinned is
+    // that the opening SCREEN is plain — no chip row, no numbered menu, no
+    // affordances competing with the message box — and that intent is
+    // unchanged; only the scope of "screen" moved.
+    expect(document.querySelectorAll('#james-bot .jb-main button')).toHaveLength(1); // Send only
   });
 
   it('the input accepts typed text while the network is down', () => {
@@ -337,10 +354,26 @@ describe('markdown rendering (the model replies in markdown)', () => {
 });
 
 describe('history restore (memory is server-side; repaint what the bot remembers)', () => {
+  const STORED_CHAT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  // /chats must RESOLVE now. The boot rule is that the chat list decides which
+  // chat is active and decides first, so a stalled list means no transcript is
+  // fetched at all — by design (tests/multiChat.bootOrder.test.ts owns that
+  // rule). This harness previously hung every non-/history call, which used to
+  // be harmless because the widget fetched history ahead of the list.
   function mountWithHistory(messages: Array<{ role: string; content: string }>) {
     const fetchMock = vi.fn((url: string) => {
       if (String(url).includes('/history')) {
         return Promise.resolve({ ok: true, json: async () => ({ messages }) });
+      }
+      if (String(url).endsWith('/chats')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            { id: STORED_CHAT, title: null, created_at: 'x', last_message_at: 'x' },
+          ],
+        });
       }
       return new Promise(() => {});
     });
@@ -351,11 +384,15 @@ describe('history restore (memory is server-side; repaint what the bot remembers
     return fetchMock;
   }
 
-  it('requests /history for the stored session id', () => {
+  it('requests /history for the chat the list named', async () => {
     const fetchMock = mountWithHistory([]);
+    // Necessarily async now: the request waits on the chat list resolving.
+    await new Promise((r) => setTimeout(r, 20));
     const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/history'));
     expect(call, '/history was never requested').toBeDefined();
     expect(String(call![0])).toMatch(/\/history\?session_id=.+/);
+    expect(String(call![0]), 'history was fetched for a chat the list did not name')
+      .toContain(STORED_CHAT);
   });
 
   it('repaints prior turns, with markdown, after mount', async () => {
@@ -497,7 +534,12 @@ describe('widget wiring', () => {
   it('a failed send offers Retry, which re-sends without duplicating the question', async () => {
     let attempt = 0;
     const fetchMock = vi.fn((url: string) => {
-      if (String(url).includes('/history')) return new Promise(() => {});
+      // /chats joined /history as a non-conversation call at mount (Phase 1
+      // multi-chat). This harness counts CONVERSATION attempts, so registry
+      // traffic is ignored here exactly as history already was.
+      if (String(url).includes('/history') || String(url).includes('/chats')) {
+        return new Promise(() => {});
+      }
       attempt++;
       if (attempt === 1) return Promise.reject(new Error('network down'));
       return Promise.resolve({ ok: true, json: async () => ({ output: 'Back online.' }) });

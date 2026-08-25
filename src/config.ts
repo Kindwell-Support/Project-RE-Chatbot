@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { signingKeyProblem } from './server/sessionToken.js';
 
 export interface AppConfig {
   openaiApiKey: string;
@@ -29,9 +30,71 @@ export interface AppConfig {
    * "Missing Key" page on every vintage).
    */
   censusApiKey?: string;
+  /**
+   * GHL access gating (Phase 3). Token OPTIONAL at S1: the client exists but
+   * no route is gated until S3, which is where assertRuntimeConfig grows the
+   * production requirement. The field id is a CONFIGURED VALUE, not a code
+   * literal (C-1): it is INFERRED from cross-contact probe evidence until the
+   * token gains the definitions scope, and a wrong id denies every member —
+   * env-overridable so fixing it never needs a deploy of new code.
+   */
+  ghlApiToken?: string;
+  ghlLocationId: string;
+  ghlCourseAccessFieldId: string;
+  /** HMAC key for member session tokens (S2). Boot REFUSES on absence or
+   * triviality — a missing key that degraded to a predictable token would
+   * look gated and not be. */
+  sessionSigningKey?: string;
+  /** S3: the auth gate and the dev fallback both key off THIS and nothing
+   * else — no dedicated flag exists for production to flip (structural
+   * requirement: a dev-only path production can reach by configuration is a
+   * gate with a bypass; reaching ours requires redefining the deployment as
+   * non-production, which changes everything else too). */
+  isProduction: boolean;
+  /** BUG-040: what NODE_ENV actually contained, and what it resolved to —
+   * logged loudly at boot so a gate that is off ANNOUNCES it. */
+  nodeEnvRaw: string | undefined;
+  resolvedEnv: 'production' | 'development' | 'test';
+  /** Unconditional items (Phase 3). Env-overridable so ops can tune without
+   * a deploy; the defaults are the sized values, reasoning at the wiring. */
+  authIpPerMinute: number;
+  chatMemberPerMinute: number;
+  chatIpPerMinute: number;
+  compsMemberDailyCap: number;
+  maxMessageChars: number;
+}
+
+/**
+ * BUG-040 — NODE_ENV resolution, FAIL CLOSED.
+ *
+ * `env.NODE_ENV === 'production'` (strict, unnormalized) silently disabled
+ * the auth gate for 'Production' (capital P) and 'production ' (trailing
+ * space — routine when pasting into a hosting dashboard): the app booted
+ * normally, served with authentication OFF, and nothing said so.
+ *
+ * The rule now: trim + lowercase, and anything outside the known set —
+ * INCLUDING empty and unset — resolves to PRODUCTION. The gate's default is
+ * ON; only an explicit, exact 'development' or 'test' turns it off. This is
+ * why every test config must now DECLARE its posture (NODE_ENV: 'test') —
+ * dev-by-omission was exactly the bypass.
+ *
+ * WHY NOT BOOT-REFUSE ON UNSET (stated per ruling): fail-closed-to-production
+ * yields a GATED SERVICE, a refusal yields a full outage. The safer failure
+ * is the one that keeps members served behind the gate, and the loud boot
+ * line makes the fallback diagnosable rather than silent.
+ */
+export function resolveEnvironment(
+  raw: string | undefined,
+): 'production' | 'development' | 'test' {
+  const normalized = (raw ?? '').trim().toLowerCase();
+  if (normalized === 'development') return 'development';
+  if (normalized === 'test') return 'test';
+  // 'production', '', unset, 'staging', 'Production ', garbage: the gate is ON.
+  return 'production';
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const resolvedEnv = resolveEnvironment(env.NODE_ENV);
   return {
     openaiApiKey: env.OPENAI_API_KEY ?? '',
     openaiModel: env.OPENAI_MODEL ?? 'gpt-4o',
@@ -49,10 +112,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     matchThreshold: Number(env.MATCH_THRESHOLD ?? 0),
     // /demo hosts the widget on the API's own origin (no GHL needed). On by
     // default outside production; in production set ENABLE_DEMO_PAGE=true.
-    enableDemoPage: env.ENABLE_DEMO_PAGE === 'true' || env.NODE_ENV !== 'production',
+    // Uses the RESOLVED environment (BUG-040): the raw string let
+    // 'Production ' enable the demo page in production too.
+    enableDemoPage: env.ENABLE_DEMO_PAGE === 'true' || resolvedEnv !== 'production',
     ...(env.APIFY_TOKEN ? { apifyToken: env.APIFY_TOKEN } : {}),
     compsDailyRunCap: Number(env.COMPS_DAILY_RUN_CAP ?? 50),
     ...(env.CENSUS_API_KEY ? { censusApiKey: env.CENSUS_API_KEY } : {}),
+    ...(env.GHL_API_TOKEN ? { ghlApiToken: env.GHL_API_TOKEN } : {}),
+    ghlLocationId: env.GHL_LOCATION_ID ?? 'EDY094ip0U3HwMFQYsVy',
+    ghlCourseAccessFieldId: env.GHL_COURSE_ACCESS_FIELD_ID ?? 'axyDeZQxj7gMCtV1FyxS',
+    ...(env.SESSION_SIGNING_KEY ? { sessionSigningKey: env.SESSION_SIGNING_KEY } : {}),
+    isProduction: resolvedEnv === 'production',
+    nodeEnvRaw: env.NODE_ENV,
+    resolvedEnv,
+    authIpPerMinute: Number(env.AUTH_IP_LIMIT_PER_MIN ?? 10),
+    chatMemberPerMinute: Number(env.CHAT_MEMBER_LIMIT_PER_MIN ?? 20),
+    chatIpPerMinute: Number(env.CHAT_IP_LIMIT_PER_MIN ?? 40),
+    compsMemberDailyCap: Number(env.COMPS_MEMBER_DAILY_CAP ?? 5),
+    maxMessageChars: Number(env.MAX_MESSAGE_CHARS ?? 4000),
   };
 }
 
@@ -80,6 +157,16 @@ export function assertRuntimeConfig(config: AppConfig): void {
         'The documents table was embedded with it. A 1536-dim substitute such as ' +
         'text-embedding-ada-002 will NOT error — it will return silently wrong results. ' +
         'Only change this after re-embedding the entire documents table.',
+    );
+  }
+  // S2: the signing key refuses boot on absence or triviality — unlike the
+  // optional feature keys above, a weak value here does not degrade a
+  // feature, it silently unguards the whole product.
+  const keyProblem = signingKeyProblem(config.sessionSigningKey);
+  if (keyProblem) {
+    throw new Error(
+      `${keyProblem}. Generate one (e.g. openssl rand -base64 48) and set it in the ` +
+        'environment. Rotating it invalidates every live member session.',
     );
   }
 }

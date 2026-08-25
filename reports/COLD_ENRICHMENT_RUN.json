@@ -1,0 +1,53 @@
+{
+  "address": "4547 N 51st Ave, Phoenix, AZ 85031",
+  "startedAt": "2026-08-12T15:33:29.397Z",
+  "totalMs": 71074,
+  "ok": true,
+  "stages": [
+    {
+      "stage": "lookupSubject",
+      "startMs": 1786548810393,
+      "endMs": 1786548829996,
+      "ms": 19603,
+      "ok": true,
+      "note": "object"
+    },
+    {
+      "stage": "fetchSoldComps",
+      "startMs": 1786548829996,
+      "endMs": 1786548839782,
+      "ms": 9786,
+      "ok": true,
+      "note": "493 items"
+    },
+    {
+      "stage": "fetchNeighborhoodSales",
+      "startMs": 1786548839782,
+      "endMs": 1786548847209,
+      "ms": 7427,
+      "ok": true,
+      "note": "126 items"
+    },
+    {
+      "stage": "fetchDetailBatch",
+      "startMs": 1786548849451,
+      "endMs": 1786548879720,
+      "ms": 30269,
+      "ok": true,
+      "note": "5 items"
+    }
+  ],
+  "logs": [
+    {
+      "level": "info",
+      "obj": {
+        "cacheKey": "36c17ab0e80c2b4f060ea8cb5b2576a95b405e9103d8ba1f26c8bd8e9aea7de7",
+        "covered": 5,
+        "total": 5
+      },
+      "msg": "enrichment coverage"
+    }
+  ],
+  "floor": 20000,
+  "ceiling": 90000
+}

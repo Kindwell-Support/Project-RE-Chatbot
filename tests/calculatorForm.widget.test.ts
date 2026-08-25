@@ -106,6 +106,12 @@ const FLIP_REPLY: ChatReply = {
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  window.sessionStorage.clear();
+  // Phase 3 S4 (announced re-point, uniform across widget suites): the
+  // widget now gates on a session token before ANY chat UI. Seeding one
+  // keeps each suite's original subject - chat behaviour - unchanged;
+  // the gate's own behaviour is pinned in phase3Widget.test.ts.
+  window.sessionStorage.setItem('james-bot-token', 'jsdom-suite-token');
   vi.restoreAllMocks();
 });
 
@@ -294,8 +300,18 @@ describe('5.3 validation and dismissal', () => {
     await openChat(FLIP_REPLY);
     (control('purchase_price') as HTMLInputElement).value = '350000';
     clickText('Show advanced options');
-    // The session id is the one legitimate write; form values must never persist.
+    // What this pins is that FORM VALUES never persist. The chat registry
+    // (device key, active chat, sidebar state) is legitimate widget storage
+    // ruled in Phase 1 — it is enumerated here rather than pattern-matched so
+    // a new key cannot slip in under a prefix.
+    const REGISTRY_KEYS = [
+      'james-bot-session',
+      'james-bot-device',
+      'james-bot-active-chat',
+      'james-bot-sidebar-collapsed',
+      'james-bot-legacy-adopted',
+    ];
     const keys = setItem.mock.calls.map((c) => String(c[0]));
-    expect(keys.filter((k) => k !== 'james-bot-session')).toEqual([]);
+    expect(keys.filter((k) => REGISTRY_KEYS.indexOf(k) === -1)).toEqual([]);
   });
 });

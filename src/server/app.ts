@@ -1,7 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import OpenAI from 'openai';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { AppConfig } from '../config.js';
@@ -14,13 +15,30 @@ import {
 } from '../agent/formSubmission.js';
 import { getHistory, appendExchange } from './memory.js';
 import { logExchange } from './logging.js';
+import { OWNER_KEY_HEADER, OwnerKeyError, resolveOwnerKey } from './ownerKey.js';
+import { mintToken, verifyToken } from './sessionToken.js';
+import { createGhlClient, decideAccess, type GhlClient } from './ghl.js';
+import {
+  archiveChat,
+  chatBelongsTo,
+  ChatLimitError,
+  createChat,
+  findChatById,
+  generateChatTitle,
+  isChatId,
+  listChats,
+  normalizeTitle,
+  renameChat,
+  touchChat,
+} from './chats.js';
 import type { PropertyDataProvider } from '../features/comps/providers/types.js';
 import { ApifyZillowProvider } from '../features/comps/providers/apifyZillow.js';
 import { createCompsCache } from '../features/comps/cache/compsCache.js';
 import { createDetailCache, type DetailCacheLike } from '../features/comps/cache/detailCache.js';
 import { createCensusCache, type CensusCacheLike } from '../features/comps/cache/censusCache.js';
 import { CensusAcsProvider, type DemographicsProviderLike } from '../features/comps/providers/census.js';
-import { createDailyRunBudget, type CompsCacheLike, type RunBudgetLike } from '../features/comps/service.js';
+import { createDailyRunBudget, createMemberScopedBudget, type CompsCacheLike, type RunBudgetLike } from '../features/comps/service.js';
+import { createFixedWindowLimiter } from './rateLimit.js';
 import { createSessionStateStore } from '../features/comps/sessionState.js';
 import type { SessionStateStore } from '../features/comps/tools.js';
 
@@ -53,14 +71,115 @@ export interface AppDeps {
   propertyProvider?: PropertyDataProvider;
   /** Census demographics provider (§14.10) — same seam pattern; tests inject a fake, production builds from CENSUS_API_KEY. */
   censusProvider?: DemographicsProviderLike;
+  /** GHL access-gating client (Phase 3) — same seam pattern. */
+  ghlClient?: GhlClient;
 }
+
+/**
+ * A strong entity-tag derived from the bundle's own bytes.
+ *
+ * Strong, and derived ONLY from content, because both properties are
+ * load-bearing (BUG-021):
+ *  - Content-derived, so the tag is identical on every process that serves the
+ *    same bundle. A validator minted per boot (a timestamp, a uuid) would look
+ *    correct in a single-instance test and fall apart the moment two instances
+ *    sit behind one load balancer: alternating requests would see alternating
+ *    tags and revalidation would miss every time.
+ *  - Quoted, because RFC 9110 sec 8.8.3 defines an entity-tag as a quoted
+ *    string. An unquoted tag is malformed and a cache may ignore it, which
+ *    fails silently as "caching just does not work".
+ */
+export function bundleEtag(bytes: Buffer): string {
+  return `"${createHash('sha256').update(bytes).digest('hex').slice(0, 32)}"`;
+}
+
+/**
+ * Does an `If-None-Match` request header match the tag we would serve?
+ *
+ * RFC 9110 sec 13.1.2: `If-None-Match` uses the WEAK comparison function, so
+ * `W/"x"` and `"x"` match. That is not pedantry — an intermediary is entitled
+ * to weaken a validator in transit, and comparing verbatim would turn every
+ * such request back into a full download, which is the exact defect this fix
+ * exists to close. The header is also a comma-separated LIST, and `*` matches
+ * any current representation.
+ */
+export function ifNoneMatchMatches(
+  header: string | string[] | undefined,
+  etag: string,
+): boolean {
+  if (!header) return false;
+  const weaken = (tag: string) => tag.trim().replace(/^W\//, '');
+  const target = weaken(etag);
+  return (Array.isArray(header) ? header.join(',') : header)
+    .split(',')
+    .some((candidate) => {
+      const value = weaken(candidate);
+      return value === '*' || value === target;
+    });
+}
+
+/**
+ * S3 — the gate's surface, as DATA (ruled): exactly these paths are exempt,
+ * plus the OPTIONS method handled in the hook. INSPECTOR pins this list at
+ * exactly four entries (three paths + OPTIONS); adding one is a deliberate
+ * test change and a RULING, never a quiet edit. /demo is absent by ruling.
+ */
+export const AUTH_EXEMPT_PATHS = Object.freeze(['/', '/health', '/widget.js'] as const);
+
+/** /auth is the gate's own front door, not an exemption from it. */
+export const AUTH_ENTRY_PATH = '/auth';
 
 /**
  * Build the Fastify app. Clients are created lazily so the app can be built
  * (and CORS tested) without live credentials.
  */
 export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance {
-  const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
+  const app = Fastify({
+    logger: process.env.NODE_ENV !== 'test',
+    /**
+     * EXPLICIT bodyLimit (unconditional item): the 1 MiB implicit default was
+     * chosen by nobody. 32 KiB fits the largest legitimate payload — a
+     * max-length message (4,000 chars, potentially multi-byte) plus the form
+     * submission and JSON overhead — with an order of magnitude to spare,
+     * and turns a memory-pressure lever into a 413.
+     */
+    bodyLimit: 32 * 1024,
+    /**
+     * trustProxy: 1 — HOP COUNT, load-bearing, NOT a tuning value (BUG-043).
+     * It is the boundary between trusting the PLATFORM and trusting the
+     * CALLER. `true` trusts the whole X-Forwarded-For chain and takes the
+     * LEFTMOST entry, which a caller controls: "198.51.100.7, <real>" yields
+     * the spoofed 198.51.100.7, and the LB appending the real IP does not
+     * help because it lands to the RIGHT of the spoof — measured, a rotating
+     * XFF defeated the /auth per-IP limit 12/12 with 12 real GHL calls.
+     * Per-IP is the ONLY control that bounds the enumeration oracle (every
+     * probe is a distinct email, so per-email bounds nothing there) and the
+     * only thing protecting the client's GHL quota, so one header must not
+     * defeat it. `1` counts exactly ONE hop from the right — the single DO
+     * load balancer — returning the real client under every spoof shape while
+     * preserving the benign case; `2` would hand control back to the caller.
+     * IF THE INFRASTRUCTURE EVER GAINS A SECOND PROXY, THIS NUMBER CHANGES
+     * AND NOTHING ELSE WILL SAY SO.
+     */
+    trustProxy: 1,
+  });
+
+  // FINDING-037: the registered ROUTE SET, derivable the way the exemption
+  // list already is. This onRoute hook is registered BEFORE any route, so it
+  // observes every registration buildApp makes — including Fastify's
+  // auto-added HEAD twins. (INSPECTOR derived neither: printRoutes renders a
+  // radix trie whose nodes do not correspond to routes, and an onRoute hook
+  // added AFTER buildApp observes nothing because registration is internal.)
+  // With this, "every registered route is either exempt or gated" is
+  // assertable without an explicit list — the form of coverage claim that
+  // NARROWED SILENTLY when a new route landed unlisted, which is the exact
+  // failure default-on exists to prevent, one layer up.
+  const registeredRoutes: Array<{ method: string; url: string }> = [];
+  app.addHook('onRoute', (route) => {
+    const methods = Array.isArray(route.method) ? route.method : [route.method];
+    for (const m of methods) registeredRoutes.push({ method: String(m), url: route.url });
+  });
+  app.decorate('registeredRoutes', registeredRoutes);
 
   let openai = deps.openai;
   let supabase = deps.supabase;
@@ -104,6 +223,27 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   // on deploy), which can only under-count — it can never wrongly lock a
   // member out.
   const compsBudget: RunBudgetLike = createDailyRunBudget(config.compsDailyRunCap);
+  // Per-member layer under the global counter (unconditional item): one
+  // member can no longer exhaust every member's daily allowance.
+  const memberBudgetFor = createMemberScopedBudget(compsBudget, config.compsMemberDailyCap);
+
+  // --- Rate limits (unconditional items, sized per INSPECTOR's oracle) ----
+  // Per-IP is LOAD-BEARING on /auth: every enumeration probe uses a distinct
+  // email, so a per-email limit bounds nothing there — and each probe costs a
+  // real upstream GHL call, so this limiter protects the client's GHL quota
+  // as much as member privacy. Per-email is load-bearing on /chat (a leaked
+  // token or an enthusiastic member is bounded regardless of address), with
+  // per-IP as the secondary net.
+  const authIpLimiter = createFixedWindowLimiter(config.authIpPerMinute, 60_000);
+  const chatMemberLimiter = createFixedWindowLimiter(config.chatMemberPerMinute, 60_000);
+  const chatIpLimiter = createFixedWindowLimiter(config.chatIpPerMinute, 60_000);
+  const rateLimited = (reply: { code: (n: number) => unknown; send: (b: unknown) => unknown }) => {
+    reply.code(429);
+    return reply.send({
+      error: 'Too many requests — give it a minute and try again.',
+      reason: 'rate_limited',
+    });
+  };
 
   // --- CORS -----------------------------------------------------------------
   // Explicit, allow-listed. Never "*" — the widget runs on the GHL membership
@@ -120,8 +260,18 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       reply.header('Vary', 'Origin');
     }
     if (request.method === 'OPTIONS') {
-      reply.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-      reply.header('Access-Control-Allow-Headers', 'content-type');
+      // GET/PATCH/DELETE joined POST with the /chats routes (Phase 1
+      // multi-chat). Without them the browser blocks rename and delete at the
+      // preflight and the sidebar looks broken with a healthy server. The
+      // owner-key header must be allow-listed for the same reason: a custom
+      // header makes every /chats call a preflighted request.
+      reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      // S3: `authorization` carries the session token — the production
+      // credential. x-james-owner LEFT this list with the client-asserted
+      // owner: the dev fallback is same-origin (local /demo), so it never
+      // needs CORS, and allow-listing it in production would advertise a
+      // header production refuses anyway.
+      reply.header('Access-Control-Allow-Headers', 'content-type, authorization');
       reply.header('Access-Control-Max-Age', '86400');
       reply.code(204).send();
     }
@@ -132,6 +282,126 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   // The bare domain is the first thing anyone opens after a deploy. Without
   // this it answered `Route GET:/ not found`, which reads like a broken app
   // when the service is in fact healthy. Say what this is and where to look.
+  // --- S3: THE GATE — default-on BY CONSTRUCTION -------------------------
+  //
+  // One app-level hook, registered before any route and run by Fastify for
+  // EVERY route on this instance, present and future. A route added later
+  // without the gate is therefore an impossibility, not a bug: there is no
+  // per-route opt-in to forget.
+  //
+  // INTENDED PROPERTY, not an artifact of hook ordering (ruled — do not "fix"
+  // this into a 404): a URL with NO route also answers 401 to an
+  // unauthenticated caller, so route existence is never revealed. The 404 is
+  // information reserved for holders of a valid session.
+  //
+  // THE EXEMPTION LIST IS DATA, in one place, and it is EXACTLY the ruled
+  // four: '/', '/health', '/widget.js', plus the OPTIONS method (preflights
+  // carry no credentials by design). /demo is DELIBERATELY NOT HERE — ruled:
+  // an exempt /demo is a public ungated chatbot on a metered API sitting
+  // beside a gated one. Any future exemption is a RULING, not a code
+  // decision.
+  //
+  // /auth is not an exemption FROM the gate — it IS the gate's front door
+  // (the token has to come from somewhere), so it is a separate named
+  // constant rather than a fifth list entry. RATIFIED.
+  //
+  // /demo BOOTSTRAP PARADOX, ruled deliberate: in production you cannot
+  // obtain a token without the widget and cannot load /demo without a token,
+  // so production /demo is effectively UNREACHABLE — the same outcome as
+  // ENABLE_DEMO_PAGE=false, reached differently. An ungated shell would let
+  // anyone load the page and start probing /auth; gating the shell removes
+  // that surface. A review path, if ever needed, is a future ruling — do not
+  // build one here.
+  app.decorate('authGate', true); // discoverable marker for route audits
+
+  const gateDisabled = !config.isProduction;
+
+  app.addHook('preHandler', async (request, reply) => {
+    if (request.method === 'OPTIONS') return; // ruled exempt: preflights
+    const pathname = request.url.split('?')[0];
+    if ((AUTH_EXEMPT_PATHS as readonly string[]).includes(pathname)) return;
+    if (pathname === AUTH_ENTRY_PATH) return;
+    // DEV/LOCAL: the gate is a PRODUCTION property. Non-production keeps the
+    // Phase 1/2 posture (device headers, open /history) so local review and
+    // the existing suites exercise the real handlers; production behaviour is
+    // tested through production-config instances. Keyed off isProduction
+    // alone — no dedicated flag exists for production to flip.
+    if (gateDisabled) return;
+
+    const auth = request.headers.authorization;
+    const bearer =
+      typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!bearer) {
+      reply.code(401);
+      return reply.send({ error: 'A member session is required.', reason: 'missing_token' });
+    }
+    const verdict = verifyToken(bearer, config.sessionSigningKey ?? '', Date.now());
+    if (!verdict.ok) {
+      // The three S2 reasons, verbatim — expired is the re-auth case and S4
+      // renders it differently from the attack observations. The body names
+      // the reason and NOTHING else: no email, no hint whether any email
+      // exists in GHL — a denied member and a probing attacker read the same
+      // bytes. (Mid-flight expiry policy, stated: tokens are checked at
+      // ARRIVAL; a token expiring while a response streams completes the
+      // response — bounded by the 90s calculator ceiling — and the NEXT call
+      // answers 401 expired, which is the widget's re-auth signal.)
+      reply.code(401);
+      return reply.send({ error: 'Not authorized.', reason: verdict.reason });
+    }
+  });
+
+  // --- S3: POST /auth — email in, token out ------------------------------
+  let ghl = deps.ghlClient;
+  const getGhl = (): GhlClient | null => {
+    if (ghl) return ghl;
+    if (!config.ghlApiToken) return null;
+    ghl = createGhlClient(config, { logger: app.log as never });
+    return ghl;
+  };
+
+  app.post<{ Body: { email?: unknown } }>(AUTH_ENTRY_PATH, async (request, reply) => {
+    if (!authIpLimiter.allow(request.ip)) return rateLimited(reply);
+    const submitted =
+      typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : '';
+    if (!submitted || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submitted)) {
+      reply.code(400);
+      return { error: 'A valid email address is required.', reason: 'invalid_email' };
+    }
+    const client = getGhl();
+    if (!client || !config.sessionSigningKey) {
+      // Unconfigured gate = DENY with the retryable reason. Never fail open.
+      request.log.error('auth requested but GHL client or signing key unconfigured');
+      reply.code(503);
+      return { error: 'Could not verify access right now — try again shortly.', reason: 'lookup_failed' };
+    }
+
+    const decision = decideAccess(await client.lookupCourseAccess(submitted));
+    if (decision.allow) {
+      // Bound to the VERIFIED email: the lookup exact-matches the contact's
+      // primary email against `submitted` (lowercased), so the verified
+      // address and the submitted one are equal by construction — if the
+      // matching rule ever loosens, mint from the CONTACT's email, not this.
+      return { token: mintToken(submitted, config.sessionSigningKey, Date.now()), email: submitted };
+    }
+    // The three ruled member-facing cases, distinct BY RULING (S1 brief):
+    // not-found, denied, and could-not-check are different problems a member
+    // can act on differently. This is the deliberate exception to the
+    // no-existence-leak posture of the preHandler 401s, and the unconditional
+    // rate limits are what keep it from being an enumeration oracle.
+    switch (decision.reason) {
+      case 'not_found':
+        reply.code(403);
+        return { error: "We couldn't find that email in the member system.", reason: 'not_found' };
+      case 'denied':
+        reply.code(403);
+        return { error: 'This email does not currently have course access.', reason: 'denied' };
+      case 'lookup_failed':
+      default:
+        reply.code(503);
+        return { error: 'Could not verify access right now — try again shortly.', reason: 'lookup_failed' };
+    }
+  });
+
   app.get('/', async (_request, reply) => {
     reply.header('Content-Type', 'application/json; charset=utf-8');
     return {
@@ -155,18 +425,62 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
 
   app.get('/health', async () => ({ status: 'ok' }));
 
-  // Serve the widget bundle so no separate CDN is strictly required.
-  app.get('/widget.js', async (_request, reply) => {
+  /**
+   * The widget bundle, read ONCE here at boot and held in memory with a
+   * validator derived from its bytes.
+   *
+   * BUG-021. 'no-cache' means REVALIDATE on every use — it does NOT mean "do
+   * not store". But revalidation can only happen if the response carried a
+   * validator the browser can quote back, and this response carried neither an
+   * ETag nor a Last-Modified. With nothing to put in an If-None-Match or an
+   * If-Modified-Since, the browser had no conditional request available to it
+   * and every page load re-downloaded the whole bundle — measured at 3/3 loads
+   * of 35,542 bytes on an unbusted embed.
+   *
+   * The 304s that were cited when this header was chosen came from
+   * Cloudflare's edge, which synthesises a Last-Modified when it fills its own
+   * cache. That is edge behaviour. This route is the ORIGIN, and at origin
+   * there was no conditional path at all.
+   *
+   * Reading at boot rather than per request is correct for how this ships: the
+   * bundle is baked into the Docker image, so it cannot change underneath a
+   * running process. It also retires a disk read that ran on every request.
+   * The trade is local-only — after `npm run build:widget` a dev server must be
+   * restarted to serve the new bundle.
+   */
+  const widgetBundle = (() => {
     try {
       const here = path.dirname(fileURLToPath(import.meta.url));
-      const bundle = await readFile(path.resolve(here, '../../public/widget.js'));
-      reply.header('Content-Type', 'application/javascript; charset=utf-8');
-      reply.header('Cache-Control', 'public, max-age=300');
-      return reply.send(bundle);
+      const bytes = readFileSync(path.resolve(here, '../../public/widget.js'));
+      return { bytes, etag: bundleEtag(bytes) };
     } catch {
+      // Not built. Held as null rather than rethrown: a missing bundle must
+      // still answer 404 per request, exactly as it did before, and must never
+      // stop the app from booting.
+      return null;
+    }
+  })();
+
+  // Serve the widget bundle so no separate CDN is strictly required.
+  app.get('/widget.js', async (request, reply) => {
+    if (!widgetBundle) {
       reply.code(404);
       return { error: 'widget bundle not built — run `npm run build:widget`' };
     }
+    // Sent on the 304 as well as the 200: a conditional response has to carry
+    // the validator forward or the next request has nothing to revalidate
+    // against, and the caching would work exactly once.
+    reply.header('ETag', widgetBundle.etag);
+    // Kept deliberately. Three consecutive frontend-heavy phases behind a
+    // 5-minute edge+browser cache would have QA reporting stale bundles as
+    // bugs. With a real validator this now costs one conditional round trip
+    // per page load instead of a full re-download.
+    reply.header('Cache-Control', 'no-cache');
+    if (ifNoneMatchMatches(request.headers['if-none-match'], widgetBundle.etag)) {
+      return reply.code(304).send();
+    }
+    reply.header('Content-Type', 'application/javascript; charset=utf-8');
+    return reply.send(widgetBundle.bytes);
   });
 
   // /demo — the widget hosted on the API's own origin, so the bot can be seen
@@ -235,8 +549,180 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       reply.code(400);
       return { error: 'session_id is required' };
     }
+    // BUG-039: /history was the ONLY surface that did not move to the new
+    // identity — gated but unscoped, so any verified member could read any
+    // transcript by chat id. Worse than the Phase 1 posture it inherited
+    // from: the id rides a QUERY STRING, exactly the transport ownerKey.ts
+    // rules unsafe for a credential (access logs, proxy logs, Referer), so
+    // it cannot be the sole protection for transcript contents.
+    //
+    // PRODUCTION IS ALWAYS SCOPED BY CONSTRUCTION: the preHandler admits only
+    // tokened requests, and a token always resolves an owner — so the
+    // uncredentialed branch below is unreachable there. Uncredentialed DEV
+    // keeps the Phase 1/2 posture, same as the rest of the dev seam (S3).
+    //
+    // A ROWLESS id (the 611 legacy sessions, or an id invented by a caller)
+    // answers 404: a row-less id has no provable owner, and returning content
+    // for it would reopen the exact hole this closes. Placeholders never hit
+    // this — the widget only fetches /history for ids from its own /chats
+    // list or after the first send has self-healed the row.
+    let ownerKey: string | undefined;
+    try {
+      ownerKey = resolveOwnerKey(request, {
+        ...(config.sessionSigningKey ? { sessionSigningKey: config.sessionSigningKey } : {}),
+        allowDeviceFallback: !config.isProduction,
+      });
+    } catch {
+      ownerKey = undefined;
+    }
+    if (ownerKey) {
+      let owned: boolean;
+      try {
+        owned = await chatBelongsTo(getSupabase(), ownerKey, sessionId);
+      } catch (err) {
+        request.log.error({ err }, 'history ownership check failed');
+        reply.code(503);
+        return { error: 'Could not load history right now.' };
+      }
+      if (!owned) {
+        // Byte-identical to a genuine not-found — never 403 (matches the
+        // PATCH/DELETE neighbours: existence is not confirmed).
+        reply.code(404);
+        return { error: 'Chat not found.' };
+      }
+    } else if (config.isProduction) {
+      // Belt and braces for the unreachable branch.
+      reply.code(401);
+      return { error: 'Not authorized.', reason: 'missing_token' };
+    }
     const history = await getHistory(getSupabase(), sessionId, request.log);
     return { messages: history };
+  });
+
+  // --- /chats (Phase 1 multi-chat) -----------------------------------------
+  //
+  // Every handler resolves its owner through resolveOwnerKey (ruling R3) and
+  // scopes its WHERE to that owner. A chat belonging to someone else answers
+  // 404 and never 403: a 403 confirms the id exists, which turns the response
+  // code into an enumeration oracle.
+  //
+  // Chat ids ARE session ids, so these routes carry the same exposure class as
+  // /chat and /history — holding the id is holding the conversation. What is
+  // new is the LISTING, and that is exactly why it is keyed on an unguessable
+  // device key rather than on the client-asserted member_email.
+
+  /** Map an unusable owner key to 400 once, so every handler reads the same. */
+  const ownerOr400 = (request: { headers: Record<string, string | string[] | undefined> }, reply: {
+    code: (n: number) => unknown;
+  }): string | null => {
+    try {
+      return resolveOwnerKey(request, {
+        ...(config.sessionSigningKey ? { sessionSigningKey: config.sessionSigningKey } : {}),
+        allowDeviceFallback: !config.isProduction,
+      });
+    } catch (err) {
+      if (err instanceof OwnerKeyError) {
+        reply.code(400);
+        return null;
+      }
+      throw err;
+    }
+  };
+
+  app.get('/chats', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    try {
+      // R6: a PURE READ. The create-if-empty branch is gone — a safe verb does
+      // not write, and the server cannot see localStorage, so it could never
+      // know whether a legacy session was about to be adopted. Both first-chat
+      // decisions now live client-side where they can see each other; an empty
+      // list is answered with an ephemeral placeholder, not a row.
+      return await listChats(getSupabase(), ownerKey);
+    } catch (err) {
+      request.log.error({ err }, 'chats list failed');
+      reply.code(503);
+      return { error: 'Chat list is unavailable right now.' };
+    }
+  });
+
+  app.post<{ Body: { title?: unknown } }>('/chats', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    const body = request.body ?? {};
+    // No client-supplied id: that option existed only for W1 legacy adoption.
+    // With ids always server-generated a primary-key collision is
+    // unreachable, so the 23505 branch that used to sit here is gone too —
+    // dead code that reads as live is the same class as a stale comment.
+    try {
+      const chat = await createChat(getSupabase(), ownerKey, {
+        title: normalizeTitle(body.title),
+      });
+      reply.code(201);
+      return chat;
+    } catch (err) {
+      if (err instanceof ChatLimitError) {
+        reply.code(409);
+        return { error: 'You have reached the maximum number of chats. Delete one to make room.' };
+      }
+      request.log.error({ err }, 'chat create failed');
+      reply.code(503);
+      return { error: 'Could not create a chat right now.' };
+    }
+  });
+
+  app.patch<{ Params: { id: string }; Body: { title?: unknown } }>(
+    '/chats/:id',
+    async (request, reply) => {
+      const ownerKey = ownerOr400(request, reply);
+      if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+      const title = normalizeTitle(request.body?.title);
+      if (!title) {
+        reply.code(400);
+        return { error: 'title is required' };
+      }
+      // A malformed id can match nothing; answering 404 here keeps Postgres
+      // from raising `invalid input syntax for type uuid` as a 500.
+      if (!isChatId(request.params.id)) {
+        reply.code(404);
+        return { error: 'Chat not found.' };
+      }
+      try {
+        const chat = await renameChat(getSupabase(), ownerKey, request.params.id, title);
+        if (!chat) {
+          reply.code(404);
+          return { error: 'Chat not found.' };
+        }
+        return chat;
+      } catch (err) {
+        request.log.error({ err }, 'chat rename failed');
+        reply.code(503);
+        return { error: 'Could not rename that chat right now.' };
+      }
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>('/chats/:id', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    if (!isChatId(request.params.id)) {
+      reply.code(404);
+      return { error: 'Chat not found.' };
+    }
+    try {
+      // SOFT (R4): chat_messages and session_state rows survive untouched.
+      const archived = await archiveChat(getSupabase(), ownerKey, request.params.id);
+      if (!archived) {
+        reply.code(404);
+        return { error: 'Chat not found.' };
+      }
+      reply.code(204);
+      return null;
+    } catch (err) {
+      request.log.error({ err }, 'chat delete failed');
+      reply.code(503);
+      return { error: 'Could not delete that chat right now.' };
+    }
   });
 
   app.post<{ Body: ChatBody }>('/chat', async (request, reply) => {
@@ -245,6 +731,34 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     if (!session_id || typeof session_id !== 'string') {
       reply.code(400);
       return { error: 'session_id is required' };
+    }
+
+    // Rate limits (unconditional): per-EMAIL is the load-bearing one here —
+    // a leaked token or a runaway member is bounded regardless of address.
+    // The member key is the resolved owner (verified email in production,
+    // device key in dev); uncredentialed dev falls back to IP. Per-IP is the
+    // secondary net.
+    let limiterOwner: string | undefined;
+    try {
+      limiterOwner = resolveOwnerKey(request, {
+        ...(config.sessionSigningKey ? { sessionSigningKey: config.sessionSigningKey } : {}),
+        allowDeviceFallback: !config.isProduction,
+      });
+    } catch {
+      limiterOwner = undefined;
+    }
+    if (!chatMemberLimiter.allow(limiterOwner ?? `ip:${request.ip}`)) return rateLimited(reply);
+    if (!chatIpLimiter.allow(request.ip)) return rateLimited(reply);
+
+    // Hard message length cap (unconditional): model spend scales with input,
+    // and the composer is not the only client — curl exists. 400, named, so
+    // the widget can say something better than "error".
+    if (typeof message === 'string' && message.length > config.maxMessageChars) {
+      reply.code(400);
+      return {
+        error: `That message is too long — the limit is ${config.maxMessageChars} characters.`,
+        reason: 'message_too_long',
+      };
     }
 
     // A form submission carries the numbers instead of a typed message, so it
@@ -280,8 +794,41 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       userMessage = message.trim();
     }
 
-    const oa = getOpenAI();
     const sb = getSupabase();
+
+    // The owner key is optional on /chat and read through the SAME seam as
+    // everywhere else (R3) — a client predating this deploy still gets a
+    // working conversation, it just cannot self-heal its chats row.
+    let ownerKey: string | undefined;
+    try {
+      ownerKey = resolveOwnerKey(request, {
+        ...(config.sessionSigningKey ? { sessionSigningKey: config.sessionSigningKey } : {}),
+        allowDeviceFallback: !config.isProduction,
+      });
+    } catch {
+      ownerKey = undefined;
+    }
+
+    // BUG-016 billing hole, RULED: an archived chat answers 404 and never
+    // enters the agent loop — no OpenAI call, no Apify call. A member who
+    // deleted a chat cannot spend on it, and neither can anyone else holding
+    // its id. Placed BEFORE getOpenAI/getHistory so nothing chargeable has
+    // happened yet.
+    //
+    // A lookup FAILURE (the chats table not yet applied) must not 404 every
+    // member, so an unknown answer proceeds exactly as before.
+    try {
+      const existing = await findChatById(sb, session_id);
+      if (existing && existing.archived_at) {
+        request.log.info({ chatId: session_id }, 'POST /chat on an archived chat — refused before the agent loop');
+        reply.code(404);
+        return { error: 'That chat is no longer available.' };
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'chat archived-state lookup failed — proceeding');
+    }
+
+    const oa = getOpenAI();
 
     const history = await getHistory(sb, session_id, request.log);
 
@@ -296,7 +843,10 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
           detailCache: getDetailCache(),
           censusProvider: getCensusProvider(),
           censusCache: getCensusCache(),
-          budget: compsBudget,
+          // Per-member layer under the global daily counter: the member key
+          // is the verified owner; uncredentialed dev shares one bucket per
+          // session id (best identity available there).
+          budget: memberBudgetFor(ownerKey ?? `session:${session_id}`),
           stateStore: getSessionStateStore(),
           logger: request.log,
         },
@@ -343,6 +893,29 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     ).catch((err) => {
       request.log.warn({ err }, 'qa_logs write failed — reply already sent');
     });
+
+    // Sidebar ordering and titles (Phase 1 multi-chat). Both are DETACHED for
+    // the same reason qa_logs is: nothing reads them back this turn, and a
+    // member's answer must never wait on cosmetics.
+    //
+    void touchChat(sb, session_id, ownerKey, request.log)
+      .then(() => {
+        // A title is generated ONCE, from the first exchange — `history` was
+        // read BEFORE this turn, so an empty one means this was it. The write
+        // itself is conditional on title IS NULL, so this cannot overwrite a
+        // rename or race a second turn.
+        if (history.length > 0) return;
+        return generateChatTitle(sb, oa, session_id, userMessage, result.output, request.log);
+      })
+      .catch((err) => {
+        // BUG-022: the same call-site guarantee its qa_logs sibling carries.
+        // Both callees swallow their own errors today, so this is latent — but
+        // that is an invariant living in another file and asserted nowhere
+        // here, and the .then() above adds a second way to reject that neither
+        // callee owns. A detached promise without this is one throw away from
+        // terminating the process on Node 15+.
+        request.log.warn({ err }, 'chat touch/title write failed — reply already sent');
+      });
 
     // `tool_calls` is trace evidence: which tools actually fired, in order.
     // Proves a BRRRR answer came from brrrr_calculator rather than being

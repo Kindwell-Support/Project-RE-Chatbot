@@ -1,7 +1,7 @@
 {
   "name": "james-dainard-ai-mentor",
   "version": "1.0.0",
-  "description": "James Dainard AI Mentor — RAG chatbot + deal calculators for ProjectRE Academy",
+  "description": "James Dainard AI Mentor \u2014 RAG chatbot + deal calculators for ProjectRE Academy",
   "main": "dist/server/index.js",
   "type": "module",
   "scripts": {
@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:live": "RUN_LIVE_TESTS=1 vitest run tests/live.test.ts",
     "test:apify": "RUN_LIVE_APIFY=1 vitest run tests/comps/apify.live.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:gated": "node tools/qa/run_gated.mjs"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +29,7 @@
     "@types/node": "^26.1.1",
     "esbuild": "^0.28.1",
     "jsdom": "^29.1.1",
+    "puppeteer-core": "^25.8.0",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
