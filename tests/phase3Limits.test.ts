@@ -105,6 +105,101 @@ describe('/auth — per-IP is the load-bearing limit (the oracle sizing)', () =>
   });
 });
 
+describe('BUG-043 — trustProxy: 1 resolves the real client, not the leftmost XFF', () => {
+  // The hop count is the boundary between trusting the platform and trusting
+  // the caller. The DISCRIMINATING property — the one that separates the fix
+  // (:1, key = one hop from the right = real client) from the defect (:true,
+  // key = leftmost = attacker-controlled): with the SAME spoofed leftmost but
+  // a DIFFERENT real rightmost, :1 sees two distinct keys (second allowed)
+  // while :true sees one shared spoof key (second throttled). Every spoof
+  // case below is built that way and was confirmed to go RED under :true.
+  const LB = '10.0.0.9';
+
+  // At cap 1: two requests sharing `spoof` as the leftmost XFF entry but
+  // carrying DIFFERENT real clients as the rightmost. Returns the second
+  // status — 200 means the key followed the real client (fix), 429 means it
+  // followed the shared spoof (defect).
+  const secondStatusForSharedSpoof = async (spoof: string) => {
+    const { app } = appWith({ AUTH_IP_LIMIT_PER_MIN: '1' });
+    const hit = (real: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/auth',
+        payload: { email: 'x@example.com' },
+        headers: { 'x-forwarded-for': `${spoof}, ${real}` },
+        remoteAddress: LB,
+      });
+    await hit('192.0.2.55');
+    const second = await hit('192.0.2.66'); // same spoof, different real client
+    await app.close();
+    return second.statusCode;
+  };
+
+  it('SPOOF + LB append: the leftmost spoof is NOT the key (different real client passes)', async () => {
+    expect(
+      await secondStatusForSharedSpoof('198.51.100.7'),
+      'a spoofed leftmost entry became the rate-limit key',
+    ).toBe(200);
+  });
+
+  it('LOOPBACK spoof + append: 127.0.0.1 leftmost is not smuggled in as the key', async () => {
+    expect(await secondStatusForSharedSpoof('127.0.0.1')).toBe(200);
+  });
+
+  it('BENIGN preserved: the SAME real client (LB append only) repeats -> throttled', async () => {
+    // Not a discriminator (holds under both settings) but the necessary
+    // preservation case: the fix must still bound a genuine repeat offender.
+    const { app } = appWith({ AUTH_IP_LIMIT_PER_MIN: '1' });
+    const hit = () =>
+      app.inject({
+        method: 'POST',
+        url: '/auth',
+        payload: { email: 'x@example.com' },
+        headers: { 'x-forwarded-for': '192.0.2.55' },
+        remoteAddress: LB,
+      });
+    expect((await hit()).statusCode).toBe(200);
+    expect((await hit()).statusCode, 'a real repeat offender escaped the cap').toBe(429);
+    await app.close();
+  });
+
+  it('no XFF: request.ip is the socket, not something header-derived', async () => {
+    // Documents the no-header case; two distinct sockets are distinct keys.
+    const { app } = appWith({ AUTH_IP_LIMIT_PER_MIN: '1' });
+    const hit = (sock: string) =>
+      app.inject({ method: 'POST', url: '/auth', payload: { email: 'x@example.com' }, remoteAddress: sock });
+    expect((await hit('192.0.2.1')).statusCode).toBe(200);
+    expect((await hit('192.0.2.1')).statusCode, 'same socket not bounded').toBe(429);
+    expect((await hit('192.0.2.2')).statusCode, 'a different socket was charged for the first').toBe(200);
+    await app.close();
+  });
+
+  it('END TO END: a ROTATING spoofed XFF is throttled and does NOT reach GHL', async () => {
+    // The measured defect: rotating the leftmost entry gave 12/12 x 200 and
+    // 12 real GHL calls, because each spoof was a distinct key. Under :1 every
+    // request resolves to the SAME real client (one hop from the right), so
+    // the cap binds and the refused probes never bill GHL.
+    const { app, ghlClient } = appWith({ AUTH_IP_LIMIT_PER_MIN: '3' });
+    let allowed = 0;
+    for (let i = 0; i < 12; i += 1) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth',
+        payload: { email: `probe${i}@example.com` },
+        headers: { 'x-forwarded-for': `198.51.100.${i}, 192.0.2.55` }, // rotating spoof, fixed real client
+        remoteAddress: LB,
+      });
+      if (res.statusCode === 200) allowed += 1;
+    }
+    expect(allowed, 'the rotating-spoof sweep was not bounded').toBe(3);
+    expect(
+      ghlClient.lookupCourseAccess.mock.calls.length,
+      'refused probes still billed GHL — the quota is unprotected',
+    ).toBe(3);
+    await app.close();
+  });
+});
+
 describe('/chat — per-email is the load-bearing limit', () => {
   const chat = (app: ReturnType<typeof appWith>['app'], email: string, ip: string) =>
     app.inject({

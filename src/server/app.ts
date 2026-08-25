@@ -145,13 +145,23 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
      */
     bodyLimit: 32 * 1024,
     /**
-     * trustProxy: DigitalOcean App Platform fronts the app with its load
-     * balancer, so without this request.ip is the LB for every caller and a
-     * per-IP limit would rate-limit ALL members as one client — a self-DoS.
-     * The platform sets X-Forwarded-For itself; trusting it here is trusting
-     * the platform, not the caller.
+     * trustProxy: 1 — HOP COUNT, load-bearing, NOT a tuning value (BUG-043).
+     * It is the boundary between trusting the PLATFORM and trusting the
+     * CALLER. `true` trusts the whole X-Forwarded-For chain and takes the
+     * LEFTMOST entry, which a caller controls: "198.51.100.7, <real>" yields
+     * the spoofed 198.51.100.7, and the LB appending the real IP does not
+     * help because it lands to the RIGHT of the spoof — measured, a rotating
+     * XFF defeated the /auth per-IP limit 12/12 with 12 real GHL calls.
+     * Per-IP is the ONLY control that bounds the enumeration oracle (every
+     * probe is a distinct email, so per-email bounds nothing there) and the
+     * only thing protecting the client's GHL quota, so one header must not
+     * defeat it. `1` counts exactly ONE hop from the right — the single DO
+     * load balancer — returning the real client under every spoof shape while
+     * preserving the benign case; `2` would hand control back to the caller.
+     * IF THE INFRASTRUCTURE EVER GAINS A SECOND PROXY, THIS NUMBER CHANGES
+     * AND NOTHING ELSE WILL SAY SO.
      */
-    trustProxy: true,
+    trustProxy: 1,
   });
 
   // FINDING-037: the registered ROUTE SET, derivable the way the exemption
