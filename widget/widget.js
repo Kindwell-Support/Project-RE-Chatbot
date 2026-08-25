@@ -59,6 +59,16 @@
   var CSS = [
     /* Tokens — the single source of color / type / motion. Prefixed --jb-* so
        they can never collide with a host page's own custom properties. */
+    /* TYPOGRAPHY BARRIER (Phase 3 embed audit): .jb-root explicitly sets
+       font-family, font-size, line-height, letter-spacing and color, so
+       INHERITED typography from the GHL rich-text container stops here, and
+       every font:inherit inside the widget resolves against .jb-root.
+       LOAD-BEARING BY OMISSION — unset here and WOULD inherit if the host
+       container ever set them: font-weight, font-style, text-align,
+       text-transform (none observed in the container's CSS; listed so a
+       future rendering mystery starts its search here). Descendant selectors
+       from the host are the other reach-in class — see the .jb-bubble p
+       !important note below. */
     '.jb-root{',
     '--jb-bg-base:#0A0A0B;--jb-bg-raised:#141416;--jb-bg-sunken:#060607;',
     '--jb-text-primary:#F5F5F7;--jb-text-secondary:rgba(245,245,247,0.62);--jb-text-tertiary:rgba(245,245,247,0.38);',
@@ -136,8 +146,15 @@
     '.jb-bot .jb-bubble{background:var(--jb-bot-bg);color:var(--jb-bot-text);border:1px solid var(--jb-bot-border);',
     'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
     '.jb-user .jb-bubble{background:var(--jb-user-bg);color:var(--jb-user-text);border-top-right-radius:5px;white-space:pre-wrap;font-weight:500;}',
-    '.jb-bubble p{margin:0 0 8px;}',
-    '.jb-bubble p:last-child{margin-bottom:0;}',
+    /* !important is LOAD-BEARING here, not sloppiness (ruled): the GHL
+       lesson container (.editor-content.rich-text-viewer) sets
+       `p { margin: 0 !important }` by DESCENDANT SELECTOR, which .jb-root
+       scoping cannot stop — scoping keeps our styles from leaking OUT, not a
+       parent's from reaching IN. Without this, James's multi-paragraph
+       answers — comps output, step-by-step explanations, the widget's most
+       valuable content — collapse into unspaced text. */
+    '.jb-bubble p{margin:0 0 8px !important;}',
+    '.jb-bubble p:last-child{margin-bottom:0 !important;}',
     '.jb-bubble h4{margin:12px 0 6px;font-size:15px;font-weight:700;letter-spacing:-0.01em;}',
     '.jb-bubble h4:first-child{margin-top:0;}',
     '.jb-bubble ul{margin:0 0 8px;padding-left:18px;}',
