@@ -488,6 +488,74 @@
        keeps scrolling and nothing outlives a GHL lesson swap by construction.
        Derived from the same class as the drawer, so they cannot desync. */
     '.jb-root.jb-drawer-open .jb-list{overflow:hidden;}',
+
+    /* --- BUG-046: THE FORM-CONTROL DEFENSIVE LAYER ------------------------
+       The gate's email input and the composer BOTH already set
+       font-size:16px, and both still rendered at roughly double size in the
+       portal. A property that is SET cannot be overridden by inheritance —
+       inheritance only fills gaps — so this was never an omission: the host
+       WINS THE CASCADE. Our form-control font rules sit at specificity
+       (0,1,0), one class, and the winning host rule is (0,1,1).
+
+       THE WINNING SELECTOR, captured from the live portal:
+         .membership-preview-remote button, .membership-preview-remote input,
+         .membership-preview-remote optgroup, .membership-preview-remote select,
+         .membership-preview-remote textarea { font-size: 100% }
+       Note WHAT it is: a browser-normalize RESET ("form controls inherit page
+       typography"), not hostile styling — the intent is benign and the
+       collision is structural. Note also WHERE: .membership-preview-remote is
+       a PORTAL-WIDE wrapper, not the lesson-body container, so it reaches the
+       widget wherever it mounts. And note its element list — button, input,
+       optgroup, select, textarea — which is the 19-control exposure set
+       confirmed by the selector itself rather than by our audit alone.
+
+       THE GENERAL LESSON, same class as the .jb-bubble p margin fix one layer
+       up: .jb-root scoping stops our styles leaking OUT; it does nothing
+       about a parent's DESCENDANT SELECTORS reaching IN. Scoping is not
+       isolation.
+
+       Mechanism: element selectors under .jb-root lift us to (0,1,1),
+       MATCHING that selector exactly rather than merely out-shouting it, with
+       !important as the belt should the host rule ever become important.
+       Placed last in the sheet so source order backs the specificity.
+
+       STILL OPEN (not fixed here): `font-size: 100%` resolves against the
+       PARENT's computed size, and .jb-root declares 15px — so if the chain
+       were intact these controls would render 15px, not ~2x. Something in
+       the ancestor chain is computing much larger, which means a host rule is
+       also beating a NON-control rule of ours. This layer pins the controls
+       regardless of what 100% resolves to, but it does not explain or fix
+       that ancestor. See the report. */
+    '.jb-root input,.jb-root select,.jb-root textarea,.jb-root button{',
+    'font:inherit !important;letter-spacing:normal !important;text-transform:none !important;}',
+
+    /* The layer above normalises everything to .jb-root's type. These
+       re-assert each control's OWN size at (0,2,0) — two classes — so they
+       outrank the (0,1,1) layer. Both sides are !important, so specificity
+       decides and source order is NOT relied on (verified, not assumed). */
+    '.jb-root .jb-input,.jb-root .jb-gate-input,.jb-root .jb-control{font-size:16px !important;}',
+    '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:14px !important;font-weight:700 !important;}',
+    '.jb-root .jb-calc-cancel{font-size:14px !important;}',
+    '.jb-root .jb-adv-toggle{font-size:13px !important;font-weight:700 !important;}',
+    '.jb-root .jb-side-toggle{font-size:14px !important;line-height:1 !important;}',
+    '.jb-root .jb-retry,.jb-root .jb-gate-retry{font-size:12.5px !important;font-weight:700 !important;}',
+    '.jb-root .jb-side-retry{font-size:12px !important;font-weight:700 !important;}',
+    '.jb-root .jb-new{font-size:12.5px !important;font-weight:650 !important;}',
+    '.jb-root .jb-chat-open{font-size:12.5px !important;text-align:left !important;}',
+    '.jb-root .jb-chat-active .jb-chat-open{font-weight:600 !important;}',
+    '.jb-root .jb-chat-act{font-size:12px !important;line-height:1 !important;}',
+    '.jb-root .jb-chat-rename-input{font-size:12.5px !important;}',
+    '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
+    'font-size:11.5px !important;font-weight:700 !important;}',
+
+    /* ::placeholder guard — BELT AND BRACES, NOT LOAD-BEARING. The captured
+       cascade shows nothing in the matched list targets ::placeholder, so
+       fixing the control fixes the placeholder by inheritance and this rule
+       is currently doing no work. Kept because it costs two declarations and
+       forecloses a reset that adds ::placeholder later; described honestly so
+       nobody credits it with the fix. */
+    '.jb-root input::placeholder,.jb-root textarea::placeholder{',
+    'font-size:inherit !important;font-family:inherit !important;font-weight:inherit !important;}',
   ].join('');
 
   function injectStyles() {
