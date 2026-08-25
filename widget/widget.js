@@ -76,7 +76,7 @@
     '--jb-text-primary:#F5F5F7;--jb-text-secondary:rgba(245,245,247,0.62);--jb-text-tertiary:rgba(245,245,247,0.38);',
     '--jb-accent:#F7B211;--jb-accent-hover:#FFC53D;--jb-accent-pressed:#D99A0A;--jb-on-accent:#0A0A0B;',
     '--jb-glass-fill:rgba(255,255,255,0.055);--jb-glass-border:rgba(255,255,255,0.10);--jb-glass-edge:rgba(255,255,255,0.22);',
-    '--jb-danger:#FF6B5A;',
+    '--jb-danger:#FF6B5A;--jb-danger-solid:#D93025;',
     /* §11 token swap: user bubbles are amber, James stays neutral glass. To put
        amber on ALL bubbles, point --jb-bot-* at the accent here — one place. */
     '--jb-user-bg:var(--jb-accent);--jb-user-text:var(--jb-on-accent);',
@@ -400,12 +400,12 @@
     /* S2.2 — the in-widget delete confirmation. Replaces the row contents the
        way the rename input already does, so the control is anchored ON the row
        it acts on and needs no space for a title it cannot fit at 216px. */
-    '.jb-chat-confirm{display:flex;align-items:center;gap:4px;width:100%;min-width:0;padding:3px 4px 3px 6px;}',
+    '.jb-chat-confirm{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:3px 4px 3px 6px;}',
     '.jb-chat-confirm-q{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
     'font-size:12px;color:var(--jb-text-secondary);}',
     '.jb-chat-confirm-yes,.jb-chat-confirm-no{flex:0 0 auto;font:inherit;font-size:11.5px;font-weight:700;',
-    'border-radius:6px;padding:5px 8px;cursor:pointer;border:1px solid transparent;}',
-    '.jb-chat-confirm-yes{background:var(--jb-danger);color:#200906;border-color:var(--jb-danger);}',
+    'border-radius:6px;padding:5px 12px;cursor:pointer;border:1px solid transparent;}',
+    '.jb-chat-confirm-yes{background:var(--jb-danger-solid);color:#FFFFFF;border-color:var(--jb-danger-solid);}',
     '.jb-chat-confirm-no{background:transparent;color:var(--jb-text-secondary);border-color:var(--jb-glass-border);}',
     '.jb-chat-confirm-no:hover{color:var(--jb-text-primary);border-color:var(--jb-text-secondary);}',
     '.jb-chat-confirm-yes:focus-visible,.jb-chat-confirm-no:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:1px;}',
@@ -565,12 +565,19 @@
     '.jb-root .jb-retry,.jb-root .jb-gate-retry{font-size:12.5px !important;font-weight:700 !important;}',
     '.jb-root .jb-side-retry{font-size:12px !important;font-weight:700 !important;}',
     '.jb-root .jb-new{font-size:12.5px !important;font-weight:650 !important;}',
-    '.jb-root .jb-chat-open{font-size:12.5px !important;text-align:left !important;}',
+    '.jb-root .jb-chat-open{font-size:12.5px !important;text-align:left !important;',
+    'min-width:0 !important;overflow:hidden !important;}',
+    '.jb-root .jb-chat-title{max-width:100% !important;overflow:hidden !important;',
+    'text-overflow:ellipsis !important;white-space:nowrap !important;}',
     '.jb-root .jb-chat-active .jb-chat-open{font-weight:600 !important;}',
     '.jb-root .jb-chat-act{font-size:12px !important;line-height:1 !important;}',
     '.jb-root .jb-chat-rename-input{font-size:12.5px !important;}',
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
-    'font-size:11.5px !important;font-weight:700 !important;}',
+    'font-size:11.5px !important;font-weight:700 !important;padding:5px 12px !important;}',
+    '.jb-root .jb-chat-confirm-yes{background:var(--jb-danger-solid) !important;',
+    'color:#FFFFFF !important;border-color:var(--jb-danger-solid) !important;}',
+    '@media (hover: none),(pointer: coarse){',
+    '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{padding:8px 14px !important;}}',
 
     /* ::placeholder guard — LOAD-BEARING. Do not remove it as redundant.
        This comment previously said the opposite, and the correction is worth
