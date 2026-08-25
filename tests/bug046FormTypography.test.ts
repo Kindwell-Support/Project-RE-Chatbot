@@ -10,6 +10,26 @@
  * our (0,2,0)!important beats a (0,1,1) host rule, which is the half jsdom
  * can measure. The percentage half lives in a real engine.
  *
+ * THE ::placeholder CASCADE IS SEPARATE, and the guard for it is
+ * LOAD-BEARING (corrected — it was first shipped described as belt-and-
+ * braces). Live: control 15px, placeholder 32px — a placeholder inheriting
+ * from its control cannot differ from it. The real host selector was still
+ * being captured at ship time, so the guard was measured in real Chrome
+ * against five plausible shapes at ascending specificity, with the portal
+ * reset also present. NO-FIX reproduced the live numbers exactly
+ * (root 15px / input 15px / placeholder 32px) in every row:
+ *
+ *   host ::placeholder rule                  no fix        with fix
+ *   bare ::placeholder            (0,0,1)    ph 32px       ph 16px   HOLDS
+ *   input::placeholder            (0,0,2)    ph 32px       ph 16px   HOLDS
+ *   .mpr input::placeholder       (0,1,2)    ph 32px       ph 16px   HOLDS
+ *   .mpr .x input::placeholder    (0,2,2)    ph 32px       ph 16px   HOLDS
+ *   .mpr input::placeholder !important       ph 32px       ph 16px   HOLDS
+ *
+ * The claim this supports is "covers every plausible shape TESTED", not
+ * "covers whatever it turns out to be". Instrument:
+ * tools/qa/bug046_chrome_check.mjs.
+ *
  * Two questions, neither assumed:
  *   1. Do the per-control sizes WIN over the defensive layer? Both sides are
  *      !important, so specificity must decide — not source order.

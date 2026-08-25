@@ -548,12 +548,29 @@
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
     'font-size:11.5px !important;font-weight:700 !important;}',
 
-    /* ::placeholder guard — BELT AND BRACES, NOT LOAD-BEARING. The captured
-       cascade shows nothing in the matched list targets ::placeholder, so
-       fixing the control fixes the placeholder by inheritance and this rule
-       is currently doing no work. Kept because it costs two declarations and
-       forecloses a reset that adds ::placeholder later; described honestly so
-       nobody credits it with the fix. */
+    /* ::placeholder guard — LOAD-BEARING. Do not remove it as redundant.
+       This comment previously said the opposite, and the correction is worth
+       more than the rule.
+
+       THE EVIDENCE: live, the control measured 15px while its placeholder
+       measured 32px. A placeholder that INHERITED from its control cannot
+       differ from it, so something targets ::placeholder directly and the
+       control fix alone does not reach it.
+
+       HOW THE ABSENCE WAS MISREAD: the earlier ruling — "nothing in the
+       matched list targets ::placeholder, so fixing the control fixes the
+       placeholder" — was inferred from a DevTools matched-rules pane scoped
+       to the INPUT ELEMENT. Such a pane cannot show pseudo-element rules at
+       all, so the absence was a property of the instrument, not of the
+       stylesheet. Absence of evidence read as evidence of absence; the
+       operator recorded the error as his own.
+
+       Specificity here: `::placeholder` is a pseudo-ELEMENT, so it counts in
+       the element column — `.jb-root input::placeholder` is (0,1,2). With
+       !important it also survives an !important host rule, because
+       important-vs-important is settled by specificity. Measured against five
+       host shapes (bare, input::placeholder, class-scoped, doubly
+       class-scoped, and !important): all five held. */
     '.jb-root input::placeholder,.jb-root textarea::placeholder{',
     'font-size:inherit !important;font-family:inherit !important;font-weight:inherit !important;}',
   ].join('');
