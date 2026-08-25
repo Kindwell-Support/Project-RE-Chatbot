@@ -82,6 +82,7 @@ class ResultLog:
             os.fsync(f.fileno())
 SUITE = ('tests/phase2Loading.widget.test.ts tests/phase2Touch.widget.test.ts '
          'tests/phase2RowIdentity.widget.test.ts tests/phase2Layout.widget.test.ts '
+         'tests/phase3Widget.test.ts '
          'tests/multiChat.widget.test.ts tests/widget.test.ts')
 
 MUTATIONS = [
@@ -370,6 +371,105 @@ MUTATIONS = [
         """            if (m > 0 && (m === liveTurns.length || i + m === messages.length)) {""",
         """            if (m > 0 && m === liveTurns.length) {""",
     ),
+    (
+        'M33 S4 gate bypassed: no token boots straight into chat',
+        """      clearRetiredKeys();
+      authToken = sessionGet(TOKEN_KEY);
+      if (authToken) {
+        startAuthedSession();
+      } else {
+        showGate('initial');
+      }""",
+        """      clearRetiredKeys();
+      authToken = sessionGet(TOKEN_KEY);
+      startAuthedSession();""",
+    ),
+    (
+        'M34 S4 token leaks into localStorage',
+        """                lastAuthEmail = email;
+                authToken = result.body.token;
+                sessionSet(TOKEN_KEY, authToken);""",
+        """                lastAuthEmail = email;
+                authToken = result.body.token;
+                storageSet(TOKEN_KEY, authToken);""",
+    ),
+    (
+        'M35 S4 authExpired keeps the dead token',
+        """        authToken = null;
+        sessionRemove(TOKEN_KEY);
+        resetChatState();""",
+        """        authToken = null;
+        resetChatState();""",
+    ),
+    (
+        'M36 S4 lookup_failed loses its retry affordance',
+        """          if (kind === 'lookup_failed') {
+            var retry = el('button', 'jb-gate-retry', { type: 'button' });
+            retry.textContent = 'Try again';
+            retry.addEventListener('click', submit);
+            status.appendChild(retry);
+          }""",
+        """          if (false) {
+            var retry = el('button', 'jb-gate-retry', { type: 'button' });
+            retry.textContent = 'Try again';
+            retry.addEventListener('click', submit);
+            status.appendChild(retry);
+          }""",
+    ),
+    (
+        'M37 S4 the unsent message is lost across re-auth',
+        """        if (pendingResendText) {
+          input.value = pendingResendText;
+          pendingResendText = '';
+          form.classList.add('jb-armed');
+        }""",
+        """        pendingResendText = '';""",
+    ),
+]
+
+# ---------------------------------------------------------------------------
+# SERVER-TARGET MUTATIONS (Phase 3 limits): a second lane with per-target
+# pristine/sidecar and per-suite baselines. The esbuild INERT check does not
+# apply — these targets are not bundled — so the row records
+# inert_check: 'n/a' rather than pretending a guarantee that was not run.
+# ---------------------------------------------------------------------------
+SERVER_MUTATIONS = [
+    {
+        'name': 'M38 the limiter never blocks',
+        'target': 'src/server/rateLimit.ts',
+        'suite': 'tests/phase3Limits.test.ts',
+        'old': """      if (win.count >= max) return false;""",
+        'new': """      if (win.count >= max) return true;""",
+    },
+    {
+        'name': 'M39 /auth per-IP limiter unplugged',
+        'target': 'src/server/app.ts',
+        'suite': 'tests/phase3Limits.test.ts',
+        'old': """    if (!authIpLimiter.allow(request.ip)) return rateLimited(reply);""",
+        'new': """    void authIpLimiter;""",
+    },
+    {
+        'name': 'M40 /chat member limit silently keyed by IP — the leaked-token case reopens',
+        'target': 'src/server/app.ts',
+        'suite': 'tests/phase3Limits.test.ts',
+        'old': """    if (!chatMemberLimiter.allow(limiterOwner ?? `ip:${request.ip}`)) return rateLimited(reply);""",
+        'new': """    if (!chatMemberLimiter.allow(`ip:${request.ip}`)) return rateLimited(reply);""",
+    },
+    {
+        'name': 'M41 the message cap unplugged',
+        'target': 'src/server/app.ts',
+        'suite': 'tests/phase3Limits.test.ts',
+        'old': """    if (typeof message === 'string' && message.length > config.maxMessageChars) {""",
+        'new': """    if (false && typeof message === 'string' && message.length > config.maxMessageChars) {""",
+    },
+    {
+        'name': 'M42 the member budget ignores the member window',
+        'target': 'src/features/comps/service.ts',
+        'suite': 'tests/phase3Limits.test.ts',
+        'old': """      if (rec.used >= memberCap) return false;
+      if (!globalBudget.tryConsume(now)) return false;""",
+        'new': """      if (!globalBudget.tryConsume(now)) return false;""",
+    },
 ]
 
 
@@ -391,8 +491,8 @@ def build_artifact():
     return p.stdout
 
 
-def run():
-    p = subprocess.run('npx vitest run ' + SUITE,
+def run(suite=SUITE):
+    p = subprocess.run('npx vitest run ' + suite,
                        capture_output=True, text=True, shell=True,
                        encoding='utf-8', errors='replace')
     out = (p.stdout or '') + (p.stderr or '')
@@ -417,6 +517,15 @@ def run():
 # restore. The window INSPECTOR fell into was between a restore and the next
 # mutation; holding across restores is the point.
 acquire_mutation_lock(rig=RIG_ID, target=TARGET, driver_version=DRIVER_VERSION)
+
+# Server-target sidecars recover the same way the widget's does.
+for _m in SERVER_MUTATIONS:
+    _sc = _m['target'] + '.pristine'
+    if os.path.exists(_sc):
+        print('RECOVERY: leftover %s found — restoring first' % _sc)
+        io.open(_m['target'], 'w', encoding='utf-8', newline='').write(
+            io.open(_sc, encoding='utf-8').read())
+        os.remove(_sc)
 
 SIDECAR = TARGET + '.pristine'
 if os.path.exists(SIDECAR):
@@ -502,6 +611,58 @@ for name, old, new in MUTATIONS:
 
 restore()
 os.remove(SIDECAR)  # a clean exit leaves no sidecar; leftovers mean a dirty death
+
+# --- SERVER-TARGET LANE -----------------------------------------------------
+server_pristine = {}
+suite_baselines = {}
+for m in SERVER_MUTATIONS:
+    t, suite, name = m['target'], m['suite'], m['name']
+    if t not in server_pristine:
+        server_pristine[t] = io.open(t, encoding='utf-8').read()
+        io.open(t + '.pristine', 'w', encoding='utf-8', newline='').write(server_pristine[t])
+    if suite not in suite_baselines:
+        bf, bp = run(suite)
+        print('SERVER BASELINE %s: %s failed / %s passed' % (suite, bf, bp))
+        log.write({'row': 'server_baseline', 'suite': suite, 'failed': bf, 'passed': bp, 'at': _now()})
+        assert bf == 0 and bp and bp > 0, 'server baseline is not green: ' + suite
+        suite_baselines[suite] = bp
+    src_t = server_pristine[t]
+    if src_t.count(m['old']) != 1:
+        print('  SKIP  %s  (anchor matched %d times in %s)' % (name, src_t.count(m['old']), t))
+        log.write({'row': 'mutation', 'name': name, 'target': t, 'verdict': 'SKIP_ANCHOR', 'at': _now()})
+        bad.append(name)
+        continue
+    io.open(t, 'w', encoding='utf-8', newline='').write(src_t.replace(m['old'], m['new'], 1))
+    try:
+        failed, passed = run(suite)
+    finally:
+        io.open(t, 'w', encoding='utf-8', newline='').write(src_t)
+        actual_t = io.open(t, encoding='utf-8').read()
+        if actual_t != src_t:
+            print('ABORT: server-target restore did not stick on %s — second writer.' % t)
+            log.write({'row': 'abort', 'reason': 'second_writer_detected', 'target': t, 'at': _now()})
+            release_mutation_lock()
+            sys.exit(3)
+    if failed is None:
+        print('  INVALID %s  -> suite did not COLLECT. Not a catch.' % name)
+        log.write({'row': 'mutation', 'name': name, 'target': t, 'verdict': 'INVALID_NO_COLLECT', 'inert_check': 'n/a', 'at': _now()})
+        bad.append(name)
+    elif passed == 0:
+        print('  INVALID %s  -> 0 passed; nothing ran. Not a catch.' % name)
+        log.write({'row': 'mutation', 'name': name, 'target': t, 'verdict': 'INVALID_ZERO_PASSED', 'inert_check': 'n/a', 'at': _now()})
+        bad.append(name)
+    elif failed == 0:
+        print('  MISSED  %s  -> %d passed, 0 failed.' % (name, passed))
+        print('          NOT CAUGHT is a question, not a verdict (FINDING-036).')
+        log.write({'row': 'mutation', 'name': name, 'target': t, 'verdict': 'MISSED_NEEDS_DISPOSITION', 'inert_check': 'n/a', 'failed': failed, 'passed': passed, 'at': _now()})
+        bad.append(name)
+    else:
+        print('  caught  %s  -> %d failed / %d passed' % (name, failed, passed))
+        log.write({'row': 'mutation', 'name': name, 'target': t, 'verdict': 'CAUGHT', 'inert_check': 'n/a', 'failed': failed, 'passed': passed, 'at': _now()})
+
+for t in server_pristine:
+    os.remove(t + '.pristine')
+
 log.write({'row': 'summary', 'complete': True, 'finished': _now(),
            'result': 'ALL_CAUGHT' if not bad else 'PROBLEMS',
            'problems': bad, 'baseline_passed': baseline_passed})

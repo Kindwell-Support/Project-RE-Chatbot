@@ -147,22 +147,60 @@ this file previously said "Business Profile", which was wrong. Since Phase 3
 there is NO memberEmail in the snippet — the widget verifies the member
 itself against GHL Course Access and mints a session token.
 
-## Launch checklist (Phase 3 merge)
+## Merge-day checklist (Phase 3) — ORDERED; the order is load-bearing
 
-- [ ] **Remove or update the OLD Project Flip loader snippet.** The header
-      tracking code is per-course, so Project Flip's existing embed carries
-      its own independent pre-Phase-3 copy. After the gated API deploys, that
-      old snippet still loads the widget — pointed at an API its requests can
-      no longer reach as configured. Members in Project Flip get a bot that
-      cannot connect unless its snippet is replaced with the canonical one
-      from README (or removed) AT LAUNCH.
-- [ ] Set production secrets in the DO dashboard before merge:
-      GHL_API_TOKEN, SESSION_SIGNING_KEY (app.yaml declares both as SECRET).
-- [ ] ENABLE_DEMO_PAGE: Abdullah rules before merge (production /demo is
-      unreachable behind the gate either way — the bootstrap paradox is
-      deliberate).
-- [ ] Paste the canonical README snippet into each NEW course embedding the
-      bot (per-course, one copy each).
+**0. BEFORE the merge — secrets in the DO dashboard.** deploy_on_push is true
+on main, so the deploy starts the moment the merge lands; everything in this
+step must exist FIRST. Set as SECRET-type env vars on the app:
+
+   - `SESSION_SIGNING_KEY` — generate long and random (`openssl rand -base64
+     48`). A deploy without it REFUSES TO BOOT (assertRuntimeConfig): the safe
+     failure, but a confusing one — the app cycles unhealthy until the secret
+     exists. Do not debug the deploy; add the key.
+   - `GHL_API_TOKEN` — the private integration token (contacts read +
+     custom-field definitions read).
+   - Confirm the non-secret values in app.yaml are already right:
+     `GHL_LOCATION_ID=EDY094ip0U3HwMFQYsVy`,
+     `GHL_COURSE_ACCESS_FIELD_ID=axyDeZQxj7gMCtV1FyxS` (VERIFIED against the
+     definitions endpoint — boot logs
+     "[ghl] Course Access field id VERIFIED" when the scope is present).
+
+**1. Merge.** The deploy builds and boots. In the runtime logs confirm, in
+order:
+   - `[env] NODE_ENV="production" -> production — auth gate ACTIVE`
+   - `[ghl] Course Access field id VERIFIED against definitions`
+   - no `NOT VERIFIED` lines from the migrate probes.
+
+**2. IMMEDIATELY after cutover — the stale Project Flip loader.** The header
+tracking code is PER-COURSE, and Project Flip carries its own independent
+pre-Phase-3 snippet. Against the gated API that old widget cannot
+authenticate — members would get a bot that cannot connect. Replace its
+Header Tracking Code with the canonical snippet from README ("GHL embed — THE
+live snippet"), or remove it. This is the only step where members are
+visibly broken until it is done.
+
+**3. Paste the canonical snippet into each NEW course** embedding the bot
+(per-course, one copy each), and the mount div into each lesson (Description
+toolbar's Custom Code Editor — NOT the Lesson Media iframe slot).
+
+**4. Verify in the portal, using the three probe contacts** (one per gate
+outcome; all three verified against live GHL during Phase 3):
+
+   | email                     | expected                                        |
+   |---------------------------|--------------------------------------------------|
+   | adrianroa2015@gmail.com   | ALLOWED — token minted, chat opens               |
+   | abel@investslo.com        | DENIED — "does not currently have course access" |
+   | jooliefl@gmail.com        | DENIED (blank field — by design, a GHL data      |
+   |                           | question, not a bot defect)                      |
+
+   Then, with the allowed session: send a message, refresh the page (session
+   survives), close the tab and reopen (gate returns — sessionStorage died
+   with the tab). Confirm a wrong email shows "couldn't find that email"
+   (distinct from denied), and that the bot answers a real question.
+
+**5. ENABLE_DEMO_PAGE** — Abdullah's ruling stands as configured; production
+/demo is unreachable behind the gate either way (the bootstrap paradox is
+deliberate). Flip to false at leisure if the page should not exist at all.
 
 ## 4. After deploy — update ALLOWED_ORIGINS
 
