@@ -32,7 +32,7 @@ import { CALCULATOR_FORMS } from '../../src/agent/formSchema.js';
 const MODS = ['service', 'tools'] as const;
 
 const ALLOWED = 'https://preacademy.app.clientclub.net';
-const config = loadConfig({
+const config = loadConfig({ NODE_ENV: 'test',
   ALLOWED_ORIGINS: ALLOWED,
   OPENAI_API_KEY: 'test-not-a-real-key',
   SUPABASE_URL: 'https://example.supabase.co',

@@ -7,6 +7,19 @@ import { createGhlClient } from './ghl.js';
 const config = loadConfig();
 assertRuntimeConfig(config);
 
+// BUG-040: a gate that is off must ANNOUNCE it — the silent failure is the
+// dangerous one (same class as the migrate probes). One line, every boot.
+console.log(
+  '[env] NODE_ENV=%s -> %s — auth gate %s%s',
+  config.nodeEnvRaw === undefined ? '(unset)' : JSON.stringify(config.nodeEnvRaw),
+  config.resolvedEnv,
+  config.isProduction ? 'ACTIVE' : 'INACTIVE',
+  config.isProduction && config.resolvedEnv === 'production' &&
+    (config.nodeEnvRaw ?? '').trim().toLowerCase() !== 'production'
+    ? ' (FAIL-CLOSED: unrecognised NODE_ENV treated as production)'
+    : '',
+);
+
 const supabase = createClient(config.supabaseUrl, config.supabaseServiceKey, {
   auth: { persistSession: false },
 });

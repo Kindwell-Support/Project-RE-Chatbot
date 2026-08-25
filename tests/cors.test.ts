@@ -6,7 +6,7 @@ import { makeFakeOpenAI, makeFakeSupabase, flushDetached } from './helpers/fakes
 
 const ALLOWED = 'https://preacademy.app.clientclub.net';
 
-const config = loadConfig({
+const config = loadConfig({ NODE_ENV: 'test',
   ALLOWED_ORIGINS: `${ALLOWED}, https://staging.example.com`,
   OPENAI_API_KEY: 'test',
   SUPABASE_URL: 'https://example.supabase.co',
@@ -243,7 +243,7 @@ describe('/demo — the widget hosted on the API origin (no GHL needed)', () => 
     await gated.close();
 
     const enabled = buildApp(
-      loadConfig({ ...prodEnv, ENABLE_DEMO_PAGE: 'true' } as NodeJS.ProcessEnv),
+      loadConfig({ NODE_ENV: 'test', ...prodEnv, ENABLE_DEMO_PAGE: 'true' } as NodeJS.ProcessEnv),
     );
     const onWithToken = await enabled.inject({
       method: 'GET',
@@ -268,7 +268,7 @@ describe('GET / — the bare domain is not a scary 404', () => {
   });
 
   it('says how to turn the demo page on when it is disabled', async () => {
-    const prodConfig = loadConfig({
+    const prodConfig = loadConfig({ NODE_ENV: 'test',
       ALLOWED_ORIGINS: ALLOWED,
       OPENAI_API_KEY: 'test',
       SUPABASE_URL: 'https://example.supabase.co',

@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import { buildApp, bundleEtag, ifNoneMatchMatches } from '../src/server/app.js';
 import { loadConfig } from '../src/config.js';
 
-const config = loadConfig({
+const config = loadConfig({ NODE_ENV: 'test',
   ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
   OPENAI_API_KEY: 'test',
   SUPABASE_URL: 'https://example.supabase.co',

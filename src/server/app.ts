@@ -20,6 +20,7 @@ import { mintToken, verifyToken } from './sessionToken.js';
 import { createGhlClient, decideAccess, type GhlClient } from './ghl.js';
 import {
   archiveChat,
+  chatBelongsTo,
   ChatLimitError,
   createChat,
   findChatById,
@@ -496,6 +497,52 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     if (!sessionId || typeof sessionId !== 'string') {
       reply.code(400);
       return { error: 'session_id is required' };
+    }
+    // BUG-039: /history was the ONLY surface that did not move to the new
+    // identity — gated but unscoped, so any verified member could read any
+    // transcript by chat id. Worse than the Phase 1 posture it inherited
+    // from: the id rides a QUERY STRING, exactly the transport ownerKey.ts
+    // rules unsafe for a credential (access logs, proxy logs, Referer), so
+    // it cannot be the sole protection for transcript contents.
+    //
+    // PRODUCTION IS ALWAYS SCOPED BY CONSTRUCTION: the preHandler admits only
+    // tokened requests, and a token always resolves an owner — so the
+    // uncredentialed branch below is unreachable there. Uncredentialed DEV
+    // keeps the Phase 1/2 posture, same as the rest of the dev seam (S3).
+    //
+    // A ROWLESS id (the 611 legacy sessions, or an id invented by a caller)
+    // answers 404: a row-less id has no provable owner, and returning content
+    // for it would reopen the exact hole this closes. Placeholders never hit
+    // this — the widget only fetches /history for ids from its own /chats
+    // list or after the first send has self-healed the row.
+    let ownerKey: string | undefined;
+    try {
+      ownerKey = resolveOwnerKey(request, {
+        ...(config.sessionSigningKey ? { sessionSigningKey: config.sessionSigningKey } : {}),
+        allowDeviceFallback: !config.isProduction,
+      });
+    } catch {
+      ownerKey = undefined;
+    }
+    if (ownerKey) {
+      let owned: boolean;
+      try {
+        owned = await chatBelongsTo(getSupabase(), ownerKey, sessionId);
+      } catch (err) {
+        request.log.error({ err }, 'history ownership check failed');
+        reply.code(503);
+        return { error: 'Could not load history right now.' };
+      }
+      if (!owned) {
+        // Byte-identical to a genuine not-found — never 403 (matches the
+        // PATCH/DELETE neighbours: existence is not confirmed).
+        reply.code(404);
+        return { error: 'Chat not found.' };
+      }
+    } else if (config.isProduction) {
+      // Belt and braces for the unreachable branch.
+      reply.code(401);
+      return { error: 'Not authorized.', reason: 'missing_token' };
     }
     const history = await getHistory(getSupabase(), sessionId, request.log);
     return { messages: history };

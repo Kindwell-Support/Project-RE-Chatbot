@@ -22,7 +22,7 @@ import { MissingRequiredInputError, runFlipTool } from '../src/agent/toolRunners
 import type { Logger } from '../src/server/logger.js';
 import type OpenAI from 'openai';
 
-const config = loadConfig({
+const config = loadConfig({ NODE_ENV: 'test',
   OPENAI_API_KEY: 'test',
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_SERVICE_ROLE_KEY: 'test',
@@ -113,7 +113,7 @@ describe('embedding model is pinned to text-embedding-3-small', () => {
   });
 
   it('startup REJECTS ada-002 — the silent-wrong-results case (same 1536 dims)', () => {
-    const bad = loadConfig({
+    const bad = loadConfig({ NODE_ENV: 'test',
       OPENAI_API_KEY: 'k',
       SUPABASE_URL: 'https://x.supabase.co',
       SUPABASE_SERVICE_ROLE_KEY: 'k',
@@ -124,7 +124,7 @@ describe('embedding model is pinned to text-embedding-3-small', () => {
   });
 
   it('startup rejects text-embedding-3-large too', () => {
-    const bad = loadConfig({
+    const bad = loadConfig({ NODE_ENV: 'test',
       OPENAI_API_KEY: 'k',
       SUPABASE_URL: 'https://x.supabase.co',
       SUPABASE_SERVICE_ROLE_KEY: 'k',
@@ -138,7 +138,7 @@ describe('embedding model is pinned to text-embedding-3-small', () => {
     // key — assertRuntimeConfig refuses boot without one, because a missing
     // key would leave the product looking gated while it is not. The boot
     // gate's own cases live in tests/sessionToken.test.ts.
-    const ok = loadConfig({
+    const ok = loadConfig({ NODE_ENV: 'test',
       OPENAI_API_KEY: 'k',
       SUPABASE_URL: 'https://x.supabase.co',
       SUPABASE_SERVICE_ROLE_KEY: 'k',
@@ -361,7 +361,7 @@ describe('formatting', () => {
 // Verified to the same shape as BUG-009.
 // ---------------------------------------------------------------------------
 describe('FINDING-005: a blank query is rejected, never embedded', () => {
-  const cfg = loadConfig({
+  const cfg = loadConfig({ NODE_ENV: 'test',
     ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
     OPENAI_API_KEY: 'test-not-a-real-key',
     SUPABASE_URL: 'https://example.supabase.co',

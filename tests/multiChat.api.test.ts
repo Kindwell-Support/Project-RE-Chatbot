@@ -26,7 +26,7 @@ const OWNER_B = 'device:22222222-2222-4222-8222-222222222222';
 const CHAT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const CHAT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
-const config = loadConfig({
+const config = loadConfig({ NODE_ENV: 'test',
   ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
   OPENAI_API_KEY: 'test',
   SUPABASE_URL: 'https://example.supabase.co',

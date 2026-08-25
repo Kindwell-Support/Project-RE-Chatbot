@@ -20,7 +20,7 @@ import { getHistory } from '../src/server/memory.js';
 const OWNER = 'device:11111111-1111-4111-8111-111111111111';
 const CHAT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
-const config = loadConfig({
+const config = loadConfig({ NODE_ENV: 'test',
   ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
   OPENAI_API_KEY: 'test',
   SUPABASE_URL: 'https://example.supabase.co',

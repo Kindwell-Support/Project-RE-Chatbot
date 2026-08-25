@@ -16,7 +16,7 @@ import { runAgent } from '../src/agent/agent.js';
 import { loadConfig } from '../src/config.js';
 import { makeFakeOpenAI, makeFakeSupabase } from './helpers/fakes.js';
 
-const agentConfig = loadConfig({
+const agentConfig = loadConfig({ NODE_ENV: 'test',
   ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
   OPENAI_API_KEY: 'test-not-a-real-key',
   SUPABASE_URL: 'https://example.supabase.co',

@@ -51,9 +51,43 @@ export interface AppConfig {
    * gate with a bypass; reaching ours requires redefining the deployment as
    * non-production, which changes everything else too). */
   isProduction: boolean;
+  /** BUG-040: what NODE_ENV actually contained, and what it resolved to —
+   * logged loudly at boot so a gate that is off ANNOUNCES it. */
+  nodeEnvRaw: string | undefined;
+  resolvedEnv: 'production' | 'development' | 'test';
+}
+
+/**
+ * BUG-040 — NODE_ENV resolution, FAIL CLOSED.
+ *
+ * `env.NODE_ENV === 'production'` (strict, unnormalized) silently disabled
+ * the auth gate for 'Production' (capital P) and 'production ' (trailing
+ * space — routine when pasting into a hosting dashboard): the app booted
+ * normally, served with authentication OFF, and nothing said so.
+ *
+ * The rule now: trim + lowercase, and anything outside the known set —
+ * INCLUDING empty and unset — resolves to PRODUCTION. The gate's default is
+ * ON; only an explicit, exact 'development' or 'test' turns it off. This is
+ * why every test config must now DECLARE its posture (NODE_ENV: 'test') —
+ * dev-by-omission was exactly the bypass.
+ *
+ * WHY NOT BOOT-REFUSE ON UNSET (stated per ruling): fail-closed-to-production
+ * yields a GATED SERVICE, a refusal yields a full outage. The safer failure
+ * is the one that keeps members served behind the gate, and the loud boot
+ * line makes the fallback diagnosable rather than silent.
+ */
+export function resolveEnvironment(
+  raw: string | undefined,
+): 'production' | 'development' | 'test' {
+  const normalized = (raw ?? '').trim().toLowerCase();
+  if (normalized === 'development') return 'development';
+  if (normalized === 'test') return 'test';
+  // 'production', '', unset, 'staging', 'Production ', garbage: the gate is ON.
+  return 'production';
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const resolvedEnv = resolveEnvironment(env.NODE_ENV);
   return {
     openaiApiKey: env.OPENAI_API_KEY ?? '',
     openaiModel: env.OPENAI_MODEL ?? 'gpt-4o',
@@ -71,7 +105,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     matchThreshold: Number(env.MATCH_THRESHOLD ?? 0),
     // /demo hosts the widget on the API's own origin (no GHL needed). On by
     // default outside production; in production set ENABLE_DEMO_PAGE=true.
-    enableDemoPage: env.ENABLE_DEMO_PAGE === 'true' || env.NODE_ENV !== 'production',
+    // Uses the RESOLVED environment (BUG-040): the raw string let
+    // 'Production ' enable the demo page in production too.
+    enableDemoPage: env.ENABLE_DEMO_PAGE === 'true' || resolvedEnv !== 'production',
     ...(env.APIFY_TOKEN ? { apifyToken: env.APIFY_TOKEN } : {}),
     compsDailyRunCap: Number(env.COMPS_DAILY_RUN_CAP ?? 50),
     ...(env.CENSUS_API_KEY ? { censusApiKey: env.CENSUS_API_KEY } : {}),
@@ -79,7 +115,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ghlLocationId: env.GHL_LOCATION_ID ?? 'EDY094ip0U3HwMFQYsVy',
     ghlCourseAccessFieldId: env.GHL_COURSE_ACCESS_FIELD_ID ?? 'axyDeZQxj7gMCtV1FyxS',
     ...(env.SESSION_SIGNING_KEY ? { sessionSigningKey: env.SESSION_SIGNING_KEY } : {}),
-    isProduction: env.NODE_ENV === 'production',
+    isProduction: resolvedEnv === 'production',
+    nodeEnvRaw: env.NODE_ENV,
+    resolvedEnv,
   };
 }
 

@@ -186,6 +186,29 @@ export async function archiveChat(
 }
 
 /**
+ * BUG-039: does this chat exist AND belong to this owner AND remain unarchived?
+ * The /history ownership check, shaped EXACTLY like its mutation neighbours
+ * (renameChat / archiveChat): same three filters, and a miss is
+ * indistinguishable from nonexistence — the route answers 404 either way,
+ * never 403, so existence is not confirmed to a non-owner.
+ */
+export async function chatBelongsTo(
+  supabase: SupabaseClient,
+  ownerKey: string,
+  chatId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('chats')
+    .select('id')
+    .eq('id', chatId)
+    .eq('owner_key', ownerKey)
+    .is('archived_at', null)
+    .limit(1);
+  if (error) throw error;
+  return ((data ?? []) as unknown[]).length > 0;
+}
+
+/**
  * Bump last_message_at after a completed turn so the sidebar orders by real
  * activity. Fire-and-forget at the call site: it runs AFTER the reply is
  * sent and can never delay or fail a member's answer.

@@ -310,6 +310,181 @@ describe('S3 — POST /auth: the front door', () => {
   });
 });
 
+describe('BUG-039 — /history is owner-scoped: Bob cannot read Alice', () => {
+  const ALICE = 'alice@example.com';
+  const BOB = 'bob@example.com';
+  const ALICE_CHAT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  function historyApp() {
+    const fake = makeChatsSupabase([
+      chatRecord({ id: ALICE_CHAT, owner_key: `email:${ALICE}` }),
+    ]);
+    fake.messages.push(
+      { session_id: ALICE_CHAT, role: 'user', content: 'ALICE-PRIVATE-QUESTION' },
+      { session_id: ALICE_CHAT, role: 'assistant', content: 'ALICE-PRIVATE-ANSWER' },
+    );
+    const app = buildApp(loadConfig(PROD_ENV), { supabase: fake.client as never });
+    return { app, fake };
+  }
+
+  it('ACCEPT CONTROL: Alice reads her own transcript', async () => {
+    // Without this, a route that 404s everything satisfies every security
+    // assertion below.
+    const { app } = historyApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/history?session_id=${ALICE_CHAT}`,
+      headers: bearer(mintToken(ALICE, SIGNING_KEY, Date.now())),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().messages.map((m: { content: string }) => m.content)).toEqual([
+      'ALICE-PRIVATE-QUESTION',
+      'ALICE-PRIVATE-ANSWER',
+    ]);
+    await app.close();
+  });
+
+  it('BOB, fully verified, reading ALICE\'S chat id -> 404, byte-identical to not-found', async () => {
+    const { app } = historyApp();
+    const bob = await app.inject({
+      method: 'GET',
+      url: `/history?session_id=${ALICE_CHAT}`,
+      headers: bearer(mintToken(BOB, SIGNING_KEY, Date.now())),
+    });
+    const nonexistent = await app.inject({
+      method: 'GET',
+      url: '/history?session_id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      headers: bearer(mintToken(BOB, SIGNING_KEY, Date.now())),
+    });
+
+    expect(bob.statusCode, "Bob read Alice's transcript").toBe(404);
+    expect(bob.body, 'the not-owner 404 differs from the not-found 404 — existence leaks').toBe(
+      nonexistent.body,
+    );
+    expect(bob.body).not.toContain('ALICE');
+    await app.close();
+  });
+
+  it('a ROWLESS id answers 404 even to a valid member — no provable owner, no content', async () => {
+    // The 611 legacy sessions and any invented id: returning content for a
+    // row-less id would reopen the exact hole. The widget never fetches
+    // /history for ids outside its own /chats list, so no real path breaks.
+    const { app, fake } = historyApp();
+    fake.messages.push({ session_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', role: 'user', content: 'legacy orphan line' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/history?session_id=cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      headers: bearer(mintToken(ALICE, SIGNING_KEY, Date.now())),
+    });
+    expect(res.statusCode, 'a row-less transcript was served').toBe(404);
+    await app.close();
+  });
+
+  it('an ARCHIVED chat answers 404 to its own owner — matching the mutation neighbours', async () => {
+    const fake = makeChatsSupabase([
+      chatRecord({ id: ALICE_CHAT, owner_key: `email:${ALICE}`, archived_at: '2026-08-01T00:00:00.000Z' }),
+    ]);
+    const app = buildApp(loadConfig(PROD_ENV), { supabase: fake.client as never });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/history?session_id=${ALICE_CHAT}`,
+      headers: bearer(mintToken(ALICE, SIGNING_KEY, Date.now())),
+    });
+    expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('DEV, uncredentialed, keeps the Phase 1/2 posture — deliberate, dev-only by construction', async () => {
+    // In production this branch is unreachable: the preHandler admits only
+    // tokened requests and a token always resolves an owner. Pinned so the
+    // posture is a decision on record, not an accident.
+    const fake = makeChatsSupabase([
+      chatRecord({ id: ALICE_CHAT, owner_key: `email:${ALICE}` }),
+    ]);
+    fake.messages.push({ session_id: ALICE_CHAT, role: 'user', content: 'dev read' });
+    const devApp = buildApp(
+      loadConfig({ ...PROD_ENV, NODE_ENV: 'test' } as NodeJS.ProcessEnv),
+      { supabase: fake.client as never },
+    );
+    const res = await devApp.inject({ method: 'GET', url: `/history?session_id=${ALICE_CHAT}` });
+    expect(res.statusCode).toBe(200);
+    await devApp.close();
+  });
+
+  it('a CREDENTIALED dev request is scoped — the check is identity-keyed, not env-keyed', async () => {
+    const { } = {};
+    const fake = makeChatsSupabase([
+      chatRecord({ id: ALICE_CHAT, owner_key: `email:${ALICE}` }),
+    ]);
+    fake.messages.push({ session_id: ALICE_CHAT, role: 'user', content: 'ALICE-PRIVATE-QUESTION' });
+    const devApp = buildApp(
+      loadConfig({ ...PROD_ENV, NODE_ENV: 'test' } as NodeJS.ProcessEnv),
+      { supabase: fake.client as never },
+    );
+    const res = await devApp.inject({
+      method: 'GET',
+      url: `/history?session_id=${ALICE_CHAT}`,
+      headers: bearer(mintToken(BOB, SIGNING_KEY, Date.now())),
+    });
+    expect(res.statusCode, 'a dev token read across owners').toBe(404);
+    await devApp.close();
+  });
+});
+
+describe('BUG-040 — NODE_ENV cannot silently disable the gate', () => {
+  const gateProbe = async (nodeEnv: string | undefined) => {
+    const env: Record<string, string> = {
+      ALLOWED_ORIGINS: 'https://preacademy.app.clientclub.net',
+      OPENAI_API_KEY: 'test',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'test',
+      SESSION_SIGNING_KEY: SIGNING_KEY,
+    };
+    if (nodeEnv !== undefined) env.NODE_ENV = nodeEnv;
+    const config = loadConfig(env as NodeJS.ProcessEnv);
+    const app = buildApp(config, { supabase: makeChatsSupabase([]).client as never });
+    const res = await app.inject({ method: 'GET', url: '/chats' });
+    await app.close();
+    return { config, status: res.statusCode };
+  };
+
+  it("INSPECTOR's two bypasses, dead: 'Production' and 'production ' leave the gate ACTIVE", async () => {
+    // The discriminator is the status: 401 = the gate blocked; anything the
+    // handler produced (200/503) = the gate was silently OFF.
+    for (const variant of ['Production', 'production ']) {
+      const { config, status } = await gateProbe(variant);
+      expect(config.isProduction, `${JSON.stringify(variant)} resolved non-production`).toBe(true);
+      expect(status, `${JSON.stringify(variant)} let the handler run`).toBe(401);
+    }
+  });
+
+  it('case/whitespace variants, empty, unset, and garbage ALL leave the gate ACTIVE', async () => {
+    for (const variant of ['PRODUCTION', 'PrOdUcTiOn', '  production  ', '', undefined, 'staging', 'prod', 'dev-ish']) {
+      const { config, status } = await gateProbe(variant);
+      expect(config.isProduction, `${JSON.stringify(variant)} resolved non-production — fail-open`).toBe(true);
+      expect(status, `${JSON.stringify(variant)} let the handler run`).toBe(401);
+    }
+  });
+
+  it("only explicit 'development' and 'test' (normalized) turn the gate off", async () => {
+    for (const variant of ['development', 'test', ' TEST ', 'Development']) {
+      const { config, status } = await gateProbe(variant);
+      expect(config.isProduction, `${JSON.stringify(variant)} stayed production`).toBe(false);
+      expect(status, `${JSON.stringify(variant)} was gated in dev`).not.toBe(401);
+    }
+  });
+
+  it("the demo-page default uses the RESOLVED env: 'Production ' no longer enables it", async () => {
+    const sloppy = loadConfig({
+      OPENAI_API_KEY: 'k', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'k',
+      SESSION_SIGNING_KEY: SIGNING_KEY, NODE_ENV: 'Production ',
+    } as NodeJS.ProcessEnv);
+    expect(sloppy.enableDemoPage, 'a sloppy NODE_ENV enabled the public demo page').toBe(false);
+    expect(sloppy.resolvedEnv).toBe('production');
+    expect(sloppy.nodeEnvRaw).toBe('Production ');
+  });
+});
+
 describe('S3 — dev posture is Phase 1/2, unchanged', () => {
   it('non-production: device headers still work and nothing 401s', async () => {
     // The 1800 pre-existing green tests are the broad evidence; this is the
@@ -318,7 +493,7 @@ describe('S3 — dev posture is Phase 1/2, unchanged', () => {
       chatRecord({ id: CHAT_A, owner_key: 'device:11111111-1111-4111-8111-111111111111' }),
     ]);
     const devApp = buildApp(
-      loadConfig({ ...PROD_ENV, NODE_ENV: 'test' } as NodeJS.ProcessEnv),
+      loadConfig({ NODE_ENV: 'test', ...PROD_ENV, NODE_ENV: 'test' } as NodeJS.ProcessEnv),
       { supabase: fake.client as never },
     );
     const res = await devApp.inject({
@@ -333,7 +508,7 @@ describe('S3 — dev posture is Phase 1/2, unchanged', () => {
   it('a VALID TOKEN also works in dev — S4 exercises the real flow locally', async () => {
     const fake = makeChatsSupabase([]);
     const devApp = buildApp(
-      loadConfig({ ...PROD_ENV, NODE_ENV: 'test' } as NodeJS.ProcessEnv),
+      loadConfig({ NODE_ENV: 'test', ...PROD_ENV, NODE_ENV: 'test' } as NodeJS.ProcessEnv),
       { supabase: fake.client as never },
     );
     const res = await devApp.inject({
@@ -350,7 +525,7 @@ describe('S3 — dev posture is Phase 1/2, unchanged', () => {
   it('token OUTRANKS a stray device header — an asserted owner never shadows a verified one', async () => {
     const fake = makeChatsSupabase([]);
     const devApp = buildApp(
-      loadConfig({ ...PROD_ENV, NODE_ENV: 'test' } as NodeJS.ProcessEnv),
+      loadConfig({ NODE_ENV: 'test', ...PROD_ENV, NODE_ENV: 'test' } as NodeJS.ProcessEnv),
       { supabase: fake.client as never },
     );
     const res = await devApp.inject({
