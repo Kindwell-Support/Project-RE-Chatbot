@@ -100,6 +100,15 @@ const REGIONS: Region[] = [
  * the /history pin.
  */
 const SESSION_DECL_LINE = '    var sessionId = null;\n';
+/**
+ * FINDING-042: the SECOND mint site. startPlaceholder assigns sessionId too
+ * (the placeholder mint), and it was never in the P1 set — an unpinned
+ * sessionId assignment in the phase where sessionId identity is
+ * load-bearing: making THIS mint async was caught by nothing, 0 of 9
+ * limbs. Pinned the same way as the others: exactly-once, both revisions.
+ */
+const PLACEHOLDER_MINT_LINE =
+  '        sessionId = placeholderId; // NOT persistActive — placeholders are ephemeral\n';
 const CHAT_MINT_LINE = '        var chatId = ensureChatId();\n';
 const CHAT_PAYLOAD_LINE = '            session_id: chatId,\n';
 
@@ -145,7 +154,7 @@ describe(`P1 mechanisms are byte-identical to ${BASELINE_REV}`, () => {
   }
 
   it('payload site 2/3 — the /chat call-time chatId read, byte-identical as lines', () => {
-    for (const line of [SESSION_DECL_LINE, CHAT_MINT_LINE, CHAT_PAYLOAD_LINE]) {
+    for (const line of [SESSION_DECL_LINE, PLACEHOLDER_MINT_LINE, CHAT_MINT_LINE, CHAT_PAYLOAD_LINE]) {
       expect(current.split(line).length - 1, `changed or duplicated: ${line.trim()}`).toBe(1);
       expect(
         baseline.split(line).length - 1,
