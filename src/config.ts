@@ -55,6 +55,13 @@ export interface AppConfig {
    * logged loudly at boot so a gate that is off ANNOUNCES it. */
   nodeEnvRaw: string | undefined;
   resolvedEnv: 'production' | 'development' | 'test';
+  /** Unconditional items (Phase 3). Env-overridable so ops can tune without
+   * a deploy; the defaults are the sized values, reasoning at the wiring. */
+  authIpPerMinute: number;
+  chatMemberPerMinute: number;
+  chatIpPerMinute: number;
+  compsMemberDailyCap: number;
+  maxMessageChars: number;
 }
 
 /**
@@ -118,6 +125,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     isProduction: resolvedEnv === 'production',
     nodeEnvRaw: env.NODE_ENV,
     resolvedEnv,
+    authIpPerMinute: Number(env.AUTH_IP_LIMIT_PER_MIN ?? 10),
+    chatMemberPerMinute: Number(env.CHAT_MEMBER_LIMIT_PER_MIN ?? 20),
+    chatIpPerMinute: Number(env.CHAT_IP_LIMIT_PER_MIN ?? 40),
+    compsMemberDailyCap: Number(env.COMPS_MEMBER_DAILY_CAP ?? 5),
+    maxMessageChars: Number(env.MAX_MESSAGE_CHARS ?? 4000),
   };
 }
 

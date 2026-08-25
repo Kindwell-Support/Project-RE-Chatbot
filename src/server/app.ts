@@ -37,7 +37,8 @@ import { createCompsCache } from '../features/comps/cache/compsCache.js';
 import { createDetailCache, type DetailCacheLike } from '../features/comps/cache/detailCache.js';
 import { createCensusCache, type CensusCacheLike } from '../features/comps/cache/censusCache.js';
 import { CensusAcsProvider, type DemographicsProviderLike } from '../features/comps/providers/census.js';
-import { createDailyRunBudget, type CompsCacheLike, type RunBudgetLike } from '../features/comps/service.js';
+import { createDailyRunBudget, createMemberScopedBudget, type CompsCacheLike, type RunBudgetLike } from '../features/comps/service.js';
+import { createFixedWindowLimiter } from './rateLimit.js';
 import { createSessionStateStore } from '../features/comps/sessionState.js';
 import type { SessionStateStore } from '../features/comps/tools.js';
 
@@ -133,7 +134,25 @@ export const AUTH_ENTRY_PATH = '/auth';
  * (and CORS tested) without live credentials.
  */
 export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance {
-  const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
+  const app = Fastify({
+    logger: process.env.NODE_ENV !== 'test',
+    /**
+     * EXPLICIT bodyLimit (unconditional item): the 1 MiB implicit default was
+     * chosen by nobody. 32 KiB fits the largest legitimate payload — a
+     * max-length message (4,000 chars, potentially multi-byte) plus the form
+     * submission and JSON overhead — with an order of magnitude to spare,
+     * and turns a memory-pressure lever into a 413.
+     */
+    bodyLimit: 32 * 1024,
+    /**
+     * trustProxy: DigitalOcean App Platform fronts the app with its load
+     * balancer, so without this request.ip is the LB for every caller and a
+     * per-IP limit would rate-limit ALL members as one client — a self-DoS.
+     * The platform sets X-Forwarded-For itself; trusting it here is trusting
+     * the platform, not the caller.
+     */
+    trustProxy: true,
+  });
 
   // FINDING-037: the registered ROUTE SET, derivable the way the exemption
   // list already is. This onRoute hook is registered BEFORE any route, so it
@@ -194,6 +213,27 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   // on deploy), which can only under-count — it can never wrongly lock a
   // member out.
   const compsBudget: RunBudgetLike = createDailyRunBudget(config.compsDailyRunCap);
+  // Per-member layer under the global counter (unconditional item): one
+  // member can no longer exhaust every member's daily allowance.
+  const memberBudgetFor = createMemberScopedBudget(compsBudget, config.compsMemberDailyCap);
+
+  // --- Rate limits (unconditional items, sized per INSPECTOR's oracle) ----
+  // Per-IP is LOAD-BEARING on /auth: every enumeration probe uses a distinct
+  // email, so a per-email limit bounds nothing there — and each probe costs a
+  // real upstream GHL call, so this limiter protects the client's GHL quota
+  // as much as member privacy. Per-email is load-bearing on /chat (a leaked
+  // token or an enthusiastic member is bounded regardless of address), with
+  // per-IP as the secondary net.
+  const authIpLimiter = createFixedWindowLimiter(config.authIpPerMinute, 60_000);
+  const chatMemberLimiter = createFixedWindowLimiter(config.chatMemberPerMinute, 60_000);
+  const chatIpLimiter = createFixedWindowLimiter(config.chatIpPerMinute, 60_000);
+  const rateLimited = (reply: { code: (n: number) => unknown; send: (b: unknown) => unknown }) => {
+    reply.code(429);
+    return reply.send({
+      error: 'Too many requests — give it a minute and try again.',
+      reason: 'rate_limited',
+    });
+  };
 
   // --- CORS -----------------------------------------------------------------
   // Explicit, allow-listed. Never "*" — the widget runs on the GHL membership
@@ -310,6 +350,7 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
   };
 
   app.post<{ Body: { email?: unknown } }>(AUTH_ENTRY_PATH, async (request, reply) => {
+    if (!authIpLimiter.allow(request.ip)) return rateLimited(reply);
     const submitted =
       typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : '';
     if (!submitted || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submitted)) {
@@ -682,6 +723,34 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       return { error: 'session_id is required' };
     }
 
+    // Rate limits (unconditional): per-EMAIL is the load-bearing one here —
+    // a leaked token or a runaway member is bounded regardless of address.
+    // The member key is the resolved owner (verified email in production,
+    // device key in dev); uncredentialed dev falls back to IP. Per-IP is the
+    // secondary net.
+    let limiterOwner: string | undefined;
+    try {
+      limiterOwner = resolveOwnerKey(request, {
+        ...(config.sessionSigningKey ? { sessionSigningKey: config.sessionSigningKey } : {}),
+        allowDeviceFallback: !config.isProduction,
+      });
+    } catch {
+      limiterOwner = undefined;
+    }
+    if (!chatMemberLimiter.allow(limiterOwner ?? `ip:${request.ip}`)) return rateLimited(reply);
+    if (!chatIpLimiter.allow(request.ip)) return rateLimited(reply);
+
+    // Hard message length cap (unconditional): model spend scales with input,
+    // and the composer is not the only client — curl exists. 400, named, so
+    // the widget can say something better than "error".
+    if (typeof message === 'string' && message.length > config.maxMessageChars) {
+      reply.code(400);
+      return {
+        error: `That message is too long — the limit is ${config.maxMessageChars} characters.`,
+        reason: 'message_too_long',
+      };
+    }
+
     // A form submission carries the numbers instead of a typed message, so it
     // supplies its own transcript line. Everything downstream — agent, memory,
     // qa_logs — is identical to the typed path from here on.
@@ -764,7 +833,10 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
           detailCache: getDetailCache(),
           censusProvider: getCensusProvider(),
           censusCache: getCensusCache(),
-          budget: compsBudget,
+          // Per-member layer under the global daily counter: the member key
+          // is the verified owner; uncredentialed dev shares one bucket per
+          // session id (best identity available there).
+          budget: memberBudgetFor(ownerKey ?? `session:${session_id}`),
           stateStore: getSessionStateStore(),
           logger: request.log,
         },
