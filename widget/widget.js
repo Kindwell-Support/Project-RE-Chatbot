@@ -85,7 +85,13 @@
        horizontally instead. Stated consequence, not an accident: a scrollable
        300px widget beats 280px of wrapped nonsense. */
     'position:relative;display:flex;flex-direction:column;height:100%;min-height:420px;min-width:300px;overflow:hidden;',
-    'background:var(--jb-bg-base);border:1px solid rgba(255,255,255,0.06);border-radius:var(--jb-radius);',
+    /* V-2: the 1px light border is GONE (operator call). It is free here, and
+       that was checked rather than assumed: the portal sets
+       body{background-color:var(--gray-50)} = #f9fafb, so a #0A0A0B widget on
+       a near-white page is bounded by ~20:1 contrast — the border was only
+       ever a faint inner edge ON the dark side, never the thing separating
+       widget from page. Radius kept. */
+    'background:var(--jb-bg-base);border-radius:var(--jb-radius);',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;',
     'font-size:15px;line-height:1.6;letter-spacing:normal;color:var(--jb-text-primary);',
     'font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;',
@@ -130,7 +136,14 @@
     /* --- Layout: header / list / composer sit above the orbs ------------------ */
     '.jb-head,.jb-list,.jb-form{position:relative;z-index:1;}',
     '.jb-head{display:flex;align-items:center;gap:10px;padding:14px 18px;flex:0 0 auto;',
-    'border-radius:0;border-left:none;border-right:none;border-top:none;font-weight:600;font-size:20px;letter-spacing:-0.01em;}',
+    'border-radius:0;border-left:none;border-right:none;border-top:none;font-weight:600;font-size:20px;letter-spacing:-0.01em;',
+    /* V-2: drop the inset top highlight, KEEP the drop shadow — with the
+       highlight gone the shadow is the only thing separating header from
+       transcript, and losing both would flatten them together. Overridden
+       HERE rather than edited on .jb-glass, which also dresses the composer,
+       the calculator cards and the gate card; this call was the header. Wins
+       on source order: same (0,1,0) specificity, declared later. */
+    'box-shadow:0 8px 32px rgba(0,0,0,0.4);}',
     '.jb-title{color:var(--jb-text-primary);}',
     '.jb-dot{width:9px;height:9px;border-radius:50%;background:var(--jb-accent);flex:0 0 auto;',
     'box-shadow:0 0 0 0 rgba(247,178,17,0.5);animation:jb-pulse-dot 3.4s var(--jb-ease) infinite;}',
@@ -351,7 +364,11 @@
     '.jb-chat-row:hover{background:rgba(255,255,255,0.05);}',
     '.jb-chat-active{background:rgba(247,178,17,0.14);}',
     '.jb-chat-open{flex:1 1 auto;min-width:0;text-align:left;background:none;border:none;cursor:pointer;',
-    'font:inherit;font-size:12.5px;color:var(--jb-text-secondary);padding:8px 6px;',
+    /* V-3: 6px -> 10px horizontal so the title and its timestamp sit visibly
+       inside the row's rounded hover outline instead of grazing it. The
+       action buttons are flex SIBLINGS and occupy layout even at opacity:0,
+       so this pushes the title away from them, never underneath. */
+    'font:inherit;font-size:12.5px;color:var(--jb-text-secondary);padding:8px 10px;',
     'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
     /* S3.1/S3.2 — row identity. The title and its timestamp stack inside the
        open button so the whole row surface stays one tap target; the time is
@@ -573,6 +590,27 @@
        class-scoped, and !important): all five held. */
     '.jb-root input::placeholder,.jb-root textarea::placeholder{',
     'font-size:inherit !important;font-family:inherit !important;font-weight:inherit !important;}',
+
+    /* --- V-1: SCROLLBARS, SCOPED TO OUR OWN SCROLL CONTAINERS -------------
+       Every selector here is prefixed with .jb-list or .jb-side-list. A bare
+       `::-webkit-scrollbar` inside this injected sheet would restyle the HOST
+       PAGE's scrollbars — the reach-OUT direction of exactly the bug class
+       BUG-046 was the reach-IN direction of. We do not do to GHL what
+       .membership-preview-remote did to us.
+       Not verifiable on /demo (no host scrollbars worth protecting there), so
+       the guarantee is the selector prefix, checked in source. */
+    '.jb-list::-webkit-scrollbar,.jb-side-list::-webkit-scrollbar{width:10px;height:10px;}',
+    '.jb-list::-webkit-scrollbar-track,.jb-side-list::-webkit-scrollbar-track{background:transparent;}',
+    /* transparent border + background-clip gives the thumb breathing room
+       without a track that reads as a light channel on a near-black panel. */
+    '.jb-list::-webkit-scrollbar-thumb,.jb-side-list::-webkit-scrollbar-thumb{',
+    'background:rgba(255,255,255,0.14);border-radius:6px;',
+    'border:2px solid transparent;background-clip:content-box;}',
+    '.jb-list::-webkit-scrollbar-thumb:hover,.jb-side-list::-webkit-scrollbar-thumb:hover{',
+    'background:rgba(255,255,255,0.26);border:2px solid transparent;background-clip:content-box;}',
+    '.jb-list::-webkit-scrollbar-corner,.jb-side-list::-webkit-scrollbar-corner{background:transparent;}',
+    /* Firefox — also scoped; `thin` is narrower than its default. */
+    '.jb-list,.jb-side-list{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.18) transparent;}',
   ].join('');
 
   function injectStyles() {
