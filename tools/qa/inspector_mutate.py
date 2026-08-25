@@ -36,6 +36,22 @@ The first row has bitten once, and is why "tests ran" is checked at all:
   CAUGHTs. That is the same wrong-subject error this tool exists to catch,
   committed by the tool doing the catching.
 
+FINDING-041 -- the WORST of the three, because it faked PASSES rather than
+misses. widget/widget.js is pure LF (3097 bare LF, 0 CRLF). apply_mutation
+read and wrote in TEXT mode, so Python translated every LF to CRLF on write:
+all 3097 lines changed on every mutation, including a no-op one. Behavioural
+suites never noticed -- CRLF does not change JS semantics -- but against a
+BYTE-IDENTITY suite every pin goes red regardless of whether the span covers
+the defect, so the tool reported CAUGHT for spans it had not exercised.
+Symptom: p1Identity scored "8 failed, 1 passed" where a clean run is
+"1 failed, 8 passed". Fix: newline='' on BOTH the read and the write, so the
+round-trip is byte-exact for LF and CRLF files alike.
+The contaminable class is any suite asserting bytes against a git revision:
+  p1Identity, phase3Gate, bundleFreshness, widgetBundleCache,
+  comps/disclosures, comps/format
+Every verdict this driver produced against those six before the fix is VOID.
+Verdicts against behavioural suites are unaffected.
+
 FINDING-030 -- the collection flake. "Tests no tests" with
 `ReferenceError: document is not defined` or a bare resolution failure has
 appeared three times across three unrelated files:
@@ -43,6 +59,12 @@ appeared three times across three unrelated files:
   - the full suite                    (same session)
   - tests/p1Identity.test.ts          (e2096a5 re-verification)
   - tests/bundleFreshness.test.ts     (667c0f7, CLEAN tree)
+  - tests/sessionToken.test.ts        (df587d7; FIRST captured stack:
+    TypeError: Cannot read properties of undefined (reading 'config') at
+    the describe() call. Transient -- 4 subsequent runs passed 14/14. It
+    fired on the one run with a SECOND RIG concurrently active in the same
+    tree, which points at concurrent vitest sharing node_modules/.vite.
+    One data point, correlation only.)
 It did not reproduce in a bounded 24-run experiment: 12 runs on a quiet tree
 and 12 with a concurrent writer touching a repo file both came back 0/12. The
 fourth occurrence landed on a CLEAN tree, which rules out the modified-tree
@@ -132,7 +154,13 @@ def restore(paths: list[str]) -> None:
 
 def apply_mutation(path: str, pairs: list[tuple[str, str]]) -> str | None:
     """Returns None on success, else the reason it was refused."""
-    src = io.open(path, encoding='utf-8').read()
+    # newline='' BOTH WAYS or the round-trip rewrites every line ending.
+    # widget/widget.js is pure LF; a text-mode write translates every LF to
+    # CRLF on Windows, changing all 3097 lines. Behavioural tests never
+    # noticed, but a byte-identity test (p1Identity) then fails wholesale on
+    # ANY mutation -- a FALSE CAUGHT generator that hid whether a span
+    # actually covered the defect it was credited with catching.
+    src = io.open(path, encoding='utf-8', newline='').read()
     for old, new in pairs:
         if old not in src:
             return 'anchor not found'
@@ -140,7 +168,7 @@ def apply_mutation(path: str, pairs: list[tuple[str, str]]) -> str | None:
             # Never guess which occurrence was meant.
             return f'anchor matches {src.count(old)} times'
         src = src.replace(old, new, 1)
-    io.open(path, 'w', encoding='utf-8').write(src)
+    io.open(path, 'w', encoding='utf-8', newline='').write(src)
     return None
 
 
