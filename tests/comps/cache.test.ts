@@ -430,7 +430,7 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       ).toBe(billedSoFar);
     });
 
-    it('RATE_LIMITED copy carries no number and offers manual entry', async () => {
+    it('RATE_LIMITED copy carries no number and solicits no ARV (§10 amendment)', async () => {
       const spy = makeProviderSpy({ subject: SUBJECT, comps: COMPS, noDetailSupport: true });
       const budget = createDailyRunBudget(0);
       const out = await runComps(ADDRESS, { provider: spy.provider as never, budget, now });
@@ -438,10 +438,17 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       if (!out.ok) {
         expect(out.code).toBe('RATE_LIMITED');
         expect(out.message).not.toMatch(/\$\s?[\d,]*\d/);
+        // §10 REVERSED: a failure states the cause and the next step. It does
+        // not pivot to deal numbers.
         expect(
           offersManualArv(out.message),
-          `RATE_LIMITED copy does not invite a manual ARV: ${out.message}`,
-        ).toBe(true);
+          `RATE_LIMITED copy still invites a manual ARV: ${out.message}`,
+        ).toBe(false);
+        expect(out.message.toLowerCase()).not.toContain('arv');
+        // The cause and the next step both survive — this is not just an
+        // absence check.
+        expect(out.message.toLowerCase(), 'the copy stopped saying why').toContain('capped');
+        expect(out.message.toLowerCase(), 'the copy stopped saying what next').toContain('tomorrow');
       }
       expect(spy.callCount).toBe(0);
     });
