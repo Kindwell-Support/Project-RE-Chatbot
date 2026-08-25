@@ -435,6 +435,34 @@ MUTATIONS = [
 # ---------------------------------------------------------------------------
 SERVER_MUTATIONS = [
     {
+        # The three HIGHs of Phase 3, each reintroduced at its own fix site so
+        # the driver — not only the suites — pins them. BUG-043 is the one
+        # MASON proposed; BUG-039 and BUG-040 complete the set.
+        'name': 'M43 BUG-039 reopened: /history ownership check bypassed (cross-member read)',
+        'target': 'src/server/app.ts',
+        'suite': 'tests/phase3Gate.test.ts',
+        'old': """      if (!owned) {""",
+        'new': """      if (false) {""",
+    },
+    {
+        'name': 'M44 BUG-040 reopened: NODE_ENV strict equality disables the gate',
+        'target': 'src/config.ts',
+        'suite': 'tests/phase3Gate.test.ts',
+        'old': """  const normalized = (raw ?? '').trim().toLowerCase();
+  if (normalized === 'development') return 'development';
+  if (normalized === 'test') return 'test';""",
+        'new': """  const normalized = raw ?? '';
+  if (normalized !== 'production') return 'development';
+  if (normalized === 'test') return 'test';""",
+    },
+    {
+        'name': 'M45 BUG-043 reopened: trustProxy trusts the whole XFF chain',
+        'target': 'src/server/app.ts',
+        'suite': 'tests/phase3Limits.test.ts',
+        'old': """    trustProxy: 1,""",
+        'new': """    trustProxy: true,""",
+    },
+    {
         'name': 'M38 the limiter never blocks',
         'target': 'src/server/rateLimit.ts',
         'suite': 'tests/phase3Limits.test.ts',
@@ -610,7 +638,14 @@ for name, old, new in MUTATIONS:
                    'failed': failed, 'passed': passed, 'at': _now()})
 
 restore()
-os.remove(SIDECAR)  # a clean exit leaves no sidecar; leftovers mean a dirty death
+# Cleanup must NEVER void a completed run: the previous phase run finished all
+# 37 widget mutations and then died here because a manual restore had already
+# removed the sidecar, so no summary row was written and the whole run was
+# correctly-but-expensively void. Housekeeping failures are logged, not fatal.
+try:
+    os.remove(SIDECAR)  # a clean exit leaves no sidecar; leftovers mean a dirty death
+except OSError as _e:
+    print('note: sidecar already gone (%s) — not fatal' % _e)
 
 # --- SERVER-TARGET LANE -----------------------------------------------------
 server_pristine = {}
@@ -661,7 +696,10 @@ for m in SERVER_MUTATIONS:
         log.write({'row': 'mutation', 'name': name, 'target': t, 'verdict': 'CAUGHT', 'inert_check': 'n/a', 'failed': failed, 'passed': passed, 'at': _now()})
 
 for t in server_pristine:
-    os.remove(t + '.pristine')
+    try:
+        os.remove(t + '.pristine')
+    except OSError as _e:
+        print('note: server sidecar for %s already gone (%s) — not fatal' % (t, _e))
 
 log.write({'row': 'summary', 'complete': True, 'finished': _now(),
            'result': 'ALL_CAUGHT' if not bad else 'PROBLEMS',
