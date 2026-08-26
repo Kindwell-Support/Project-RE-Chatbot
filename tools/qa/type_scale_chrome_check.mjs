@@ -77,18 +77,39 @@ const EXPECT = {
  *  the sheet shows up as a failure rather than being absorbed. */
 const RATIO = { xs: 0.75, sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
 
+/**
+ * PADDING SURVIVES TOO. Four times now the host reset has taken a property we
+ * only declared at the base tier: font-size (BUG-046), input padding, the
+ * delete button's background, and the rail row padding — where the title ended
+ * up flush against the pill inside GHL while /demo looked fine. These assert
+ * the frame, not just the type: selector -> the custom property its horizontal
+ * padding must resolve to, non-zero.
+ */
+const PAD_EXPECT = {
+  '.jb-chat-open': 'rail',
+  '.jb-new': 'rail',
+  '.jb-chat-act': 'railSm',
+  '.jb-input': null,
+  '.jb-gate-input': null,
+};
+/** Rail inset ratios, mirroring the sheet. NOT read back via
+ *  getPropertyValue: a custom property returns its RAW token
+ *  ("calc(18px * 0.625)"), which parseFloat turns into NaN — an earlier
+ *  version compared against that and failed three correct values. */
+const PAD_RATIO = { rail: 0.625, railSm: 0.3125 };
+
 const FIXTURES = [
   {
     name: 'host (0,1,1), no !important',
     note: 'we beat this on SPECIFICITY alone — see fixture 2',
     css: `.editor-content input, .editor-content select, .editor-content button,
-          .editor-content textarea { font-size: ${HOST_PX}; }`,
+          .editor-content textarea { font-size: ${HOST_PX}; padding: 0; }`,
   },
   {
     name: 'host (0,1,1) WITH !important',
     note: 'only our own !important survives this',
     css: `.editor-content input, .editor-content select, .editor-content button,
-          .editor-content textarea { font-size: ${HOST_PX} !important; }`,
+          .editor-content textarea { font-size: ${HOST_PX} !important; padding: 0 !important; }`,
   },
 ];
 
@@ -114,7 +135,7 @@ async function run(fixtureCss) {
   );
   await new Promise((r) => setTimeout(r, 700));
 
-  const out = await page.evaluate((expect, ratio) => {
+  const out = await page.evaluate((expect, ratio, padExpect, padRatio) => {
     const root = document.querySelector('.jb-root');
     root.classList.remove('jb-gated');
     const list = document.querySelector('.jb-list');
@@ -183,6 +204,19 @@ async function run(fixtureCss) {
     const bare = document.createElement('input');
     document.querySelector('.editor-content').appendChild(bare);
     const bareSize = getComputedStyle(bare).fontSize;
+    const barePad = getComputedStyle(bare).paddingLeft;
+
+    const padRows = [];
+    for (const [sel, prop] of Object.entries(padExpect)) {
+      const el = document.querySelector(sel);
+      if (!el) { padRows.push({ sel, got: 'MISSING', want: null, ok: false }); continue; }
+      const got = parseFloat(getComputedStyle(el).paddingLeft);
+      const want = prop ? base * padRatio[prop] : null;
+      padRows.push({
+        sel, got, want,
+        ok: got > 0.01 && (want === null || Math.abs(got - want) < 0.01),
+      });
+    }
 
     // C — the knob's floor. Drive base DOWN and check both halves.
     root.style.setProperty('--jb-font-base', '14px');
@@ -209,8 +243,8 @@ async function run(fixtureCss) {
       : null;
     if (rowEl) rowEl.classList.remove('jb-chat-pending');
 
-    return { rows, bareSize, knob, hierarchy, base, scale };
-  }, EXPECT, RATIO);
+    return { rows, padRows, bareSize, barePad, knob, hierarchy, base, scale };
+  }, EXPECT, RATIO, PAD_EXPECT, PAD_RATIO);
 
   await page.close();
   return out;
@@ -237,6 +271,15 @@ for (const fx of FIXTURES) {
     if (!r.ok) failures += 1;
     console.log('    ' + r.sel.padEnd(26) + String(r.got).padStart(9) +
       '   want ' + (r.token + ' ' + r.want + 'px').padEnd(15) + (r.ok ? 'ok' : 'FAIL'));
+  }
+
+  console.log('');
+  console.log('  PADDING — the frame, not the type (bare control reads ' + out.barePad + ')');
+  for (const r of out.padRows) {
+    examined += 1;
+    if (!r.ok) failures += 1;
+    console.log('    ' + r.sel.padEnd(26) + String(r.got).padStart(9) + 'px  ' +
+      (r.want === null ? 'want non-zero' : 'want ' + r.want + 'px').padEnd(15) + (r.ok ? 'ok' : 'FAIL'));
   }
 
   if (!knobShown) {

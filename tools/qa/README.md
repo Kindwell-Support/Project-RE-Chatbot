@@ -24,7 +24,7 @@ It runs, in order and stopping at the first failure:
 
 | check | the claim it carries |
 | --- | --- |
-| `type_scale_chrome_check.mjs` | every control resolves to its mapped size, against TWO host fixtures (one with `!important`); the `--jb-font-base` floor holds at 16px for text entry; rail hierarchy survives on weight |
+| `type_scale_chrome_check.mjs` | every control resolves to its mapped size, against TWO host fixtures (one with `!important`); the `--jb-font-base` floor holds at 16px for text entry; rail hierarchy survives on weight; and the FRAME survives too — rail/row padding is asserted non-zero and on-token, because the host reset zeroes button `padding` and that had already shipped a rail whose text sat flush against the pill |
 | `bug046_chrome_check.mjs` | percentage resolution and UA form-control defaults |
 | `bug046_placeholder_check.mjs` | the `::placeholder` guard against five host shapes |
 | `input_padding_chrome_check.mjs` | composer geometry at six widths, no overlap with the send button |
