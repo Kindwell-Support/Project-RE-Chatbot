@@ -89,27 +89,43 @@ const PAD_EXPECT = {
   '.jb-chat-open': 'rail',
   '.jb-new': 'rail',
   '.jb-chat-act': 'railSm',
+  '.jb-gate-input': 'ctl',
+  '.jb-gate-btn': 'ctl',
   '.jb-input': null,
-  '.jb-gate-input': null,
 };
 /** Rail inset ratios, mirroring the sheet. NOT read back via
  *  getPropertyValue: a custom property returns its RAW token
  *  ("calc(18px * 0.625)"), which parseFloat turns into NaN — an earlier
  *  version compared against that and failed three correct values. */
-const PAD_RATIO = { rail: 0.625, railSm: 0.3125 };
+const PAD_RATIO = { rail: 0.625, railSm: 0.3125, ctl: 1.125 };
+
+/**
+ * RESTING SURFACE. The send button was the first NON-FONT property observed
+ * losing to the host: .jb-send{background} is (0,1,0) and a host
+ * `.editor-content button{background-color:transparent}` at (0,1,1) beat it,
+ * while .jb-send:hover at (0,2,0) survived — so the button was unfilled at
+ * rest and filled only under the cursor. Asserting the RESTING colour is the
+ * point; a font-size assertion could never have caught it.
+ */
+const BG_EXPECT = {
+  '.jb-send': 'rgb(247, 178, 17)',
+  '.jb-chat-confirm-yes': 'rgb(217, 48, 37)',
+};
 
 const FIXTURES = [
   {
     name: 'host (0,1,1), no !important',
     note: 'we beat this on SPECIFICITY alone — see fixture 2',
     css: `.editor-content input, .editor-content select, .editor-content button,
-          .editor-content textarea { font-size: ${HOST_PX}; padding: 0; }`,
+          .editor-content textarea { font-size: ${HOST_PX}; padding: 0;
+            background-color: transparent; }`,
   },
   {
     name: 'host (0,1,1) WITH !important',
     note: 'only our own !important survives this',
     css: `.editor-content input, .editor-content select, .editor-content button,
-          .editor-content textarea { font-size: ${HOST_PX} !important; padding: 0 !important; }`,
+          .editor-content textarea { font-size: ${HOST_PX} !important; padding: 0 !important;
+            background-color: transparent !important; }`,
   },
 ];
 
@@ -135,7 +151,7 @@ async function run(fixtureCss) {
   );
   await new Promise((r) => setTimeout(r, 700));
 
-  const out = await page.evaluate((expect, ratio, padExpect, padRatio) => {
+  const out = await page.evaluate((expect, ratio, padExpect, padRatio, bgExpect) => {
     const root = document.querySelector('.jb-root');
     root.classList.remove('jb-gated');
     const list = document.querySelector('.jb-list');
@@ -205,6 +221,15 @@ async function run(fixtureCss) {
     document.querySelector('.editor-content').appendChild(bare);
     const bareSize = getComputedStyle(bare).fontSize;
     const barePad = getComputedStyle(bare).paddingLeft;
+    const bareBg = getComputedStyle(bare).backgroundColor;
+
+    const bgRows = [];
+    for (const [sel, want] of Object.entries(bgExpect)) {
+      const el = document.querySelector(sel);
+      if (!el) { bgRows.push({ sel, got: 'MISSING', want, ok: false }); continue; }
+      const got = getComputedStyle(el).backgroundColor;
+      bgRows.push({ sel, got, want, ok: got === want });
+    }
 
     const padRows = [];
     for (const [sel, prop] of Object.entries(padExpect)) {
@@ -243,8 +268,8 @@ async function run(fixtureCss) {
       : null;
     if (rowEl) rowEl.classList.remove('jb-chat-pending');
 
-    return { rows, padRows, bareSize, barePad, knob, hierarchy, base, scale };
-  }, EXPECT, RATIO, PAD_EXPECT, PAD_RATIO);
+    return { rows, padRows, bgRows, bareSize, barePad, bareBg, knob, hierarchy, base, scale };
+  }, EXPECT, RATIO, PAD_EXPECT, PAD_RATIO, BG_EXPECT);
 
   await page.close();
   return out;
@@ -280,6 +305,15 @@ for (const fx of FIXTURES) {
     if (!r.ok) failures += 1;
     console.log('    ' + r.sel.padEnd(26) + String(r.got).padStart(9) + 'px  ' +
       (r.want === null ? 'want non-zero' : 'want ' + r.want + 'px').padEnd(15) + (r.ok ? 'ok' : 'FAIL'));
+  }
+
+  console.log('');
+  console.log('  RESTING SURFACE — asserted at rest, not on hover (bare control reads ' + out.bareBg + ')');
+  for (const r of out.bgRows) {
+    examined += 1;
+    if (!r.ok) failures += 1;
+    console.log('    ' + r.sel.padEnd(26) + String(r.got).padStart(20) + '   want ' +
+      r.want.padEnd(20) + (r.ok ? 'ok' : 'FAIL'));
   }
 
   if (!knobShown) {
