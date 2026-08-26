@@ -89,6 +89,14 @@
     '--jb-font-lg:calc(var(--jb-font-base) * 1.125);',
     '--jb-font-xl:calc(var(--jb-font-base) * 1.25);',
     '--jb-line-tight:1.35;--jb-line-body:1.55;',
+    /* TEXT-ENTRY FLOOR -- DO NOT COLLAPSE THIS TO var(--jb-font-md).
+       Mobile Safari zooms the entire page when a focused input computes
+       below 16px, and the host page is GHL's, so the zoom is not ours to
+       undo. --jb-font-base is a knob someone will eventually turn DOWN;
+       max() means doing so cannot reintroduce that bug. Above 16px the
+       control tracks the scale normally. Applies to the text-entry
+       controls only -- buttons do not trigger the zoom. */
+    '--jb-font-control:max(16px, var(--jb-font-md));',
     /* §11 token swap: user bubbles are amber, James stays neutral glass. To put
        amber on ALL bubbles, point --jb-bot-* at the accent here — one place. */
     '--jb-user-bg:var(--jb-accent);--jb-user-text:var(--jb-on-accent);',
@@ -208,7 +216,7 @@
     '.jb-form{display:flex;gap:10px;align-items:center;padding:12px;flex:0 0 auto;margin:0 10px 10px;border-radius:14px;}',
     /* 16px font keeps iOS Safari from zooming the page on focus. */
     '.jb-input{flex:1 1 auto;min-width:0;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-md);font-family:inherit;outline:none;transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
     '.jb-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-input::placeholder{color:var(--jb-text-tertiary);}',
     '.jb-send{flex:0 0 auto;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;',
@@ -226,7 +234,7 @@
     '.jb-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}',
 
     '.jb-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:8px;padding:6px 13px;font-size:var(--jb-font-xs);font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
+    'border-radius:8px;padding:6px 13px;font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
 
     /* --- Inline calculator form (glass card inset into the thread) ----------- */
@@ -239,7 +247,7 @@
     '.jb-req{color:var(--jb-accent);margin-left:3px;}',
     '.jb-unit{color:var(--jb-text-tertiary);font-weight:400;}',
     '.jb-control{width:100%;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-md);font-family:inherit;outline:none;',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;',
     'transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
     '.jb-control:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-control[aria-invalid="true"]{border-color:var(--jb-danger);box-shadow:0 0 0 3px rgba(255,107,90,0.18);}',
@@ -257,7 +265,7 @@
     '.jb-calc-cancel{background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--jb-text-secondary);',
     'border-radius:10px;padding:11px 16px;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-calc-cancel:hover{border-color:var(--jb-text-secondary);color:var(--jb-text-primary);}',
-    '.jb-calc-error{color:var(--jb-danger);font-size:var(--jb-font-xs);margin-top:10px;}',
+    '.jb-calc-error{color:var(--jb-danger);font-size:var(--jb-font-sm);margin-top:10px;}',
     /* Session ARV pre-fill note — amber-tinted so it reads as the system
        having done work for you, with the bound address always visible. */
     '.jb-prefill-note{margin-top:5px;font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-accent);opacity:0.92;}',
@@ -266,7 +274,7 @@
     '.jb-btnrow{margin:6px 0 4px;}',
     // Text rides --jb-on-accent (near-black), the widget's own token for
     // text on the amber accent — white was wrong against #F7B211.
-    '.jb-btn-link{display:inline-block;padding:6px 14px;border-radius:8px;background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:var(--jb-font-xs);font-weight:600;line-height:var(--jb-line-tight);}',
+    '.jb-btn-link{display:inline-block;padding:6px 14px;border-radius:8px;background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:var(--jb-font-sm);font-weight:600;line-height:var(--jb-line-tight);}',
     '.jb-btn-link:hover{opacity:0.88;}',
     /* Disabled controls during a run: readable, obviously inert, not greyed to
        the point the member thinks the card broke. */
@@ -387,7 +395,7 @@
     /* S3.1/S3.2 — row identity. The title and its timestamp stack inside the
        open button so the whole row surface stays one tap target; the time is
        part of the row's identity, not a separate control. */
-    '.jb-chat-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.jb-chat-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}',
     '.jb-chat-time{display:block;font-size:var(--jb-font-xs);line-height:var(--jb-line-tight);color:var(--jb-text-tertiary);margin-top:1px;font-weight:400;}',
     /* The EPHEMERAL placeholder reads as a different kind of thing from a real
        row whose title merely has not arrived: italic, dimmed, and no
@@ -462,7 +470,7 @@
     '.jb-gate-copy{font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);margin:0 0 14px;}',
     '.jb-gate-row{display:flex;gap:8px;}',
     '.jb-gate-input{flex:1 1 auto;min-width:0;padding:11px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-md);font-family:inherit;outline:none;}',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;}',
     '.jb-gate-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:10px;padding:11px 18px;background:var(--jb-accent);',
     'color:var(--jb-on-accent);font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;}',
@@ -474,7 +482,7 @@
     '.jb-gate-status{margin:12px 0 0;font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-danger);min-height:1em;}',
     '.jb-gate-status[data-kind="lookup_failed"]{color:var(--jb-text-secondary);}',
     '.jb-gate-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:8px;padding:6px 13px;font-size:var(--jb-font-xs);font-weight:700;font-family:inherit;cursor:pointer;}',
+    'border-radius:8px;padding:6px 13px;font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;}',
     '.jb-gate-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
     '.jb-side-retry{margin-top:8px;background:transparent;border:1px solid var(--jb-accent);',
     'color:var(--jb-accent);border-radius:7px;padding:5px 11px;font-size:var(--jb-font-xs);font-weight:700;',
@@ -564,7 +572,7 @@
        re-assert each control's OWN size at (0,2,0) — two classes — so they
        outrank the (0,1,1) layer. Both sides are !important, so specificity
        decides and source order is NOT relied on (verified, not assumed). */
-    '.jb-root .jb-input,.jb-root .jb-gate-input,.jb-root .jb-control{font-size:var(--jb-font-md) !important;}',
+    '.jb-root .jb-input,.jb-root .jb-gate-input,.jb-root .jb-control{font-size:var(--jb-font-control) !important;}',
     /* Padding, same (0,2,0) tier. Declared per-control rather than as one
        shared rule because the VERTICAL values legitimately differ (12 vs
        11) and a shared shorthand would flatten that difference. */
@@ -576,7 +584,7 @@
     '.jb-root .jb-adv-toggle{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
     'line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-side-toggle{font-size:var(--jb-font-sm) !important;line-height:1 !important;}',
-    '.jb-root .jb-retry,.jb-root .jb-gate-retry{font-size:var(--jb-font-xs) !important;font-weight:700 !important;',
+    '.jb-root .jb-retry,.jb-root .jb-gate-retry{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
     'line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-side-retry{font-size:var(--jb-font-xs) !important;font-weight:700 !important;',
     'line-height:var(--jb-line-tight) !important;}',
