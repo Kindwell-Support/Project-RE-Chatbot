@@ -82,7 +82,7 @@
        because rem would resolve against the HOST page's <html>, which GHL
        controls; em on nested elements would compound; transform:scale()
        would blur text and break hit-target and scroll math. */
-    '--jb-font-base:16px;',
+    '--jb-font-base:18px;',
     '--jb-font-xs:calc(var(--jb-font-base) * 0.75);',
     '--jb-font-sm:calc(var(--jb-font-base) * 0.875);',
     '--jb-font-md:var(--jb-font-base);',
@@ -420,8 +420,14 @@
     /* S2.2 — the in-widget delete confirmation. Replaces the row contents the
        way the rename input already does, so the control is anchored ON the row
        it acts on and needs no space for a title it cannot fit at 216px. */
-    '.jb-chat-confirm{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:3px 4px 3px 6px;}',
-    '.jb-chat-confirm-q{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
+    /* At base 18 the two buttons alone want ~142px of a 161px content box on
+       the .jb-w-mid rail, so on one line the question is squeezed to 10px of
+       ellipsis and still eats a gap. The ROW is constrained instead of the
+       type: the question takes its own line and the buttons keep full-scale
+       labels. A destructive control abbreviated to "Del..." would be a worse
+       answer than a two-line row in a scrollable rail. */
+    '.jb-chat-confirm{display:flex;align-items:center;flex-wrap:wrap;gap:8px;width:100%;min-width:0;padding:3px 4px 3px 6px;}',
+    '.jb-chat-confirm-q{flex:1 1 100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
     'font-size:var(--jb-font-xs);color:var(--jb-text-secondary);}',
     '.jb-chat-confirm-yes,.jb-chat-confirm-no{flex:0 0 auto;font:inherit;font-size:var(--jb-font-xs);font-weight:700;',
     'border-radius:6px;padding:5px 12px;cursor:pointer;border:1px solid transparent;}',

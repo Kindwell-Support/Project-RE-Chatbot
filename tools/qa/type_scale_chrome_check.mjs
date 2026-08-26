@@ -8,7 +8,9 @@
  *
  * THREE THINGS ARE PROVEN, each with its own control:
  *
- *  A. The scale resolves. Every control reads its mapped size at base 16.
+ *  A. The scale resolves. Every control reads the size its TOKEN implies, at
+ *     whatever --jb-font-base the sheet currently declares — the expected
+ *     values are derived from the resolved base, not written down per base.
  *
  *  B. The defensive layer is load-bearing — TWO fixtures, not one. The first
  *     is the (0,1,1) shape BUG-046 was captured from, which we beat on
@@ -38,31 +40,42 @@ const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const bundle = readFileSync('public/widget.js', 'utf8');
 const HOST_PX = '32px';
 
-/** Selector -> resolved size at --jb-font-base:16px. */
+/**
+ * Selector -> the TOKEN it should resolve from. Deliberately NOT pixel
+ * literals: an earlier version of this file listed the base-16 values, which
+ * pinned the check to one base rather than to the scale. Turning the knob to
+ * 18px turned all eighteen rows red at once — loudly, not silently, so it
+ * never certified a stale build — but a gate that must be hand-edited every
+ * time the knob moves is a gate that will eventually be edited to match
+ * whatever the code now does. The expected size is derived from the
+ * --jb-font-base actually resolved in the page, so the check tracks the knob.
+ */
 const EXPECT = {
   // Text entry — floored at 16px by --jb-font-control.
-  '.jb-input': '16px',
-  '.jb-gate-input': '16px',
-  '.jb-control': '16px',
-  // sm (14px)
-  '.jb-btn': '14px',
-  '.jb-gate-btn': '14px',
-  '.jb-side-toggle': '14px',
-  '.jb-retry': '14px',
-  '.jb-gate-retry': '14px',
-  '.jb-btn-link': '14px',
-  '.jb-calc-error': '14px',
-  // xs (12px)
-  '.jb-new': '12px',
-  '.jb-chat-open': '12px',
-  '.jb-chat-act': '12px',
-  '.jb-side-retry': '12px',
-  '.jb-chat-confirm-yes': '12px',
-  '.jb-chat-confirm-no': '12px',
-  '.jb-chat-rename-input': '12px',
+  '.jb-input': 'control',
+  '.jb-gate-input': 'control',
+  '.jb-control': 'control',
+  '.jb-btn': 'sm',
+  '.jb-gate-btn': 'sm',
+  '.jb-side-toggle': 'sm',
+  '.jb-retry': 'sm',
+  '.jb-gate-retry': 'sm',
+  '.jb-btn-link': 'sm',
+  '.jb-calc-error': 'sm',
+  '.jb-new': 'xs',
+  '.jb-chat-open': 'xs',
+  '.jb-chat-act': 'xs',
+  '.jb-side-retry': 'xs',
+  '.jb-chat-confirm-yes': 'xs',
+  '.jb-chat-confirm-no': 'xs',
+  '.jb-chat-rename-input': 'xs',
   // Body text — the thing the whole pass is about.
-  '.jb-bubble': '16px',
+  '.jb-bubble': 'md',
 };
+
+/** The scale, as declared on .jb-root. Kept here so a drift between this and
+ *  the sheet shows up as a failure rather than being absorbed. */
+const RATIO = { xs: 0.75, sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
 
 const FIXTURES = [
   {
@@ -101,7 +114,7 @@ async function run(fixtureCss) {
   );
   await new Promise((r) => setTimeout(r, 700));
 
-  const out = await page.evaluate((expect) => {
+  const out = await page.evaluate((expect, ratio) => {
     const root = document.querySelector('.jb-root');
     root.classList.remove('jb-gated');
     const list = document.querySelector('.jb-list');
@@ -139,12 +152,29 @@ async function run(fixtureCss) {
         '<button class="jb-side-retry">Retry</button>';
     }
 
+    // Derive the expected sizes from the base ACTUALLY RESOLVED in the page,
+    // so the check follows the knob instead of pinning one value of it.
+    const baseRaw = getComputedStyle(root).getPropertyValue('--jb-font-base').trim();
+    const base = parseFloat(baseRaw);
+    if (!base || Number.isNaN(base)) {
+      return { INVALID: '--jb-font-base did not resolve (got "' + baseRaw + '")' };
+    }
+    const scale = {
+      xs: base * ratio.xs, sm: base * ratio.sm, md: base * ratio.md,
+      lg: base * ratio.lg, xl: base * ratio.xl,
+      control: Math.max(16, base * ratio.md),
+    };
+
     const rows = [];
-    for (const [sel, want] of Object.entries(expect)) {
+    for (const [sel, token] of Object.entries(expect)) {
       const el = document.querySelector(sel);
-      if (!el) { rows.push({ sel, got: 'MISSING', want, ok: false }); continue; }
-      const got = getComputedStyle(el).fontSize;
-      rows.push({ sel, got, want, ok: got === want });
+      const want = scale[token];
+      if (!el) { rows.push({ sel, token, got: 'MISSING', want, ok: false }); continue; }
+      const gotPx = parseFloat(getComputedStyle(el).fontSize);
+      rows.push({
+        sel, token, got: getComputedStyle(el).fontSize, want,
+        ok: Math.abs(gotPx - want) < 0.01,
+      });
     }
 
     // CONTROL: a bare control under the same host sheet must take the host's
@@ -179,8 +209,8 @@ async function run(fixtureCss) {
       : null;
     if (rowEl) rowEl.classList.remove('jb-chat-pending');
 
-    return { rows, bareSize, knob, hierarchy };
-  }, EXPECT);
+    return { rows, bareSize, knob, hierarchy, base, scale };
+  }, EXPECT, RATIO);
 
   await page.close();
   return out;
@@ -196,6 +226,8 @@ for (const fx of FIXTURES) {
   console.log('');
   console.log('FIXTURE: ' + fx.name);
   console.log('  ' + fx.note);
+  console.log('  base resolved from the sheet: ' + out.base + 'px  ->  xs ' + out.scale.xs +
+    ' / sm ' + out.scale.sm + ' / md ' + out.scale.md + ' / control ' + out.scale.control);
   console.log('  control — bare input under the same sheet reads ' + out.bareSize +
     (live ? '  (fixture IS live)' : '  (FIXTURE INERT — every row below is vacuous)'));
   if (!live) { failures += 1; continue; }
@@ -203,8 +235,8 @@ for (const fx of FIXTURES) {
   for (const r of out.rows) {
     examined += 1;
     if (!r.ok) failures += 1;
-    console.log('    ' + r.sel.padEnd(26) + String(r.got).padStart(8) +
-      '   want ' + r.want.padEnd(6) + (r.ok ? 'ok' : 'FAIL'));
+    console.log('    ' + r.sel.padEnd(26) + String(r.got).padStart(9) +
+      '   want ' + (r.token + ' ' + r.want + 'px').padEnd(15) + (r.ok ? 'ok' : 'FAIL'));
   }
 
   if (!knobShown) {
