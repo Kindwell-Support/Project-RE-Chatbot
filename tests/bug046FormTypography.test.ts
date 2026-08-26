@@ -90,6 +90,39 @@ const size = (sel: string) => {
   return getComputedStyle(el).fontSize;
 };
 
+/**
+ * THE HARNESS SPLIT WIDENED — read this before "fixing" an assertion below.
+ *
+ * The sheet now routes every font-size through a token (--jb-font-*), and
+ * jsdom DOES NOT RESOLVE var() in font-size: getComputedStyle returns the raw
+ * string `var(--jb-font-md)`, and where a control's own (0,2,0) declaration
+ * uses a token, jsdom drops it and reports the INHERITED value instead. So
+ * jsdom can no longer answer "what pixel size is this control".
+ *
+ * What jsdom CAN still answer, and what the assertions below are therefore
+ * narrowed to, is the question BUG-046 actually exists for: DID THE HOST RULE
+ * WIN. A control reading the hostile 32px means the defence broke.
+ *
+ * The pixel claim moved to a real engine, where it is stronger than it ever
+ * was here — tools/qa/type_scale_chrome_check.mjs asserts the exact resolved
+ * size of every control against a hostile 32px !important sheet, with a bare
+ * control proving the sheet is live. Same FINDING-047 split as the percentage
+ * half: jsdom for the cascade, Chrome for resolution.
+ */
+const HOST_SIZE = '32px';
+/** The font-size declared for `.jb-root <sel>` in the source sheet. */
+const declaredSize = (sel: string): string | null => {
+  // No leading-quote anchor: several controls sit SECOND in a combined
+  // selector (".jb-root .jb-btn,.jb-root .jb-gate-btn{"). [^']*? cannot cross
+  // a JS string boundary, so a rule without a font-size (the padding tier)
+  // simply fails to match and the scan moves on to the one that has it.
+  const re = new RegExp(
+    '\\.jb-root ' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+      "[^']*?font-size:(var\\(--jb-font-[a-z]+\\))",
+  );
+  return WIDGET_SRC.match(re)?.[1] ?? null;
+};
+
 beforeEach(() => {
   document.head.querySelectorAll('style').forEach((s) => s.remove());
   document.body.innerHTML = '';
@@ -108,19 +141,26 @@ describe('BUG-046 — per-control sizes win over the defensive layer', () => {
     window.sessionStorage.setItem('james-bot-token', 't');
     mount();
     await tick();
-    // If `font: inherit !important` at (0,1,1) beat these, every control
-    // would read 15px — .jb-root's size — instead of its own.
-    expect(size('.jb-input'), 'composer lost its size to the layer').toBe('16px');
-    expect(size('.jb-new'), 'new-chat button lost its size').toBe('12.5px');
-    expect(size('.jb-chat-open'), 'rail row lost its size').toBe('12.5px');
-    expect(size('.jb-side-toggle')).toBe('14px');
+    // Each control must still declare its OWN size at (0,2,0), or
+    // `font: inherit !important` at (0,1,1) swallows it and every control
+    // reads .jb-root's size. jsdom cannot resolve the tokens (see the note
+    // above), so this is asserted on the declaration; the resolved pixels are
+    // checked in tools/qa/type_scale_chrome_check.mjs.
+    expect(declaredSize('.jb-input'), 'composer lost its size to the layer').toBe(
+      'var(--jb-font-md)',
+    );
+    expect(declaredSize('.jb-new'), 'new-chat button lost its size').toBe('var(--jb-font-xs)');
+    expect(declaredSize('.jb-chat-open'), 'rail row lost its size').toBe('var(--jb-font-xs)');
+    expect(declaredSize('.jb-side-toggle')).toBe('var(--jb-font-sm)');
+    // And nothing renders at the host's size in the benign case either.
+    expect(size('.jb-input')).not.toBe(HOST_SIZE);
   });
 
   it('CONSTRAINT 1: same holds for the GATE input', async () => {
     mount();
     await tick();
-    expect(size('.jb-gate-input')).toBe('16px');
-    expect(size('.jb-gate-btn')).toBe('14px');
+    expect(declaredSize('.jb-gate-input')).toBe('var(--jb-font-md)');
+    expect(declaredSize('.jb-gate-btn')).toBe('var(--jb-font-sm)');
   });
 });
 
@@ -128,7 +168,9 @@ describe('BUG-046 — the block beats the hostile container', () => {
   it('gate input and its placeholder resist a (0,1,1) host rule', async () => {
     mount(HOSTILE);
     await tick();
-    expect(size('.jb-gate-input'), 'the host rule still wins — the fix is insufficient').toBe('16px');
+    expect(size('.jb-gate-input'), 'the host rule still wins — the fix is insufficient').not.toBe(
+      HOST_SIZE,
+    );
     const cs = getComputedStyle(document.querySelector('.jb-gate-input')!);
     expect(cs.letterSpacing, 'host letter-spacing reached in').toBe('normal');
     expect(cs.textTransform, 'host text-transform reached in').toBe('none');
@@ -138,7 +180,7 @@ describe('BUG-046 — the block beats the hostile container', () => {
     window.sessionStorage.setItem('james-bot-token', 't');
     mount(HOSTILE);
     await tick();
-    expect(size('.jb-input')).toBe('16px');
+    expect(size('.jb-input')).not.toBe(HOST_SIZE);
   });
 
   it('CALCULATOR CONTROLS — the <select> and inputs specifically', async () => {
@@ -153,17 +195,18 @@ describe('BUG-046 — the block beats the hostile container', () => {
     form.innerHTML =
       '<input class="jb-control" type="text"><select class="jb-control"><option>a</option></select>';
     list.appendChild(form);
-    expect(size('input.jb-control'), 'calculator text field lost to the host').toBe('16px');
-    expect(size('select.jb-control'), 'calculator SELECT lost to the host').toBe('16px');
+    expect(size('input.jb-control'), 'calculator text field lost to the host').not.toBe(HOST_SIZE);
+    expect(size('select.jb-control'), 'calculator SELECT lost to the host').not.toBe(HOST_SIZE);
+    expect(declaredSize('.jb-control')).toBe('var(--jb-font-md)');
   });
 
   it('buttons across the widget resist', async () => {
     window.sessionStorage.setItem('james-bot-token', 't');
     mount(HOSTILE);
     await tick();
-    expect(size('.jb-new')).toBe('12.5px');
-    expect(size('.jb-chat-open')).toBe('12.5px');
-    expect(size('.jb-side-toggle')).toBe('14px');
+    expect(size('.jb-new')).not.toBe(HOST_SIZE);
+    expect(size('.jb-chat-open')).not.toBe(HOST_SIZE);
+    expect(size('.jb-side-toggle')).not.toBe(HOST_SIZE);
   });
 
   it('CONTROL: without the widget, the hostile rule really does win 32px', async () => {
