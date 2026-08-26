@@ -103,6 +103,12 @@
        characters. 13.5/11.5 give exactly today's 216/184 at base 16. */
     '--jb-rail-w:calc(var(--jb-font-base) * 13.5);',
     '--jb-rail-w-mid:calc(var(--jb-font-base) * 11.5);',
+    /* CONTROL PADDING on the knob. Same defect the rail had: the type
+       scaled ~20% and the padding framing it did not, so "Continue" sat
+       hard against the button edges. 0.6875/1.125 are exactly 11/18 at
+       base 16. */
+    '--jb-ctl-pad-y:calc(var(--jb-font-base) * 0.6875);',
+    '--jb-ctl-pad-x:calc(var(--jb-font-base) * 1.125);',
     /* TEXT-ENTRY FLOOR -- DO NOT COLLAPSE THIS TO var(--jb-font-md).
        Mobile Safari zooms the entire page when a focused input computes
        below 16px, and the host page is GHL's, so the zoom is not ours to
@@ -490,14 +496,15 @@
        so there is no chat behind it to invite peeking. jb-gated hides the
        rail, its toggle and the composer. */
     '.jb-root.jb-gated .jb-side,.jb-root.jb-gated .jb-side-toggle,.jb-root.jb-gated .jb-form{display:none;}',
-    '.jb-gate{max-width:400px;margin:auto;padding:26px 22px;border-radius:16px;text-align:left;width:100%;}',
+    '.jb-gate{max-width:400px;margin:auto;padding:calc(var(--jb-font-base) * 1.625) calc(var(--jb-font-base) * 1.375);',
+    'border-radius:16px;text-align:left;width:100%;}',
     '.jb-gate-title{font-size:var(--jb-font-lg);font-weight:700;margin:0 0 6px;color:var(--jb-text-primary);}',
     '.jb-gate-copy{font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);margin:0 0 14px;}',
-    '.jb-gate-row{display:flex;gap:8px;}',
-    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:11px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    '.jb-gate-row{display:flex;gap:calc(var(--jb-font-base) * 0.5);}',
+    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
     'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;}',
     '.jb-gate-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
-    '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:10px;padding:11px 18px;background:var(--jb-accent);',
+    '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:10px;padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);background:var(--jb-accent);',
     'color:var(--jb-on-accent);font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;}',
     '.jb-gate-btn:hover{background:var(--jb-accent-hover);}',
     '.jb-gate-btn[disabled]{opacity:0.6;cursor:default;}',
@@ -507,7 +514,8 @@
     '.jb-gate-status{margin:12px 0 0;font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-danger);min-height:1em;}',
     '.jb-gate-status[data-kind="lookup_failed"]{color:var(--jb-text-secondary);}',
     '.jb-gate-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:8px;padding:6px 13px;font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;}',
+    'border-radius:8px;padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722);',
+    'font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;}',
     '.jb-gate-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
     '.jb-side-retry{margin-top:8px;background:transparent;border:1px solid var(--jb-accent);',
     'color:var(--jb-accent);border-radius:7px;padding:5px 11px;font-size:var(--jb-font-xs);font-weight:700;',
@@ -597,14 +605,17 @@
        re-assert each control's OWN size at (0,2,0) — two classes — so they
        outrank the (0,1,1) layer. Both sides are !important, so specificity
        decides and source order is NOT relied on (verified, not assumed). */
-    '.jb-root .jb-input,.jb-root .jb-gate-input,.jb-root .jb-control{font-size:var(--jb-font-control) !important;}',
+    '.jb-root .jb-input,.jb-root .jb-gate-input,.jb-root .jb-control{font-size:var(--jb-font-control) !important;',
+    'text-align:left !important;}',
     /* Padding, same (0,2,0) tier. Declared per-control rather than as one
        shared rule because the VERTICAL values legitimately differ (12 vs
        11) and a shared shorthand would flatten that difference. */
     '.jb-root .jb-input{padding:12px 18px !important;}',
-    '.jb-root .jb-gate-input{padding:11px 18px !important;}',
+    '.jb-root .jb-gate-input{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
     '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
     'line-height:var(--jb-line-tight) !important;}',
+    '.jb-root .jb-gate-btn{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
+    '.jb-root .jb-gate-retry{padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722) !important;}',
     '.jb-root .jb-calc-cancel{font-size:var(--jb-font-sm) !important;line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-adv-toggle{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
     'line-height:var(--jb-line-tight) !important;}',
@@ -629,6 +640,16 @@
     'padding:6px var(--jb-rail-inset-sm) !important;}',
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
     'font-size:var(--jb-font-xs) !important;font-weight:700 !important;padding:5px 12px !important;}',
+    /* THE FIRST NON-FONT PROPERTY OBSERVED LOSING TO THE HOST. The resting
+       surface needs (0,2,0); the STATE rules then need (0,3,0) or the
+       resting !important would swallow them and the button would never
+       react again. See the audit in the run report: background, color and
+       border are undefended on ~17 controls, of which this is one. */
+    '.jb-root .jb-send{background:var(--jb-accent) !important;color:var(--jb-on-accent) !important;',
+    'border:none !important;}',
+    '.jb-root .jb-send:hover{background:var(--jb-accent-hover) !important;}',
+    '.jb-root .jb-send:active{background:var(--jb-accent-pressed) !important;}',
+    '.jb-root .jb-send[disabled]{opacity:0.5 !important;}',
     '.jb-root .jb-chat-confirm-yes{background:var(--jb-danger-solid) !important;',
     'color:#FFFFFF !important;border-color:var(--jb-danger-solid) !important;}',
     '@media (hover: none),(pointer: coarse){',
