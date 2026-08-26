@@ -229,7 +229,10 @@ describe('S4.1 — the tier CSS is keyed to the classes, per rule', () => {
     expect(declOf('.jb-root.jb-w-mid .jb-form', 'padding')).toBe('10px');
     expect(declOf('.jb-root.jb-w-mid .jb-send', 'width')).toBe('40px');
     // And narrows the rail, which is where the conversation's width goes.
-    expect(declOf('.jb-root.jb-w-mid .jb-side', 'width')).toBe('184px');
+    // Now a token: the rail holds type, so its width rides --jb-font-base like
+    // the padding does. calc(base * 11.5) is exactly 184px at base 16, so the
+    // tier still narrows by the same amount it always did at the old base.
+    expect(declOf('.jb-root.jb-w-mid .jb-side', 'width')).toBe('var(--jb-rail-w-mid)');
   });
 
   it('S4.1: the floor — min-width 300px on the root itself', () => {

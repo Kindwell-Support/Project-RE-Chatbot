@@ -98,6 +98,11 @@
          16 -> 10px    17 -> 10.625px    18 -> 11.25px            */
     '--jb-rail-inset:calc(var(--jb-font-base) * 0.625);',
     '--jb-rail-inset-sm:calc(var(--jb-rail-inset) * 0.5);',
+    /* RAIL WIDTH on the knob, same correction as the inset. The rail holds
+       type; when the type grew the rail did not, so titles cut at ~17
+       characters. 13.5/11.5 give exactly today's 216/184 at base 16. */
+    '--jb-rail-w:calc(var(--jb-font-base) * 13.5);',
+    '--jb-rail-w-mid:calc(var(--jb-font-base) * 11.5);',
     /* TEXT-ENTRY FLOOR -- DO NOT COLLAPSE THIS TO var(--jb-font-md).
        Mobile Safari zooms the entire page when a focused input computes
        below 16px, and the host page is GHL's, so the zoom is not ours to
@@ -342,7 +347,7 @@
        width. */
     '.jb-root.jb-w-mid .jb-form{margin:0 8px 8px;padding:10px;gap:8px;}',
     '.jb-root.jb-w-mid .jb-send{width:40px;height:40px;}',
-    '.jb-root.jb-w-mid .jb-side{width:184px;flex-basis:184px;}',
+    '.jb-root.jb-w-mid .jb-side{width:var(--jb-rail-w-mid);flex-basis:var(--jb-rail-w-mid);}',
     '.jb-root.jb-w-mid .jb-bubble{max-width:92%;}',
     '.jb-root.jb-w-narrow{--jb-blur:14px;}',
     '.jb-root.jb-w-narrow .jb-bubble{font-size:var(--jb-font-md);}',
@@ -378,7 +383,7 @@
        surface, and it never competes with the message box for attention. */
     '.jb-body{display:flex;flex:1 1 auto;min-height:0;}',
     '.jb-main{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;min-height:0;}',
-    '.jb-side{display:flex;flex-direction:column;width:216px;flex:0 0 216px;min-height:0;',
+    '.jb-side{display:flex;flex-direction:column;width:var(--jb-rail-w);flex:0 0 var(--jb-rail-w);min-height:0;',
     'border-right:1px solid var(--jb-glass-border);background:rgba(255,255,255,0.02);',
     'transition:width 160ms var(--jb-ease),flex-basis 160ms var(--jb-ease);overflow:hidden;}',
     /* Collapsed is width:0, not display:none — the rail animates shut and its
@@ -390,8 +395,8 @@
     'border:none;transition:background 140ms var(--jb-ease);}',
     '.jb-new:hover{background:var(--jb-accent-hover);}',
     '.jb-new:active{background:var(--jb-accent-pressed);}',
-    '.jb-side-list{flex:1 1 auto;overflow-y:auto;padding:0 var(--jb-rail-inset) 10px;min-height:0;}',
-    '.jb-chat-row{display:flex;align-items:center;gap:2px;border-radius:8px;margin-bottom:2px;}',
+    '.jb-side-list{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:0 var(--jb-rail-inset) 10px;min-height:0;}',
+    '.jb-chat-row{display:flex;align-items:center;gap:2px;border-radius:8px;margin-bottom:2px;min-width:0;max-width:100%;}',
     '.jb-chat-row:hover{background:rgba(255,255,255,0.05);}',
     '.jb-chat-active{background:rgba(247,178,17,0.14);}',
     '.jb-chat-open{flex:1 1 auto;min-width:0;text-align:left;background:none;border:none;cursor:pointer;',
@@ -400,11 +405,15 @@
        action buttons are flex SIBLINGS and occupy layout even at opacity:0,
        so this pushes the title away from them, never underneath. */
     'font:inherit;font-size:var(--jb-font-xs);color:var(--jb-text-secondary);padding:8px var(--jb-rail-inset);',
-    'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    'white-space:normal;overflow:hidden;}',
     /* S3.1/S3.2 — row identity. The title and its timestamp stack inside the
        open button so the whole row surface stays one tap target; the time is
        part of the row's identity, not a separate control. */
-    '.jb-chat-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}',
+    /* Two lines, clamped. -webkit-line-clamp is the only cross-browser way
+       to ellipsise a MULTI-line block; it needs all four of display,
+       box-orient, overflow and a normal white-space to work. */
+    '.jb-chat-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;',
+    'overflow:hidden;white-space:normal;overflow-wrap:anywhere;font-weight:600;}',
     '.jb-chat-time{display:block;font-size:var(--jb-font-xs);line-height:var(--jb-line-tight);color:var(--jb-text-tertiary);margin-top:1px;font-weight:400;}',
     /* The EPHEMERAL placeholder reads as a different kind of thing from a real
        row whose title merely has not arrived: italic, dimmed, and no
@@ -446,7 +455,8 @@
     '.jb-chat-confirm-yes:focus-visible,.jb-chat-confirm-no:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:1px;}',
     /* A destructive control needs a real tap target where there is no cursor. */
     '@media (hover: none),(pointer: coarse){.jb-chat-confirm-yes,.jb-chat-confirm-no{padding:8px 10px;}}',
-    '.jb-chat-rename-input{flex:1 1 auto;min-width:0;font:inherit;font-size:var(--jb-font-xs);padding:6px;',
+    '.jb-chat-rename-input{flex:1 1 auto;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;',
+    'font-size:var(--jb-font-xs);padding:6px var(--jb-rail-inset-sm);',
     'border-radius:6px;border:1px solid var(--jb-glass-edge);background:var(--jb-bg-sunken);',
     'color:var(--jb-text-primary);}',
     '.jb-side-toggle{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px 6px;margin-right:2px;',
@@ -524,13 +534,13 @@
     /* S4.2 — below the narrow tier the rail is a DRAWER: closed by default,
        slid in by the header toggle, dismissed by scrim tap, outside click, or
        Escape. The old behaviour had no scrim and no exit but the toggle. */
-    '.jb-root.jb-w-narrow .jb-side{position:absolute;z-index:3;height:100%;width:216px;flex-basis:216px;',
+    '.jb-root.jb-w-narrow .jb-side{position:absolute;z-index:3;height:100%;width:var(--jb-rail-w);flex-basis:var(--jb-rail-w);',
     'background:var(--jb-bg-raised);box-shadow:0 8px 32px rgba(0,0,0,0.45);',
     'transform:translateX(-105%);transition:transform 200ms var(--jb-ease);}',
     '.jb-root.jb-w-narrow.jb-drawer-open .jb-side{transform:translateX(0);}',
     /* The desktop collapse preference must not leave a width-0 drawer: at
        narrow, the transform is the only thing that hides the rail. */
-    '.jb-root.jb-w-narrow .jb-side.jb-side-collapsed{width:216px;flex-basis:216px;border-right:1px solid var(--jb-glass-border);}',
+    '.jb-root.jb-w-narrow .jb-side.jb-side-collapsed{width:var(--jb-rail-w);flex-basis:var(--jb-rail-w);border-right:1px solid var(--jb-glass-border);}',
     '.jb-root.jb-w-narrow .jb-body{position:relative;}',
     /* The scrim: sits between the conversation and the drawer, tap closes.
        Display-gated on BOTH classes so it can never shade a wide layout. */
@@ -609,11 +619,14 @@
     'min-width:0 !important;overflow:hidden !important;line-height:var(--jb-line-tight) !important;',
     'padding:8px var(--jb-rail-inset) !important;}',
     '.jb-root .jb-chat-title{max-width:100% !important;overflow:hidden !important;',
-    'text-overflow:ellipsis !important;white-space:nowrap !important;}',
+    'white-space:normal !important;display:-webkit-box !important;',
+    '-webkit-line-clamp:2 !important;-webkit-box-orient:vertical !important;}',
     '.jb-root .jb-chat-active .jb-chat-open{font-weight:600 !important;}',
     '.jb-root .jb-chat-act{font-size:var(--jb-font-xs) !important;line-height:1 !important;',
     'padding:4px var(--jb-rail-inset-sm) !important;}',
-    '.jb-root .jb-chat-rename-input{font-size:var(--jb-font-xs) !important;}',
+    '.jb-root .jb-chat-rename-input{font-size:var(--jb-font-xs) !important;min-width:0 !important;',
+    'max-width:100% !important;box-sizing:border-box !important;',
+    'padding:6px var(--jb-rail-inset-sm) !important;}',
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
     'font-size:var(--jb-font-xs) !important;font-weight:700 !important;padding:5px 12px !important;}',
     '.jb-root .jb-chat-confirm-yes{background:var(--jb-danger-solid) !important;',
