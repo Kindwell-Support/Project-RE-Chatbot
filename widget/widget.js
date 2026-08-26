@@ -89,6 +89,15 @@
     '--jb-font-lg:calc(var(--jb-font-base) * 1.125);',
     '--jb-font-xl:calc(var(--jb-font-base) * 1.25);',
     '--jb-line-tight:1.35;--jb-line-body:1.55;',
+    /* RAIL INSET — padding on the knob, not beside it. The type scaled and
+       these did not, so the frame shrank against its text at every step.
+       ONE value for both insets: the pill sits --jb-rail-inset from the
+       rail edge and the text sits --jb-rail-inset inside the pill, which
+       is what stops the highlighted row reading as flush. 0.625 gives
+       exactly today's 10px at base 16, so the old base is unchanged.
+         16 -> 10px    17 -> 10.625px    18 -> 11.25px            */
+    '--jb-rail-inset:calc(var(--jb-font-base) * 0.625);',
+    '--jb-rail-inset-sm:calc(var(--jb-rail-inset) * 0.5);',
     /* TEXT-ENTRY FLOOR -- DO NOT COLLAPSE THIS TO var(--jb-font-md).
        Mobile Safari zooms the entire page when a focused input computes
        below 16px, and the host page is GHL's, so the zoom is not ours to
@@ -375,13 +384,13 @@
     /* Collapsed is width:0, not display:none — the rail animates shut and its
        controls leave the tab order with it. */
     '.jb-side-collapsed{width:0;flex-basis:0;border-right:none;}',
-    '.jb-side-top{padding:10px;flex:0 0 auto;}',
-    '.jb-new{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:9px;cursor:pointer;',
+    '.jb-side-top{padding:10px var(--jb-rail-inset);flex:0 0 auto;}',
+    '.jb-new{width:100%;box-sizing:border-box;padding:8px var(--jb-rail-inset);border-radius:9px;cursor:pointer;',
     'font:inherit;font-size:var(--jb-font-xs);font-weight:650;color:var(--jb-on-accent);background:var(--jb-accent);',
     'border:none;transition:background 140ms var(--jb-ease);}',
     '.jb-new:hover{background:var(--jb-accent-hover);}',
     '.jb-new:active{background:var(--jb-accent-pressed);}',
-    '.jb-side-list{flex:1 1 auto;overflow-y:auto;padding:0 6px 10px;min-height:0;}',
+    '.jb-side-list{flex:1 1 auto;overflow-y:auto;padding:0 var(--jb-rail-inset) 10px;min-height:0;}',
     '.jb-chat-row{display:flex;align-items:center;gap:2px;border-radius:8px;margin-bottom:2px;}',
     '.jb-chat-row:hover{background:rgba(255,255,255,0.05);}',
     '.jb-chat-active{background:rgba(247,178,17,0.14);}',
@@ -390,7 +399,7 @@
        inside the row's rounded hover outline instead of grazing it. The
        action buttons are flex SIBLINGS and occupy layout even at opacity:0,
        so this pushes the title away from them, never underneath. */
-    'font:inherit;font-size:var(--jb-font-xs);color:var(--jb-text-secondary);padding:8px 10px;',
+    'font:inherit;font-size:var(--jb-font-xs);color:var(--jb-text-secondary);padding:8px var(--jb-rail-inset);',
     'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
     /* S3.1/S3.2 — row identity. The title and its timestamp stack inside the
        open button so the whole row surface stays one tap target; the time is
@@ -402,7 +411,7 @@
        timestamp (it has no last_message_at — nothing has happened in it). */
     '.jb-chat-pending .jb-chat-title{font-style:italic;color:var(--jb-text-tertiary);}',
     '.jb-chat-active .jb-chat-open{color:var(--jb-text-primary);font-weight:600;}',
-    '.jb-chat-act{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px 5px;border-radius:6px;',
+    '.jb-chat-act{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px var(--jb-rail-inset-sm);border-radius:6px;',
     'color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-xs);line-height:1;opacity:0;',
     'transition:opacity 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
     /* Row actions appear on hover or keyboard focus — focus-within is what
@@ -451,7 +460,7 @@
        as long as the request took. A skeleton is deliberately inert: no text
        to misread, no control to click, and aria-hidden so a screen reader is
        not handed three meaningless rows (the list carries aria-busy instead). */
-    '.jb-skel-row{display:flex;align-items:center;padding:8px 6px;margin-bottom:2px;}',
+    '.jb-skel-row{display:flex;align-items:center;padding:8px var(--jb-rail-inset);margin-bottom:2px;}',
     '.jb-skel{height:9px;border-radius:5px;background:rgba(255,255,255,0.09);',
     'position:relative;overflow:hidden;display:block;}',
     '.jb-skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);',
@@ -595,13 +604,15 @@
     '.jb-root .jb-side-retry{font-size:var(--jb-font-xs) !important;font-weight:700 !important;',
     'line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-new{font-size:var(--jb-font-xs) !important;font-weight:650 !important;',
-    'line-height:var(--jb-line-tight) !important;}',
+    'line-height:var(--jb-line-tight) !important;padding:8px var(--jb-rail-inset) !important;}',
     '.jb-root .jb-chat-open{font-size:var(--jb-font-xs) !important;text-align:left !important;',
-    'min-width:0 !important;overflow:hidden !important;line-height:var(--jb-line-tight) !important;}',
+    'min-width:0 !important;overflow:hidden !important;line-height:var(--jb-line-tight) !important;',
+    'padding:8px var(--jb-rail-inset) !important;}',
     '.jb-root .jb-chat-title{max-width:100% !important;overflow:hidden !important;',
     'text-overflow:ellipsis !important;white-space:nowrap !important;}',
     '.jb-root .jb-chat-active .jb-chat-open{font-weight:600 !important;}',
-    '.jb-root .jb-chat-act{font-size:var(--jb-font-xs) !important;line-height:1 !important;}',
+    '.jb-root .jb-chat-act{font-size:var(--jb-font-xs) !important;line-height:1 !important;',
+    'padding:4px var(--jb-rail-inset-sm) !important;}',
     '.jb-root .jb-chat-rename-input{font-size:var(--jb-font-xs) !important;}',
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
     'font-size:var(--jb-font-xs) !important;font-weight:700 !important;padding:5px 12px !important;}',
