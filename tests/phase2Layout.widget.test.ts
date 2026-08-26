@@ -241,7 +241,8 @@ describe('S4.1 — the tier CSS is keyed to the classes, per rule', () => {
 
   it('the consolidated 520/360 tweaks landed in narrow/tight', () => {
     boot();
-    expect(declOf('.jb-root.jb-w-narrow .jb-head', 'font-size')).toBe('18px');
+    // Now a token: the narrow-mode header is one step down from --jb-font-xl.
+    expect(declOf('.jb-root.jb-w-narrow .jb-head', 'font-size')).toBe('var(--jb-font-lg)');
     expect(declOf('.jb-root.jb-w-tight .jb-send', 'width')).toBe('42px');
   });
 });

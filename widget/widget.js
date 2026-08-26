@@ -77,6 +77,26 @@
     '--jb-accent:#F7B211;--jb-accent-hover:#FFC53D;--jb-accent-pressed:#D99A0A;--jb-on-accent:#0A0A0B;',
     '--jb-glass-fill:rgba(255,255,255,0.055);--jb-glass-border:rgba(255,255,255,0.10);--jb-glass-edge:rgba(255,255,255,0.22);',
     '--jb-danger:#FF6B5A;--jb-danger-solid:#D93025;',
+    /* TYPE SCALE -- ONE KNOB. Change --jb-font-base and the whole sheet
+       moves: every font-size below is a token, never a literal. px only,
+       because rem would resolve against the HOST page's <html>, which GHL
+       controls; em on nested elements would compound; transform:scale()
+       would blur text and break hit-target and scroll math. */
+    '--jb-font-base:18px;',
+    '--jb-font-xs:calc(var(--jb-font-base) * 0.75);',
+    '--jb-font-sm:calc(var(--jb-font-base) * 0.875);',
+    '--jb-font-md:var(--jb-font-base);',
+    '--jb-font-lg:calc(var(--jb-font-base) * 1.125);',
+    '--jb-font-xl:calc(var(--jb-font-base) * 1.25);',
+    '--jb-line-tight:1.35;--jb-line-body:1.55;',
+    /* TEXT-ENTRY FLOOR -- DO NOT COLLAPSE THIS TO var(--jb-font-md).
+       Mobile Safari zooms the entire page when a focused input computes
+       below 16px, and the host page is GHL's, so the zoom is not ours to
+       undo. --jb-font-base is a knob someone will eventually turn DOWN;
+       max() means doing so cannot reintroduce that bug. Above 16px the
+       control tracks the scale normally. Applies to the text-entry
+       controls only -- buttons do not trigger the zoom. */
+    '--jb-font-control:max(16px, var(--jb-font-md));',
     /* §11 token swap: user bubbles are amber, James stays neutral glass. To put
        amber on ALL bubbles, point --jb-bot-* at the accent here — one place. */
     '--jb-user-bg:var(--jb-accent);--jb-user-text:var(--jb-on-accent);',
@@ -95,7 +115,7 @@
        widget from page. Radius kept. */
     'background:var(--jb-bg-base);border-radius:var(--jb-radius);',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;',
-    'font-size:15px;line-height:1.6;letter-spacing:normal;color:var(--jb-text-primary);',
+    'font-size:var(--jb-font-md);line-height:var(--jb-line-body);letter-spacing:normal;color:var(--jb-text-primary);',
     'font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;',
     '}',
     /* Reset inherited box model so host CSS can't distort our layout. */
@@ -138,7 +158,7 @@
     /* --- Layout: header / list / composer sit above the orbs ------------------ */
     '.jb-head,.jb-list,.jb-form{position:relative;z-index:1;}',
     '.jb-head{display:flex;align-items:center;gap:10px;padding:14px 18px;flex:0 0 auto;',
-    'border-radius:0;border-left:none;border-right:none;border-top:none;font-weight:600;font-size:20px;letter-spacing:-0.01em;',
+    'border-radius:0;border-left:none;border-right:none;border-top:none;font-weight:600;font-size:var(--jb-font-xl);line-height:var(--jb-line-tight);letter-spacing:-0.01em;',
     /* V-2: drop the inset top highlight, KEEP the drop shadow — with the
        highlight gone the shadow is the only thing separating header from
        transcript, and losing both would flatten them together. Overridden
@@ -151,13 +171,13 @@
     'box-shadow:0 0 0 0 rgba(247,178,17,0.5);animation:jb-pulse-dot 3.4s var(--jb-ease) infinite;}',
     '@keyframes jb-pulse-dot{0%{box-shadow:0 0 0 0 rgba(247,178,17,0.45);}70%{box-shadow:0 0 0 7px rgba(247,178,17,0);}100%{box-shadow:0 0 0 0 rgba(247,178,17,0);}}',
 
-    '.jb-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:18px 16px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch;}',
+    '.jb-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:18px 16px;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch;}',
 
     /* --- Message bubbles (flat translucent fills — glass is reserved for chrome) */
     '.jb-row{display:flex;animation:jb-in 220ms var(--jb-ease) both;}',
     '.jb-row.jb-user{justify-content:flex-end;}',
     '@keyframes jb-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}',
-    '.jb-bubble{max-width:86%;padding:11px 15px;font-size:15px;line-height:1.6;word-break:break-word;overflow-wrap:anywhere;border-radius:var(--jb-radius);}',
+    '.jb-bubble{max-width:86%;padding:13px 17px;font-size:var(--jb-font-md);line-height:var(--jb-line-body);word-break:break-word;overflow-wrap:anywhere;border-radius:var(--jb-radius);}',
     '.jb-bot .jb-bubble{background:var(--jb-bot-bg);color:var(--jb-bot-text);border:1px solid var(--jb-bot-border);',
     'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
     '.jb-user .jb-bubble{background:var(--jb-user-bg);color:var(--jb-user-text);border-top-right-radius:5px;white-space:pre-wrap;font-weight:500;}',
@@ -170,13 +190,13 @@
        valuable content — collapse into unspaced text. */
     '.jb-bubble p{margin:0 0 8px !important;}',
     '.jb-bubble p:last-child{margin-bottom:0 !important;}',
-    '.jb-bubble h4{margin:12px 0 6px;font-size:15px;font-weight:700;letter-spacing:-0.01em;}',
+    '.jb-bubble h4{margin:12px 0 6px;font-size:var(--jb-font-md);font-weight:700;letter-spacing:-0.01em;}',
     '.jb-bubble h4:first-child{margin-top:0;}',
     '.jb-bubble ul{margin:0 0 8px;padding-left:18px;}',
     '.jb-bubble ul:last-child{margin-bottom:0;}',
     '.jb-bubble li{margin:3px 0;}',
     '.jb-bubble li::marker{color:var(--jb-accent);}',
-    '.jb-bubble code{background:var(--jb-bg-sunken);padding:1px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;}',
+    '.jb-bubble code{background:var(--jb-bg-sunken);padding:1px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--jb-font-xs);}',
     '.jb-bubble strong{font-weight:700;color:#fff;}',
     /* The lead figure the count-up lands on — confident, tabular, amber. */
     '.jb-fig{font-weight:650;letter-spacing:-0.01em;color:var(--jb-accent);font-variant-numeric:tabular-nums;}',
@@ -185,7 +205,7 @@
     '.jb-think-row{display:flex;}',
     '.jb-think{display:inline-flex;align-items:center;gap:10px;padding:11px 15px;border-radius:var(--jb-radius);',
     'background:var(--jb-bot-bg);border:1px solid var(--jb-bot-border);border-left:2px solid var(--jb-accent);border-top-left-radius:5px;',
-    'color:var(--jb-text-secondary);font-size:14px;}',
+    'color:var(--jb-text-secondary);font-size:var(--jb-font-sm);}',
     '.jb-think-dots{display:inline-flex;gap:4px;}',
     '.jb-think-dots i{width:6px;height:6px;border-radius:50%;background:var(--jb-accent);opacity:0.5;animation:jb-blink 1.2s var(--jb-ease) infinite;}',
     '.jb-think-dots i:nth-child(2){animation-delay:0.18s;}',
@@ -196,7 +216,7 @@
     '.jb-form{display:flex;gap:10px;align-items:center;padding:12px;flex:0 0 auto;margin:0 10px 10px;border-radius:14px;}',
     /* 16px font keeps iOS Safari from zooming the page on focus. */
     '.jb-input{flex:1 1 auto;min-width:0;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:16px;font-family:inherit;outline:none;transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
     '.jb-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-input::placeholder{color:var(--jb-text-tertiary);}',
     '.jb-send{flex:0 0 auto;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;',
@@ -214,47 +234,47 @@
     '.jb-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}',
 
     '.jb-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:8px;padding:6px 13px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
+    'border-radius:8px;padding:6px 13px;font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
 
     /* --- Inline calculator form (glass card inset into the thread) ----------- */
     '.jb-calc{max-width:100%;width:100%;border-radius:16px;padding:16px;animation:jb-card-in 320ms var(--jb-ease) both;}',
     '@keyframes jb-card-in{from{opacity:0;transform:scale(0.98);}to{opacity:1;transform:scale(1);}}',
-    '.jb-calc-title{font-weight:700;font-size:15px;letter-spacing:-0.01em;margin:0 0 4px;color:var(--jb-text-primary);}',
-    '.jb-calc-sub{color:var(--jb-text-secondary);font-size:13px;margin:0 0 14px;}',
+    '.jb-calc-title{font-weight:700;font-size:var(--jb-font-md);letter-spacing:-0.01em;margin:0 0 4px;color:var(--jb-text-primary);}',
+    '.jb-calc-sub{color:var(--jb-text-secondary);font-size:var(--jb-font-sm);margin:0 0 14px;}',
     '.jb-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}',
-    '.jb-label{font-size:13px;letter-spacing:0.01em;color:var(--jb-text-secondary);font-weight:600;}',
+    '.jb-label{font-size:var(--jb-font-sm);letter-spacing:0.01em;color:var(--jb-text-secondary);font-weight:600;}',
     '.jb-req{color:var(--jb-accent);margin-left:3px;}',
     '.jb-unit{color:var(--jb-text-tertiary);font-weight:400;}',
     '.jb-control{width:100%;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:16px;font-family:inherit;outline:none;',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;',
     'transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
     '.jb-control:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-control[aria-invalid="true"]{border-color:var(--jb-danger);box-shadow:0 0 0 3px rgba(255,107,90,0.18);}',
     '.jb-adv{margin:4px 0 14px;}',
-    '.jb-adv-toggle{background:transparent;border:none;color:var(--jb-accent);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;padding:5px 0;}',
+    '.jb-adv-toggle{background:transparent;border:none;color:var(--jb-accent);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;padding:5px 0;}',
     '.jb-adv-toggle:hover{color:var(--jb-accent-hover);}',
     '.jb-adv-body{margin-top:12px;padding-top:12px;border-top:1px solid var(--jb-glass-border);}',
     '.jb-calc-actions{display:flex;gap:10px;align-items:center;margin-top:4px;}',
     '.jb-btn{border:none;border-radius:10px;padding:11px 20px;background:var(--jb-accent);color:var(--jb-on-accent);',
-    'font-weight:700;font-size:14px;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);',
+    'font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);',
     'display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:118px;}',
     '.jb-btn:hover{background:var(--jb-accent-hover);}',
     '.jb-btn:active{transform:scale(0.97);background:var(--jb-accent-pressed);}',
     '.jb-btn:focus-visible,.jb-calc-cancel:focus-visible,.jb-adv-toggle:focus-visible,.jb-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
     '.jb-calc-cancel{background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--jb-text-secondary);',
-    'border-radius:10px;padding:11px 16px;font-size:14px;font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
+    'border-radius:10px;padding:11px 16px;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-calc-cancel:hover{border-color:var(--jb-text-secondary);color:var(--jb-text-primary);}',
-    '.jb-calc-error{color:var(--jb-danger);font-size:12.5px;margin-top:10px;}',
+    '.jb-calc-error{color:var(--jb-danger);font-size:var(--jb-font-sm);margin-top:10px;}',
     /* Session ARV pre-fill note — amber-tinted so it reads as the system
        having done work for you, with the bound address always visible. */
-    '.jb-prefill-note{margin-top:5px;font-size:12px;line-height:1.45;color:var(--jb-accent);opacity:0.92;}',
+    '.jb-prefill-note{margin-top:5px;font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-accent);opacity:0.92;}',
     // Only-a-link lines render as buttons (§14.18) — same anchor semantics,
     // button presentation. Colors ride the existing accent variable.
     '.jb-btnrow{margin:6px 0 4px;}',
     // Text rides --jb-on-accent (near-black), the widget's own token for
     // text on the amber accent — white was wrong against #F7B211.
-    '.jb-btn-link{display:inline-block;padding:6px 14px;border-radius:8px;background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:12.5px;font-weight:600;line-height:1.4;}',
+    '.jb-btn-link{display:inline-block;padding:6px 14px;border-radius:8px;background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:var(--jb-font-sm);font-weight:600;line-height:var(--jb-line-tight);}',
     '.jb-btn-link:hover{opacity:0.88;}',
     /* Disabled controls during a run: readable, obviously inert, not greyed to
        the point the member thinks the card broke. */
@@ -277,7 +297,7 @@
        register as working, which is the whole point of the state. */
     '.jb-pending{max-width:100%;width:100%;border-radius:16px;padding:16px;animation:jb-card-in 320ms var(--jb-ease) both;',
     'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
-    '.jb-pending-head{display:flex;align-items:center;gap:10px;color:var(--jb-text-primary);font-size:13px;font-weight:600;margin-bottom:14px;}',
+    '.jb-pending-head{display:flex;align-items:center;gap:10px;color:var(--jb-text-primary);font-size:var(--jb-font-sm);font-weight:600;margin-bottom:14px;}',
     /* Full-strength amber dots here (the ambient .jb-think-dots sit at 0.5). */
     '.jb-pending .jb-think-dots i{opacity:0.9;}',
     '.jb-pending-bars{display:flex;flex-direction:column;gap:10px;}',
@@ -316,9 +336,9 @@
     '.jb-root.jb-w-mid .jb-side{width:184px;flex-basis:184px;}',
     '.jb-root.jb-w-mid .jb-bubble{max-width:92%;}',
     '.jb-root.jb-w-narrow{--jb-blur:14px;}',
-    '.jb-root.jb-w-narrow .jb-bubble{font-size:14.5px;}',
+    '.jb-root.jb-w-narrow .jb-bubble{font-size:var(--jb-font-md);}',
     '.jb-root.jb-w-narrow .jb-list{padding:14px 12px;}',
-    '.jb-root.jb-w-narrow .jb-head{font-size:18px;padding:13px 15px;}',
+    '.jb-root.jb-w-narrow .jb-head{font-size:var(--jb-font-lg);padding:13px 15px;}',
     '.jb-root.jb-w-narrow .jb-calc{padding:13px;}',
     '.jb-root.jb-w-tight .jb-form{gap:8px;padding:10px;}',
     '.jb-root.jb-w-tight .jb-send{width:42px;height:42px;}',
@@ -357,7 +377,7 @@
     '.jb-side-collapsed{width:0;flex-basis:0;border-right:none;}',
     '.jb-side-top{padding:10px;flex:0 0 auto;}',
     '.jb-new{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:9px;cursor:pointer;',
-    'font:inherit;font-size:12.5px;font-weight:650;color:var(--jb-on-accent);background:var(--jb-accent);',
+    'font:inherit;font-size:var(--jb-font-xs);font-weight:650;color:var(--jb-on-accent);background:var(--jb-accent);',
     'border:none;transition:background 140ms var(--jb-ease);}',
     '.jb-new:hover{background:var(--jb-accent-hover);}',
     '.jb-new:active{background:var(--jb-accent-pressed);}',
@@ -370,20 +390,20 @@
        inside the row's rounded hover outline instead of grazing it. The
        action buttons are flex SIBLINGS and occupy layout even at opacity:0,
        so this pushes the title away from them, never underneath. */
-    'font:inherit;font-size:12.5px;color:var(--jb-text-secondary);padding:8px 10px;',
+    'font:inherit;font-size:var(--jb-font-xs);color:var(--jb-text-secondary);padding:8px 10px;',
     'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
     /* S3.1/S3.2 — row identity. The title and its timestamp stack inside the
        open button so the whole row surface stays one tap target; the time is
        part of the row's identity, not a separate control. */
-    '.jb-chat-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
-    '.jb-chat-time{display:block;font-size:10.5px;line-height:1.3;color:var(--jb-text-tertiary);margin-top:1px;font-weight:400;}',
+    '.jb-chat-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}',
+    '.jb-chat-time{display:block;font-size:var(--jb-font-xs);line-height:var(--jb-line-tight);color:var(--jb-text-tertiary);margin-top:1px;font-weight:400;}',
     /* The EPHEMERAL placeholder reads as a different kind of thing from a real
        row whose title merely has not arrived: italic, dimmed, and no
        timestamp (it has no last_message_at — nothing has happened in it). */
     '.jb-chat-pending .jb-chat-title{font-style:italic;color:var(--jb-text-tertiary);}',
     '.jb-chat-active .jb-chat-open{color:var(--jb-text-primary);font-weight:600;}',
     '.jb-chat-act{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px 5px;border-radius:6px;',
-    'color:var(--jb-text-tertiary);font:inherit;font-size:12px;line-height:1;opacity:0;',
+    'color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-xs);line-height:1;opacity:0;',
     'transition:opacity 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
     /* Row actions appear on hover or keyboard focus — focus-within is what
        keeps them reachable without a mouse. */
@@ -400,10 +420,16 @@
     /* S2.2 — the in-widget delete confirmation. Replaces the row contents the
        way the rename input already does, so the control is anchored ON the row
        it acts on and needs no space for a title it cannot fit at 216px. */
-    '.jb-chat-confirm{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:3px 4px 3px 6px;}',
-    '.jb-chat-confirm-q{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
-    'font-size:12px;color:var(--jb-text-secondary);}',
-    '.jb-chat-confirm-yes,.jb-chat-confirm-no{flex:0 0 auto;font:inherit;font-size:11.5px;font-weight:700;',
+    /* At base 18 the two buttons alone want ~142px of a 161px content box on
+       the .jb-w-mid rail, so on one line the question is squeezed to 10px of
+       ellipsis and still eats a gap. The ROW is constrained instead of the
+       type: the question takes its own line and the buttons keep full-scale
+       labels. A destructive control abbreviated to "Del..." would be a worse
+       answer than a two-line row in a scrollable rail. */
+    '.jb-chat-confirm{display:flex;align-items:center;flex-wrap:wrap;gap:8px;width:100%;min-width:0;padding:3px 4px 3px 6px;}',
+    '.jb-chat-confirm-q{flex:1 1 100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
+    'font-size:var(--jb-font-xs);color:var(--jb-text-secondary);}',
+    '.jb-chat-confirm-yes,.jb-chat-confirm-no{flex:0 0 auto;font:inherit;font-size:var(--jb-font-xs);font-weight:700;',
     'border-radius:6px;padding:5px 12px;cursor:pointer;border:1px solid transparent;}',
     '.jb-chat-confirm-yes{background:var(--jb-danger-solid);color:#FFFFFF;border-color:var(--jb-danger-solid);}',
     '.jb-chat-confirm-no{background:transparent;color:var(--jb-text-secondary);border-color:var(--jb-glass-border);}',
@@ -411,13 +437,13 @@
     '.jb-chat-confirm-yes:focus-visible,.jb-chat-confirm-no:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:1px;}',
     /* A destructive control needs a real tap target where there is no cursor. */
     '@media (hover: none),(pointer: coarse){.jb-chat-confirm-yes,.jb-chat-confirm-no{padding:8px 10px;}}',
-    '.jb-chat-rename-input{flex:1 1 auto;min-width:0;font:inherit;font-size:12.5px;padding:6px;',
+    '.jb-chat-rename-input{flex:1 1 auto;min-width:0;font:inherit;font-size:var(--jb-font-xs);padding:6px;',
     'border-radius:6px;border:1px solid var(--jb-glass-edge);background:var(--jb-bg-sunken);',
     'color:var(--jb-text-primary);}',
     '.jb-side-toggle{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px 6px;margin-right:2px;',
-    'border-radius:6px;color:var(--jb-text-tertiary);font:inherit;font-size:14px;line-height:1;}',
+    'border-radius:6px;color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-sm);line-height:1;}',
     '.jb-side-toggle:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
-    '.jb-side-empty{padding:10px 8px;font-size:12px;color:var(--jb-text-tertiary);}',
+    '.jb-side-empty{padding:10px 8px;font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);}',
 
     /* --- Honest loading (S1.1/S1.2/S1.3) -----------------------------------
        Three states, three appearances. The rail used to collapse all three
@@ -437,7 +463,7 @@
     '.jb-skel-a{width:82%;}.jb-skel-b{width:64%;}.jb-skel-c{width:47%;}',
     '.jb-skel-b::after{animation-delay:150ms;}',
     '.jb-skel-c::after{animation-delay:300ms;}',
-    '.jb-side-error{padding:10px 8px;font-size:12px;line-height:1.45;color:var(--jb-text-secondary);}',
+    '.jb-side-error{padding:10px 8px;font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-text-secondary);}',
 
     /* --- Phase 3: the member gate (S4) ------------------------------------
        The FIRST thing an ungated session sees — the gate replaces the
@@ -446,26 +472,26 @@
        rail, its toggle and the composer. */
     '.jb-root.jb-gated .jb-side,.jb-root.jb-gated .jb-side-toggle,.jb-root.jb-gated .jb-form{display:none;}',
     '.jb-gate{max-width:400px;margin:auto;padding:26px 22px;border-radius:16px;text-align:left;width:100%;}',
-    '.jb-gate-title{font-size:17px;font-weight:700;margin:0 0 6px;color:var(--jb-text-primary);}',
-    '.jb-gate-copy{font-size:13.5px;line-height:1.55;color:var(--jb-text-secondary);margin:0 0 14px;}',
+    '.jb-gate-title{font-size:var(--jb-font-lg);font-weight:700;margin:0 0 6px;color:var(--jb-text-primary);}',
+    '.jb-gate-copy{font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);margin:0 0 14px;}',
     '.jb-gate-row{display:flex;gap:8px;}',
     '.jb-gate-input{flex:1 1 auto;min-width:0;padding:11px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:16px;font-family:inherit;outline:none;}',
+    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;}',
     '.jb-gate-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:10px;padding:11px 18px;background:var(--jb-accent);',
-    'color:var(--jb-on-accent);font-weight:700;font-size:14px;font-family:inherit;cursor:pointer;}',
+    'color:var(--jb-on-accent);font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;}',
     '.jb-gate-btn:hover{background:var(--jb-accent-hover);}',
     '.jb-gate-btn[disabled]{opacity:0.6;cursor:default;}',
     '.jb-gate-btn:focus-visible,.jb-gate-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
     /* The three failure states are DIFFERENT PROBLEMS: copy distinguishes all
        three, and only could-not-check gets a retry control. */
-    '.jb-gate-status{margin:12px 0 0;font-size:13px;line-height:1.5;color:var(--jb-danger);min-height:1em;}',
+    '.jb-gate-status{margin:12px 0 0;font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-danger);min-height:1em;}',
     '.jb-gate-status[data-kind="lookup_failed"]{color:var(--jb-text-secondary);}',
     '.jb-gate-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:8px;padding:6px 13px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;}',
+    'border-radius:8px;padding:6px 13px;font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;}',
     '.jb-gate-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
     '.jb-side-retry{margin-top:8px;background:transparent;border:1px solid var(--jb-accent);',
-    'color:var(--jb-accent);border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;',
+    'color:var(--jb-accent);border-radius:7px;padding:5px 11px;font-size:var(--jb-font-xs);font-weight:700;',
     'font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-side-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
     '.jb-side-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
@@ -552,28 +578,33 @@
        re-assert each control's OWN size at (0,2,0) — two classes — so they
        outrank the (0,1,1) layer. Both sides are !important, so specificity
        decides and source order is NOT relied on (verified, not assumed). */
-    '.jb-root .jb-input,.jb-root .jb-gate-input,.jb-root .jb-control{font-size:16px !important;}',
+    '.jb-root .jb-input,.jb-root .jb-gate-input,.jb-root .jb-control{font-size:var(--jb-font-control) !important;}',
     /* Padding, same (0,2,0) tier. Declared per-control rather than as one
        shared rule because the VERTICAL values legitimately differ (12 vs
        11) and a shared shorthand would flatten that difference. */
     '.jb-root .jb-input{padding:12px 18px !important;}',
     '.jb-root .jb-gate-input{padding:11px 18px !important;}',
-    '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:14px !important;font-weight:700 !important;}',
-    '.jb-root .jb-calc-cancel{font-size:14px !important;}',
-    '.jb-root .jb-adv-toggle{font-size:13px !important;font-weight:700 !important;}',
-    '.jb-root .jb-side-toggle{font-size:14px !important;line-height:1 !important;}',
-    '.jb-root .jb-retry,.jb-root .jb-gate-retry{font-size:12.5px !important;font-weight:700 !important;}',
-    '.jb-root .jb-side-retry{font-size:12px !important;font-weight:700 !important;}',
-    '.jb-root .jb-new{font-size:12.5px !important;font-weight:650 !important;}',
-    '.jb-root .jb-chat-open{font-size:12.5px !important;text-align:left !important;',
-    'min-width:0 !important;overflow:hidden !important;}',
+    '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
+    'line-height:var(--jb-line-tight) !important;}',
+    '.jb-root .jb-calc-cancel{font-size:var(--jb-font-sm) !important;line-height:var(--jb-line-tight) !important;}',
+    '.jb-root .jb-adv-toggle{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
+    'line-height:var(--jb-line-tight) !important;}',
+    '.jb-root .jb-side-toggle{font-size:var(--jb-font-sm) !important;line-height:1 !important;}',
+    '.jb-root .jb-retry,.jb-root .jb-gate-retry{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
+    'line-height:var(--jb-line-tight) !important;}',
+    '.jb-root .jb-side-retry{font-size:var(--jb-font-xs) !important;font-weight:700 !important;',
+    'line-height:var(--jb-line-tight) !important;}',
+    '.jb-root .jb-new{font-size:var(--jb-font-xs) !important;font-weight:650 !important;',
+    'line-height:var(--jb-line-tight) !important;}',
+    '.jb-root .jb-chat-open{font-size:var(--jb-font-xs) !important;text-align:left !important;',
+    'min-width:0 !important;overflow:hidden !important;line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-chat-title{max-width:100% !important;overflow:hidden !important;',
     'text-overflow:ellipsis !important;white-space:nowrap !important;}',
     '.jb-root .jb-chat-active .jb-chat-open{font-weight:600 !important;}',
-    '.jb-root .jb-chat-act{font-size:12px !important;line-height:1 !important;}',
-    '.jb-root .jb-chat-rename-input{font-size:12.5px !important;}',
+    '.jb-root .jb-chat-act{font-size:var(--jb-font-xs) !important;line-height:1 !important;}',
+    '.jb-root .jb-chat-rename-input{font-size:var(--jb-font-xs) !important;}',
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
-    'font-size:11.5px !important;font-weight:700 !important;padding:5px 12px !important;}',
+    'font-size:var(--jb-font-xs) !important;font-weight:700 !important;padding:5px 12px !important;}',
     '.jb-root .jb-chat-confirm-yes{background:var(--jb-danger-solid) !important;',
     'color:#FFFFFF !important;border-color:var(--jb-danger-solid) !important;}',
     '@media (hover: none),(pointer: coarse){',

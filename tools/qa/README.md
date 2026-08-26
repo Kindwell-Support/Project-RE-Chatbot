@@ -1,12 +1,49 @@
 # QA tooling
 
-Two verifiers used to check that assertions are worth what they claim. Both are
-run by hand, not by CI, and both exit non-zero on failure.
+Verifiers used to check that assertions are worth what they claim. All are run
+by hand, not by CI, and all exit non-zero on failure.
 
 ```
 python tools/qa/mutate.py          # do the tests catch the defects they target?
 python tools/qa/p1_identity.py     # are the P1 mechanisms still byte-identical?
+npm run qa:chrome                  # the claims jsdom cannot make honestly
 ```
+
+## PRE-MERGE — required on every branch that touches widget/widget.js
+
+**A merge request for a widget change must paste a clean `npm run qa:chrome`.**
+Not a summary of it, and not "it passed locally" — the output, because the
+verdict lines are the evidence and the examined counts are what distinguish a
+pass from a sweep over an empty set.
+
+```
+npm run qa:chrome
+```
+
+It runs, in order and stopping at the first failure:
+
+| check | the claim it carries |
+| --- | --- |
+| `type_scale_chrome_check.mjs` | every control resolves to its mapped size, against TWO host fixtures (one with `!important`); the `--jb-font-base` floor holds at 16px for text entry; rail hierarchy survives on weight |
+| `bug046_chrome_check.mjs` | percentage resolution and UA form-control defaults |
+| `bug046_placeholder_check.mjs` | the `::placeholder` guard against five host shapes |
+| `input_padding_chrome_check.mjs` | composer geometry at six widths, no overlap with the send button |
+
+**WHY THESE CANNOT LIVE IN `npm test`.** jsdom does not resolve `var()` in
+`font-size`, does not resolve percentages, does no layout, and has no UA
+form-control defaults. Every claim above is one jsdom would either answer
+wrongly or answer vacuously. `npm test` being green says nothing about them —
+which is exactly why the paste is required rather than assumed.
+
+`qa:chrome` **rebuilds the bundle first**. These checks read
+`public/widget.js`, which is gitignored build output; without the rebuild a
+clean run can certify a stale bundle that no longer matches the source it
+claims to verify. Running a check standalone skips that rebuild — `qa:chrome`
+is the sanctioned entry point for exactly this reason.
+
+Requires Chrome at `C:/Program Files/Google/Chrome/Application/chrome.exe`.
+There is no CI on this repo; that gap is filed separately and is not something
+a branch is expected to fix.
 
 **THE MUTATION LOCK — one lock, both drivers, or it is not a lock.** Both
 rigs' drivers mutate the same target on a shared tree, and "the other rig had
