@@ -42,6 +42,37 @@ const CHAT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const CHAT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const CHAT_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
+/**
+ * A token shaped like the real one: base64url(JSON {email,iat,exp}) + '.' + sig.
+ * emailFromToken decodes that payload, so identity CONFIRMATION only exists
+ * against a realistic token — a bare 'token-A' decodes to nothing, which under
+ * the ruled draft rule means "unconfirmed" and clears. Every draft assertion
+ * would then pass for the wrong reason.
+ */
+/** Mints a token whose PAYLOAD carries the string verbatim, normalised or
+ *  not. The real server normalises before minting; the widget must not depend
+ *  on that, which is what makes normaliseEmail's .trim() load-bearing. */
+function tokRaw(payloadEmail: string): string {
+  const payload = { email: payloadEmail, iat: 1, exp: 2 };
+  return (
+    Buffer.from(JSON.stringify(payload), 'utf8')
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '') + '.sig'
+  );
+}
+
+function tok(email: string): string {
+  const payload = { email: String(email).trim().toLowerCase(), iat: 1, exp: 2 };
+  const b64 = Buffer.from(JSON.stringify(payload), 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return b64 + '.sig';
+}
+
 const json = (status: number, body: unknown) => ({
   ok: status >= 200 && status < 300,
   status,
@@ -170,6 +201,51 @@ async function send(text: string) {
   await tick();
 }
 
+/**
+ * EVERY surface that can carry another member's content. Cross-member
+ * assertions are FRAME-LEVEL, not end-state: the composer is refilled
+ * synchronously by startAuthedSession and only cleared later by the reset that
+ * bootChats runs, so an end-state check sees an empty box and misses the frame
+ * where the text was actually on screen.
+ */
+interface Frame {
+  bubbles: string[];
+  composer: string;
+  titles: string[];
+  active: string | null;
+}
+
+const snapshot = (): Frame => ({
+  bubbles: bubbles(),
+  composer: document.querySelector<HTMLInputElement>('#james-bot .jb-input')?.value ?? '',
+  titles: titles(),
+  active: window.localStorage.getItem(ACTIVE_KEY),
+});
+
+/** Run `action` and sample after EVERY tick, not at two points around it. */
+async function frameWatch(action: () => void, steps = 30): Promise<Frame[]> {
+  const frames: Frame[] = [snapshot()];
+  action();
+  frames.push(snapshot()); // the synchronous frame — where the refill happens
+  for (let i = 0; i < steps; i += 1) {
+    await new Promise((r) => setTimeout(r, 0));
+    frames.push(snapshot());
+  }
+  return frames;
+}
+
+function neverCarried(frames: Frame[], needle: string, what: string) {
+  // DEAD GUARD: a watch that captured nothing proves nothing.
+  expect(frames.length, 'no frames captured — this leak check is vacuous').toBeGreaterThan(2);
+  const at = frames.findIndex(
+    (f) =>
+      f.bubbles.join(' ').includes(needle) ||
+      f.composer.includes(needle) ||
+      f.titles.join(' ').includes(needle),
+  );
+  expect(at, what + ' surfaced at frame ' + at + ' of ' + frames.length).toBe(-1);
+}
+
 const FRESH_KEY = 'james-bot-fresh-gate';
 const ACTIVE_KEY = 'james-bot-active-chat';
 
@@ -180,6 +256,32 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 afterEach(() => vi.unstubAllGlobals());
+
+/** Drive A to a materialised chat, then expire the NEXT send. Returns the
+ *  server plus the chat id, so the caller can assert against both owners. */
+async function expireMidThread() {
+  // Decodable tokens: identity confirmation is only meaningful against a
+  // token that names its owner, which is what the real one does.
+  const server = makeServer({
+    tokenFor: { 'a@x.com': tok('a@x.com'), 'b@x.com': tok('b@x.com') },
+    chatsByToken: { [tok('a@x.com')]: [], [tok('b@x.com')]: [{ id: CHAT_C, title: 'B only' }] },
+    expireTokenAfter: { [tok('a@x.com')]: 1 },
+  });
+  mount(server.fetchMock);
+  await tick();
+  await enterEmail('a@x.com');
+  await send('first message');
+  const id = window.localStorage.getItem(ACTIVE_KEY);
+  expect(id, 'precondition: A materialised a chat').toBeTruthy();
+  // A's chat now exists server-side and carries the exchange.
+  server.setChats(tok('a@x.com'), [{ id: id!, title: 'First message' }]);
+  server.setHistory(id!, [
+    { role: 'user', content: 'first message' },
+    { role: 'assistant', content: 'an answer' },
+  ]);
+  await send('draft message');
+  return { server, id: id! };
+}
 
 describe('fresh gate pass — lands on a new chat', () => {
   it('submitting an email with prior chats lands EMPTY, sidebar populated, no new row', async () => {
@@ -347,7 +449,7 @@ describe('fresh gate pass — lands on a new chat', () => {
     expect(server.postedChat().length, 'an empty account wrote a chat').toBe(0);
   });
 
-  it('EXPIRY RECOVERY is exempt: re-auth after a 401 does NOT reset', () => {
+  it('MECHANISM PIN (source-level, NOT behavioural): the exemption is mode AND identity', () => {
     // Found by the existing suite, not predicted by this slice's brief. A
     // token that dies mid-conversation raises the gate in 'expired' mode with
     // the member's unsent text held; re-authenticating there is a
@@ -367,8 +469,13 @@ describe('fresh gate pass — lands on a new chat', () => {
     // overwrite lastAuthEmail.
     // Identity comes off the DYING TOKEN, captured before it is discarded —
     // lastAuthEmail is empty for a member who arrived on a cached token.
+    // These are REGEXES OVER SOURCE. They do not prove behaviour and they do
+    // not count toward mutation catches — the behavioural cases below do.
     expect(WIDGET_SRC, 'the dying token is no longer read for its owner').toMatch(
-      /expiredForEmail = emailFromToken\(authToken\) \|\| normaliseEmail\(lastAuthEmail\);/,
+      /expiredTokenEmail = emailFromToken\(authToken\);/,
+    );
+    expect(WIDGET_SRC, 'the fallback is no longer separated from the decode').toMatch(
+      /expiredForEmail = expiredTokenEmail \|\| normaliseEmail\(lastAuthEmail\);/,
     );
     expect(WIDGET_SRC, 'the recovery email is no longer captured at gate-raise').toMatch(
       /var recoveryEmail = isExpiryRecovery \? expiredForEmail : '';/,
@@ -379,9 +486,10 @@ describe('fresh gate pass — lands on a new chat', () => {
       WIDGET_SRC.replace(/\s+/g, ' '),
       'the exemption no longer requires a matching email',
     ).toContain('isExpiryRecovery && (!recoveryEmail || normaliseEmail(email) === recoveryEmail)');
-    expect(WIDGET_SRC, "a non-recovery no longer clears the previous member's draft").toMatch(
-      /if \(!isRecovery\) \{[\s\S]*pendingResendText = '';/,
-    );
+    expect(
+      WIDGET_SRC.replace(/\s+/g, ' '),
+      'the draft no longer requires POSITIVE identity confirmation',
+    ).toContain('if (!identityConfirmed) pendingResendText = \'\';');
   });
 
 
@@ -416,6 +524,154 @@ describe('fresh gate pass — lands on a new chat', () => {
     expect(pending().length, 'an unknown owner was moved to a new chat').toBe(0);
   });
 
+
+  it('BEHAVIOURAL counterpart: a 401 re-auth by the same member does not reset', async () => {
+    // What the mechanism pin above only asserts in source. Same member, same
+    // address, decodable token: no reset flag, no new chat, conversation kept.
+    const { server } = await expireMidThread();
+    expect(gateTitle(), 'precondition: the gate is in EXPIRED mode').toContain('session ended');
+
+    await enterEmail('a@x.com');
+
+    expect(window.sessionStorage.getItem(FRESH_KEY), 'a same-member re-auth set the reset flag').toBeNull();
+    expect(pending().length, 'a same-member re-auth started a new chat').toBe(0);
+    expect(bubbles().length, 'nothing repainted — the next assertion would be empty').toBeGreaterThan(0);
+    expect(bubbles().join(' '), 'the conversation was lost').toContain('first message');
+    void server;
+  });
+
+  it('UNKNOWN owner: conversation CONTINUES but the draft is CLEARED', async () => {
+    // The ruled decoupling. The transcript is server-scoped, so continuing on
+    // an unverifiable identity costs nothing. The draft is client-only and no
+    // server check can catch a mis-attribution, so it goes.
+    window.sessionStorage.setItem('james-bot-token', 'not-a-decodable-token');
+    const server = makeServer({
+      tokenFor: { 'someone@x.com': 'not-a-decodable-token' },
+      chatsByToken: { 'not-a-decodable-token': [{ id: CHAT_A, title: 'Deal in Tacoma' }] },
+      history: { [CHAT_A]: [{ role: 'user', content: 'yesterday: the numbers' }] },
+      expireTokenAfter: { 'not-a-decodable-token': 0 },
+    });
+    mount(server.fetchMock);
+    await tick();
+    expect(bubbles().join(' '), 'precondition: the cached token restored a chat').toContain(
+      'yesterday: the numbers',
+    );
+    await send('my unsent question');
+    expect(gateTitle(), 'precondition: the send expired the token').toContain('session ended');
+
+    await enterEmail('someone@x.com');
+
+    expect(window.sessionStorage.getItem(FRESH_KEY), 'an unknown owner was reset').toBeNull();
+    expect(pending().length, 'an unknown owner was moved to a new chat').toBe(0);
+    expect(chatInput().value, 'an unverifiable identity was handed the draft').toBe('');
+  });
+
+  it('FALLBACK-ONLY identity: conversation continues, draft still CLEARED', async () => {
+    // lastAuthEmail records who typed into THIS TAB, not who the dead token
+    // belonged to. It is enough to keep the conversation, never enough to
+    // release the words.
+    const server = makeServer({
+      tokenFor: { 'a@x.com': 'opaque-token' }, // submitted here, so lastAuthEmail is set
+      chatsByToken: { 'opaque-token': [] },
+      expireTokenAfter: { 'opaque-token': 1 },
+    });
+    mount(server.fetchMock);
+    await tick();
+    await enterEmail('a@x.com');
+    // A real chat must exist first, or "continuation" and "new chat" are the
+    // same empty placeholder and the assertion cannot tell them apart.
+    await send('first message');
+    const id = window.localStorage.getItem(ACTIVE_KEY);
+    expect(id, 'precondition: A materialised a chat').toBeTruthy();
+    server.setChats('opaque-token', [{ id: id!, title: 'First message' }]);
+    server.setHistory(id!, [{ role: 'user', content: 'first message' }]);
+    await send('my unsent question');
+    expect(gateTitle(), 'precondition: expired').toContain('session ended');
+
+    await enterEmail('a@x.com');
+
+    expect(pending().length, 'a fallback match failed to continue the conversation').toBe(0);
+    expect(chatInput().value, 'a fallback-only match released the draft').toBe('');
+  });
+
+  describe('normalisation is load-bearing on the draft path', () => {
+    const CASES: Array<[string, string]> = [
+      ['UPPERCASE', 'A@X.COM'],
+      ['surrounding whitespace', '  a@x.com  '],
+      ['both', '  A@X.CoM  '],
+    ];
+    for (const [label, typed] of CASES) {
+      it('same member typing ' + label + ' continues WITH the draft', async () => {
+        const { server } = await expireMidThread();
+        expect(gateTitle(), 'precondition: expired').toContain('session ended');
+
+        await enterEmail(typed);
+
+        expect(window.sessionStorage.getItem(FRESH_KEY), 'normalisation failed: treated as a new member').toBeNull();
+        expect(pending().length, 'normalisation failed: moved to a new chat').toBe(0);
+        expect(chatInput().value, 'normalisation failed: the draft was discarded').toBe('draft message');
+        void server;
+      });
+    }
+  });
+
+
+  it('OPAQUE token + DIFFERENT email still resets — the fallback is what notices', async () => {
+    // Without the lastAuthEmail fallback this case is indistinguishable from
+    // "unknown owner", which CONTINUES — so B would quietly inherit A's
+    // session position. The fallback cannot release a draft, but it can and
+    // must refuse a continuation.
+    const server = makeServer({
+      tokenFor: { 'a@x.com': 'opaque-token', 'b@x.com': 'opaque-B' },
+      chatsByToken: { 'opaque-token': [], 'opaque-B': [{ id: CHAT_C, title: 'B only' }] },
+      expireTokenAfter: { 'opaque-token': 1 },
+    });
+    mount(server.fetchMock);
+    await tick();
+    await enterEmail('a@x.com');
+    await send('first message');
+    const id = window.localStorage.getItem(ACTIVE_KEY);
+    expect(id, 'precondition: A materialised a chat').toBeTruthy();
+    server.setChats('opaque-token', [{ id: id!, title: 'First message' }]);
+    await send('my unsent question');
+    expect(gateTitle(), 'precondition: expired').toContain('session ended');
+
+    await enterEmail('b@x.com');
+
+    expect(window.sessionStorage.getItem(FRESH_KEY), 'B continued A/s session').toBe('1');
+    expect(pending().length, 'B was not moved to a new chat').toBe(1);
+    expect(chatInput().value, "B was handed A's draft").toBe('');
+  });
+
+  it('an UNNORMALISED token payload is normalised before comparison', async () => {
+    // The server normalises before minting, but the widget must not rely on
+    // that: a payload of "  A@X.com  " has to compare equal to a submitted
+    // "a@x.com", or a legitimate member silently loses their draft.
+    const raw = tokRaw('  A@X.com  ');
+    const server = makeServer({
+      tokenFor: { 'a@x.com': raw },
+      chatsByToken: { [raw]: [] },
+      expireTokenAfter: { [raw]: 1 },
+    });
+    mount(server.fetchMock);
+    await tick();
+    await enterEmail('a@x.com');
+    await send('first message');
+    const id = window.localStorage.getItem(ACTIVE_KEY);
+    expect(id, 'precondition: A materialised a chat').toBeTruthy();
+    server.setChats(raw, [{ id: id!, title: 'First message' }]);
+    server.setHistory(id!, [{ role: 'user', content: 'first message' }]);
+    await send('draft message');
+    expect(gateTitle(), 'precondition: expired').toContain('session ended');
+
+    await enterEmail('a@x.com');
+
+    expect(pending().length, 'an unnormalised payload broke the continuation').toBe(0);
+    expect(chatInput().value, 'an unnormalised payload cost the member their draft').toBe(
+      'draft message',
+    );
+  });
+
   it('the + New chat button and the gate share ONE implementation', () => {
     // Guards the brief's "do not fork a second implementation". Both callers
     // must route through startNewChat, which routes through startPlaceholder.
@@ -435,29 +691,6 @@ describe('fresh gate pass — lands on a new chat', () => {
 });
 
 describe('expiry recovery — same member continues, a different member does not', () => {
-  /** Drive A to a materialised chat, then expire the NEXT send. Returns the
-   *  server plus the chat id, so the caller can assert against both owners. */
-  async function expireMidThread() {
-    const server = makeServer({
-      tokenFor: { 'a@x.com': 'token-A', 'b@x.com': 'token-B' },
-      chatsByToken: { 'token-A': [], 'token-B': [{ id: CHAT_C, title: 'B only' }] },
-      expireTokenAfter: { 'token-A': 1 },
-    });
-    mount(server.fetchMock);
-    await tick();
-    await enterEmail('a@x.com');
-    await send('first message');
-    const id = window.localStorage.getItem(ACTIVE_KEY);
-    expect(id, 'precondition: A materialised a chat').toBeTruthy();
-    // A's chat now exists server-side and carries the exchange.
-    server.setChats('token-A', [{ id: id!, title: 'First message' }]);
-    server.setHistory(id!, [
-      { role: 'user', content: 'first message' },
-      { role: 'assistant', content: 'an answer' },
-    ]);
-    await send('draft message');
-    return { server, id: id! };
-  }
 
   it('SAME email: continuation preserved — history repainted, unsent text kept', async () => {
     const { server } = await expireMidThread();
@@ -472,6 +705,7 @@ describe('expiry recovery — same member continues, a different member does not
     const text = bubbles().join(' ');
     expect(bubbles().length, 'nothing was repainted — the assertions below would be empty').toBeGreaterThan(0);
     expect(text, 'the recovered chat lost its history').toContain('first message');
+    // Released only because the dying token NAMED this address.
     expect(chatInput().value, "the member's unsent draft was discarded").toBe('draft message');
     void server;
   });
@@ -479,13 +713,22 @@ describe('expiry recovery — same member continues, a different member does not
   it('DIFFERENT email: full reset — new chat, no prior transcript, composer cleared', async () => {
     const { server } = await expireMidThread();
     expect(gateTitle(), 'precondition: the gate is in EXPIRED mode').toContain('session ended');
-    // Everything painted from here on is watched, not just the end state.
-    const seen: string[] = [];
-    const watch = () => seen.push(...bubbles());
-    watch();
 
-    await enterEmail('b@x.com');
-    watch();
+    // FRAME-LEVEL: sampled after every tick across B's whole entry, over every
+    // surface that can carry A's content — bubbles, composer, rail, pointer.
+    const frames = await frameWatch(() => {
+      document.querySelector<HTMLInputElement>('#james-bot .jb-gate-input')!.value = 'b@x.com';
+      document.querySelector<HTMLButtonElement>('#james-bot .jb-gate-btn')!.click();
+    });
+
+    // DEAD GUARD: the watch must have SEEN B arrive, or "never carried A's
+    // content" is a statement about a watch that observed nothing happening.
+    expect(
+      frames.some((f) => f.titles.includes('B only')),
+      'the watch never observed B arriving — it is not sampling the flow',
+    ).toBe(true);
+    neverCarried(frames, 'draft message', "A's unsent draft");
+    neverCarried(frames, 'first message', "A's transcript");
 
     expect(gate(), 'member B was not let through').toBeNull();
     expect(window.sessionStorage.getItem(FRESH_KEY), 'B was treated as a continuation').toBe('1');
@@ -493,13 +736,6 @@ describe('expiry recovery — same member continues, a different member does not
     expect(rows().length, 'the rail rendered nothing for B').toBeGreaterThan(0);
     expect(titles(), "B saw member A's chats").toEqual(['New chat', 'B only']);
     expect(chatInput().value, "A's unsent draft was handed to B").toBe('');
-    // DEAD GUARD: `seen` must have collected something, or "never painted" is
-    // a claim about an empty array.
-    expect(seen.length, 'nothing was ever painted — the leak check is vacuous').toBeGreaterThan(0);
-    expect(seen.join(' '), "A's transcript was painted at some point during B's entry").not.toContain(
-      'first message',
-    );
-    expect(seen.join(' '), "A's draft was painted at some point").not.toContain('draft message');
     void server;
   });
 
@@ -512,7 +748,7 @@ describe('expiry recovery — same member continues, a different member does not
     expect(posts.length, 'no message was posted — the ownership check is vacuous').toBeGreaterThan(0);
     const last = posts[posts.length - 1];
     const auth = String(last.headers.Authorization ?? last.headers.authorization ?? '');
-    expect(auth, "B's message was posted under A's token").toContain('token-B');
+    expect(auth, "B's message was posted under A's token").toContain(tok('b@x.com'));
     expect(last.body.session_id, "B's message was posted into A's chat").not.toBe(id);
     expect(window.localStorage.getItem(ACTIVE_KEY), 'the active pointer still points at A').not.toBe(id);
   });

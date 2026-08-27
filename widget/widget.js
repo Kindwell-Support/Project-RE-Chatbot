@@ -3215,6 +3215,9 @@
          * Normalised as mintToken normalises it server-side: trim + lower.
          */
         var recoveryEmail = isExpiryRecovery ? expiredForEmail : '';
+        /** Positive identity only: '' whenever the token could not name
+         *  its owner, which is what makes the draft rule fail closed. */
+        var confirmedEmail = isExpiryRecovery ? expiredTokenEmail : '';
         root.classList.add('jb-gated');
         list.innerHTML = '';
         historySkeleton = null;
@@ -3317,23 +3320,33 @@
                 // An expiry re-auth by the SAME member is excluded: that is
                 // a continuation, not an arrival. A DIFFERENT email in the
                 // same expired gate is a new member and gets the full reset.
-                // UNKNOWN owner ('' — a malformed or pre-deploy token) cannot
-                // be refused: doing so would destroy the conversation and the
-                // draft of a member who IS continuing, which is the loss
-                // ruling 1 exists to prevent. Every token this build mints
-                // decodes, so unknown is a transitional state of at most one
-                // tab session. Reported, not silently absorbed.
+                // TWO QUESTIONS, OPPOSITE DEFAULTS (ruled, FINDING-050/052).
+                //
+                // (1) CONTINUE THE CONVERSATION? An unknown owner continues.
+                // The transcript is server-scoped and re-fetched under the NEW
+                // token, so continuing costs nothing when the guess is wrong —
+                // a stranger simply lands in their own chats. Refusing would
+                // destroy a real member's conversation, which is the loss.
                 var isRecovery =
                   isExpiryRecovery &&
                   (!recoveryEmail || normaliseEmail(email) === recoveryEmail);
-                if (!isRecovery) {
-                  sessionSet(FRESH_KEY, '1');
-                  // A's unsent draft must never be handed to B. This is the
-                  // only surviving draft vector: resetChatState() already
-                  // cleared input.value when the gate went up, and
-                  // startAuthedSession refills it ONLY from here.
-                  pendingResendText = '';
-                }
+                //
+                // (2) RELEASE THE DRAFT? Only on POSITIVE confirmation that the
+                // submitted address is the one the DEAD TOKEN named. The draft
+                // is client-only: no server check can catch a mis-attribution,
+                // and handing a stranger someone's private text has no undo.
+                // Empty decode, malformed token, no email field, fallback-only,
+                // different email — every one of them clears it. The asymmetry
+                // is deliberate: clearing costs a continuing member one retyped
+                // message, keeping costs a member their words.
+                var identityConfirmed =
+                  !!confirmedEmail && normaliseEmail(email) === confirmedEmail;
+                if (!isRecovery) sessionSet(FRESH_KEY, '1');
+                // CLEARED HERE, BEFORE startAuthedSession — which refills the
+                // composer from this variable synchronously. Clearing later (or
+                // leaning on the reset that bootChats eventually runs) leaves a
+                // real frame with A's text sitting in B's composer.
+                if (!identityConfirmed) pendingResendText = '';
                 startAuthedSession();
                 return;
               }
@@ -3371,6 +3384,15 @@
        */
       var reAuthing = false; // several calls can 401 together; gate once
       var expiredForEmail = ''; // whose token just died; '' = unknown
+      /**
+       * The owner as DECODED FROM THE TOKEN ITSELF, with no fallback. Kept
+       * apart from expiredForEmail because the two answer different
+       * questions: continuing the conversation may lean on a best-effort
+       * guess, releasing the draft may not. A fallback-only match is not a
+       * confirmation — lastAuthEmail records who typed into this tab, not
+       * who the dead token belonged to.
+       */
+      var expiredTokenEmail = '';
       function authExpired(reason) {
         if (reAuthing) return;
         reAuthing = true;
@@ -3378,7 +3400,8 @@
         // the only moment the widget still knows whose session ended, and
         // a member who arrived on a cached token never submitted an email
         // this mount for lastAuthEmail to hold.
-        expiredForEmail = emailFromToken(authToken) || normaliseEmail(lastAuthEmail);
+        expiredTokenEmail = emailFromToken(authToken);
+        expiredForEmail = expiredTokenEmail || normaliseEmail(lastAuthEmail);
         authToken = null;
         sessionRemove(TOKEN_KEY);
         resetChatState();
