@@ -76,7 +76,13 @@ function makeServer(opts: Opts = {}) {
       if (opts.authStatus && opts.authStatus !== 200) {
         return json(opts.authStatus, opts.authBody ?? { error: 'x', reason: 'denied' });
       }
-      const email = init?.body ? JSON.parse(init.body).email : '';
+      // FINDING-055: the real /auth verifies against a NORMALISED email and
+      // mintToken stores trim+lowercase in the payload, so a fake that keys on
+      // the raw string answers differently from production for exactly the
+      // inputs the normalisation pins below exercise — " A@X.com " would miss
+      // its own tokenFor entry and mint a stranger's token.
+      const rawEmail = init?.body ? JSON.parse(init.body).email : '';
+      const email = String(rawEmail ?? '').trim().toLowerCase();
       const token = opts.tokenFor?.[email] ?? 'token-' + email;
       return json(200, { token, email });
     }
