@@ -740,6 +740,15 @@
    * james-bot-session before it: the widget no longer asserts device owners,
    * and a live-looking key invites the next reader to build on it. */
   var DEVICE_KEY = 'james-bot-device';
+  /**
+   * Set ONLY where the gate's submit handler accepts an email, and spent
+   * in persistActive(). While it is set, boot starts a NEW chat instead of
+   * restoring ACTIVE_KEY — the member typed their email just now, and
+   * landing them mid-way through an old conversation is not what that
+   * gesture means. sessionStorage, alongside the token, so it survives a
+   * GHL lesson swap in the same tab and dies with the tab.
+   */
+  var FRESH_KEY = 'james-bot-fresh-gate';
   var ACTIVE_KEY = 'james-bot-active-chat';
   var COLLAPSE_KEY = 'james-bot-sidebar-collapsed';
   var LEGACY_KEY = 'james-bot-session';
@@ -1676,6 +1685,10 @@
       function persistActive(id) {
         sessionId = id;
         if (id) storageSet(ACTIVE_KEY, id);
+        // The fresh-gate reset is spent the moment a real chat is active —
+        // the member sent something, or picked a row. Both routes land
+        // here, so this is the one place it needs clearing.
+        if (id) sessionRemove(FRESH_KEY);
       }
 
       /**
@@ -2315,9 +2328,16 @@
        * accumulate empty chats anywhere but on this screen, and a reload
        * collapses them.
        */
-      function startNewChat() {
+      /**
+       * The ONE new-chat path. `origin` is 'user' for the + New chat button
+       * and 'gate' for a fresh gate pass — same placeholder mechanism (R6b),
+       * no second implementation. It only decides who owns the focus call:
+       * startAuthedSession already refocuses after bootChats, and focusing
+       * twice mid-boot fights the composer on touch.
+       */
+      function startNewChat(origin) {
         startPlaceholder();
-        refocusComposer();
+        if (origin !== 'gate') refocusComposer();
       }
 
       /**
@@ -2435,6 +2455,11 @@
           .then(function (rows) {
             if (stale(op)) return;
             var server = Array.isArray(rows) ? rows : (rows && rows.chats) || [];
+            // Read, not consumed here: it is spent in persistActive when a
+            // real chat becomes active. Clearing it at first boot would let
+            // the next lesson swap restore the member into the very chat
+            // this reset moved them out of.
+            var freshPass = sessionGet(FRESH_KEY) === '1';
 
             // THE RACE THAT MATTERS: a member can type and send before this
             // list arrives. `started` says they did. Taking over the active
@@ -2458,6 +2483,22 @@
               // been dealt with, or to a device that has moved on.
               chats = server;
               chatsState = 'ready';
+              // FRESH GATE PASS: the member typed their email just now, so
+              // they land on an empty chat with their history listed beside
+              // it — standard behaviour for this shape of app. The rail is
+              // already populated above; startPlaceholder does not clear it
+              // (resetChatState deliberately leaves chats/chatsState alone),
+              // and nothing is written until the first message, so passing
+              // the gate and sending nothing leaves no trace.
+              //
+              // ACTIVE_KEY is left ALONE rather than removed: it is a single
+              // global pointer on a possibly shared browser, and it is
+              // superseded the moment this chat materialises. Deleting it
+              // would reach past this owner for no gain.
+              if (freshPass) {
+                startNewChat('gate');
+                return;
+              }
               var preferred = storageGet(ACTIVE_KEY);
               var chosen = null;
               for (var i = 0; i < chats.length; i++) {
@@ -3128,6 +3169,17 @@
        * No /chats, no /history, no welcome until the token exists.
        */
       function showGate(mode) {
+        /**
+         * EXPIRY RECOVERY IS NOT A FRESH ARRIVAL. A token that died
+         * mid-conversation puts the gate up in 'expired' mode with the
+         * member's unsent text held; re-authenticating there is a
+         * CONTINUATION, and the ruled behaviour (tested in phase3Widget)
+         * is that they land back in the same chat with history repainted.
+         * The new-chat-on-gate-pass reset must not reach it: the member
+         * did not come here to start something, they came here to be let
+         * back into what they were already doing.
+         */
+        var isExpiryRecovery = mode === 'expired';
         root.classList.add('jb-gated');
         list.innerHTML = '';
         historySkeleton = null;
@@ -3225,6 +3277,11 @@
                 lastAuthEmail = email;
                 authToken = result.body.token;
                 sessionSet(TOKEN_KEY, authToken);
+                // THE ONLY PLACE THIS IS SET. A cached pass on remount does
+                // not come through here, which is the whole distinction —
+                // and an expiry re-auth is excluded above, because that is
+                // a continuation rather than an arrival.
+                if (!isExpiryRecovery) sessionSet(FRESH_KEY, '1');
                 startAuthedSession();
                 return;
               }
