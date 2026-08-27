@@ -753,6 +753,32 @@
   var COLLAPSE_KEY = 'james-bot-sidebar-collapsed';
   var LEGACY_KEY = 'james-bot-session';
   var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /** Match mintToken's server-side normalisation exactly: trim + lower.
+   *  Comparing raw strings would make "A@x.com" a different member from
+   *  "a@x.com" and silently downgrade a recovery into a reset. */
+  function normaliseEmail(v) {
+    return String(v == null ? '' : v).trim().toLowerCase();
+  }
+  /**
+   * WHOSE token is this? The payload is base64url(JSON {email, iat, exp}), so
+   * the widget can read it without the signing key. This is used ONLY to tell
+   * a continuation from a new member at an expired gate — never as an
+   * authorisation decision, which stays server-side where the signature is
+   * checked. Any malformed or legacy token yields '' = unknown, and unknown
+   * is handled explicitly at the call site rather than guessed at.
+   */
+  function emailFromToken(token) {
+    try {
+      var payload = String(token == null ? '' : token).split('.')[0];
+      if (!payload) return '';
+      var b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      var obj = JSON.parse(window.atob(b64));
+      return normaliseEmail(obj && obj.email);
+    } catch (e) {
+      return ''; // unknown, not "nobody"
+    }
+  }
 
   function storageGet(key) {
     try {
@@ -3180,6 +3206,15 @@
          * back into what they were already doing.
          */
         var isExpiryRecovery = mode === 'expired';
+        /**
+         * ...AND IT MUST BE THE SAME MEMBER. Mode alone is not enough: A's
+         * token expires mid-thread, B types their own email into that same
+         * expired gate, and mode is still 'expired'. Captured HERE, before
+         * any submission can overwrite lastAuthEmail, so the comparison is
+         * against the email the DEAD token was issued for.
+         * Normalised as mintToken normalises it server-side: trim + lower.
+         */
+        var recoveryEmail = isExpiryRecovery ? expiredForEmail : '';
         root.classList.add('jb-gated');
         list.innerHTML = '';
         historySkeleton = null;
@@ -3278,10 +3313,27 @@
                 authToken = result.body.token;
                 sessionSet(TOKEN_KEY, authToken);
                 // THE ONLY PLACE THIS IS SET. A cached pass on remount does
-                // not come through here, which is the whole distinction —
-                // and an expiry re-auth is excluded above, because that is
-                // a continuation rather than an arrival.
-                if (!isExpiryRecovery) sessionSet(FRESH_KEY, '1');
+                // not come through here, which is the whole distinction.
+                // An expiry re-auth by the SAME member is excluded: that is
+                // a continuation, not an arrival. A DIFFERENT email in the
+                // same expired gate is a new member and gets the full reset.
+                // UNKNOWN owner ('' — a malformed or pre-deploy token) cannot
+                // be refused: doing so would destroy the conversation and the
+                // draft of a member who IS continuing, which is the loss
+                // ruling 1 exists to prevent. Every token this build mints
+                // decodes, so unknown is a transitional state of at most one
+                // tab session. Reported, not silently absorbed.
+                var isRecovery =
+                  isExpiryRecovery &&
+                  (!recoveryEmail || normaliseEmail(email) === recoveryEmail);
+                if (!isRecovery) {
+                  sessionSet(FRESH_KEY, '1');
+                  // A's unsent draft must never be handed to B. This is the
+                  // only surviving draft vector: resetChatState() already
+                  // cleared input.value when the gate went up, and
+                  // startAuthedSession refills it ONLY from here.
+                  pendingResendText = '';
+                }
                 startAuthedSession();
                 return;
               }
@@ -3318,9 +3370,15 @@
        * conversation, not a fresh one.
        */
       var reAuthing = false; // several calls can 401 together; gate once
+      var expiredForEmail = ''; // whose token just died; '' = unknown
       function authExpired(reason) {
         if (reAuthing) return;
         reAuthing = true;
+        // Read it off the DYING token, before it is thrown away — this is
+        // the only moment the widget still knows whose session ended, and
+        // a member who arrived on a cached token never submitted an email
+        // this mount for lastAuthEmail to hold.
+        expiredForEmail = emailFromToken(authToken) || normaliseEmail(lastAuthEmail);
         authToken = null;
         sessionRemove(TOKEN_KEY);
         resetChatState();

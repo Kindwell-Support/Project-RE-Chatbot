@@ -58,9 +58,13 @@ interface Opts {
   tokenFor?: Record<string, string>;
   authStatus?: number;
   authBody?: unknown;
+  /** Per TOKEN: that token's sends succeed N times, then 401 'expired'.
+   *  Token-scoped on purpose — A's token dying must not also kill B's. */
+  expireTokenAfter?: Record<string, number>;
 }
 
 function makeServer(opts: Opts = {}) {
+  const sendsByToken: Record<string, number> = {};
   const calls: Array<{ method: string; url: string; headers: any; body: any }> = [];
   const fetchMock = vi.fn(async (url: string, init?: any) => {
     const method = (init?.method ?? 'GET').toUpperCase();
@@ -85,12 +89,25 @@ function makeServer(opts: Opts = {}) {
       const rows = opts.chatsByToken?.[bearer] ?? [];
       return json(200, rows.map((c) => ({ ...c, created_at: 'x', last_message_at: 'x' })));
     }
-    if (u.endsWith('/chat') && method === 'POST') return json(200, { output: 'an answer' });
+    if (u.endsWith('/chat') && method === 'POST') {
+      sendsByToken[bearer] = (sendsByToken[bearer] ?? 0) + 1;
+      const limit = opts.expireTokenAfter?.[bearer];
+      if (limit !== undefined && sendsByToken[bearer] > limit) {
+        return json(401, { error: 'Not authorized.', reason: 'expired' });
+      }
+      return json(200, { output: 'an answer' });
+    }
     return json(404, {});
   });
   return {
     fetchMock,
     calls,
+    setChats: (token: string, r: Row[]) => {
+      opts.chatsByToken = { ...(opts.chatsByToken ?? {}), [token]: r };
+    },
+    setHistory: (id: string, m: Array<{ role: string; content: string }>) => {
+      opts.history = { ...(opts.history ?? {}), [id]: m };
+    },
     chatsCalls: () => calls.filter((c) => c.url.endsWith('/chats') && c.method === 'GET'),
     postedChat: () => calls.filter((c) => c.url.endsWith('/chat') && c.method === 'POST'),
   };
@@ -127,6 +144,8 @@ const titles = () =>
 const bubbles = () =>
   Array.from(document.querySelectorAll('#james-bot .jb-bubble')).map((b) => b.textContent ?? '');
 const gate = () => document.querySelector('#james-bot .jb-gate');
+const gateTitle = () =>
+  document.querySelector('#james-bot .jb-gate-title')?.textContent ?? '';
 const chatInput = () => document.querySelector<HTMLInputElement>('#james-bot .jb-input')!;
 
 async function enterEmail(email: string) {
@@ -337,9 +356,58 @@ describe('fresh gate pass — lands on a new chat', () => {
     expect(WIDGET_SRC, 'the expiry-mode capture is gone').toMatch(
       /var isExpiryRecovery = mode === 'expired';/,
     );
-    expect(WIDGET_SRC, 'the fresh flag is no longer gated on expiry mode').toContain(
-      "if (!isExpiryRecovery) sessionSet(FRESH_KEY, '1');",
+    // Mode alone is NOT the exemption — it must also be the same member. The
+    // expected email is captured at gate-raise time, before any submission can
+    // overwrite lastAuthEmail.
+    // Identity comes off the DYING TOKEN, captured before it is discarded —
+    // lastAuthEmail is empty for a member who arrived on a cached token.
+    expect(WIDGET_SRC, 'the dying token is no longer read for its owner').toMatch(
+      /expiredForEmail = emailFromToken\(authToken\) \|\| normaliseEmail\(lastAuthEmail\);/,
     );
+    expect(WIDGET_SRC, 'the recovery email is no longer captured at gate-raise').toMatch(
+      /var recoveryEmail = isExpiryRecovery \? expiredForEmail : '';/,
+    );
+    // Whitespace-collapsed: the condition spans lines in the source, and a
+    // line-spanning regex here is more fragile than the thing it guards.
+    expect(
+      WIDGET_SRC.replace(/\s+/g, ' '),
+      'the exemption no longer requires a matching email',
+    ).toContain('isExpiryRecovery && (!recoveryEmail || normaliseEmail(email) === recoveryEmail)');
+    expect(WIDGET_SRC, "a non-recovery no longer clears the previous member's draft").toMatch(
+      /if \(!isRecovery\) \{[\s\S]*pendingResendText = '';/,
+    );
+  });
+
+
+  it('UNKNOWN owner (undecodable token) fails toward CONTINUATION, deliberately', async () => {
+    // A pre-deploy or malformed token cannot say whose it was. Refusing the
+    // recovery would destroy the conversation and draft of a member who IS
+    // continuing — the loss ruling 1 exists to prevent — so unknown is
+    // treated as a continuation. Every token this build mints decodes, so
+    // this is a transitional state of at most one tab session.
+    window.sessionStorage.setItem('james-bot-token', 'not-a-decodable-token');
+    const server = makeServer({
+      // Re-auth mints a token for the SAME owner, so the same rows come back —
+      // otherwise the empty-list branch would make a placeholder for reasons
+      // that have nothing to do with the reset under test.
+      tokenFor: { 'someone@x.com': 'not-a-decodable-token' },
+      chatsByToken: { 'not-a-decodable-token': [{ id: CHAT_A, title: 'Deal in Tacoma' }] },
+      history: { [CHAT_A]: [{ role: 'user', content: 'yesterday: the numbers' }] },
+      expireTokenAfter: { 'not-a-decodable-token': 0 },
+    });
+    mount(server.fetchMock);
+    await tick();
+    expect(bubbles().join(' '), 'precondition: the cached token restored a chat').toContain(
+      'yesterday: the numbers',
+    );
+
+    await send('my unsent question');
+    expect(gateTitle(), 'precondition: the send expired the token').toContain('session ended');
+
+    await enterEmail('someone@x.com');
+
+    expect(window.sessionStorage.getItem(FRESH_KEY), 'an unknown owner was reset').toBeNull();
+    expect(pending().length, 'an unknown owner was moved to a new chat').toBe(0);
   });
 
   it('the + New chat button and the gate share ONE implementation', () => {
@@ -357,5 +425,89 @@ describe('fresh gate pass — lands on a new chat', () => {
     const spent = WIDGET_SRC.match(/sessionRemove\(FRESH_KEY/g) ?? [];
     expect(set.length, 'the fresh flag is set from more than the submit handler').toBe(1);
     expect(spent.length, 'the fresh flag is cleared from more than persistActive').toBe(1);
+  });
+});
+
+describe('expiry recovery — same member continues, a different member does not', () => {
+  /** Drive A to a materialised chat, then expire the NEXT send. Returns the
+   *  server plus the chat id, so the caller can assert against both owners. */
+  async function expireMidThread() {
+    const server = makeServer({
+      tokenFor: { 'a@x.com': 'token-A', 'b@x.com': 'token-B' },
+      chatsByToken: { 'token-A': [], 'token-B': [{ id: CHAT_C, title: 'B only' }] },
+      expireTokenAfter: { 'token-A': 1 },
+    });
+    mount(server.fetchMock);
+    await tick();
+    await enterEmail('a@x.com');
+    await send('first message');
+    const id = window.localStorage.getItem(ACTIVE_KEY);
+    expect(id, 'precondition: A materialised a chat').toBeTruthy();
+    // A's chat now exists server-side and carries the exchange.
+    server.setChats('token-A', [{ id: id!, title: 'First message' }]);
+    server.setHistory(id!, [
+      { role: 'user', content: 'first message' },
+      { role: 'assistant', content: 'an answer' },
+    ]);
+    await send('draft message');
+    return { server, id: id! };
+  }
+
+  it('SAME email: continuation preserved — history repainted, unsent text kept', async () => {
+    const { server } = await expireMidThread();
+    expect(gate(), 'precondition: the 401 raised the gate').not.toBeNull();
+    expect(gateTitle(), 'precondition: the gate is in EXPIRED mode').toContain('session ended');
+
+    await enterEmail('a@x.com');
+
+    expect(gate(), 'the gate stayed up after a valid re-auth').toBeNull();
+    expect(window.sessionStorage.getItem(FRESH_KEY), 'a same-member recovery set the reset flag').toBeNull();
+    expect(pending().length, 'a recovery started a new chat instead of continuing').toBe(0);
+    const text = bubbles().join(' ');
+    expect(bubbles().length, 'nothing was repainted — the assertions below would be empty').toBeGreaterThan(0);
+    expect(text, 'the recovered chat lost its history').toContain('first message');
+    expect(chatInput().value, "the member's unsent draft was discarded").toBe('draft message');
+    void server;
+  });
+
+  it('DIFFERENT email: full reset — new chat, no prior transcript, composer cleared', async () => {
+    const { server } = await expireMidThread();
+    expect(gateTitle(), 'precondition: the gate is in EXPIRED mode').toContain('session ended');
+    // Everything painted from here on is watched, not just the end state.
+    const seen: string[] = [];
+    const watch = () => seen.push(...bubbles());
+    watch();
+
+    await enterEmail('b@x.com');
+    watch();
+
+    expect(gate(), 'member B was not let through').toBeNull();
+    expect(window.sessionStorage.getItem(FRESH_KEY), 'B was treated as a continuation').toBe('1');
+    expect(pending().length, 'B did not land on a new chat').toBe(1);
+    expect(rows().length, 'the rail rendered nothing for B').toBeGreaterThan(0);
+    expect(titles(), "B saw member A's chats").toEqual(['New chat', 'B only']);
+    expect(chatInput().value, "A's unsent draft was handed to B").toBe('');
+    // DEAD GUARD: `seen` must have collected something, or "never painted" is
+    // a claim about an empty array.
+    expect(seen.length, 'nothing was ever painted — the leak check is vacuous').toBeGreaterThan(0);
+    expect(seen.join(' '), "A's transcript was painted at some point during B's entry").not.toContain(
+      'first message',
+    );
+    expect(seen.join(' '), "A's draft was painted at some point").not.toContain('draft message');
+    void server;
+  });
+
+  it('DIFFERENT email then a send: the row lands under the NEW token only', async () => {
+    const { server, id } = await expireMidThread();
+    await enterEmail('b@x.com');
+    await send('B first message');
+
+    const posts = server.postedChat();
+    expect(posts.length, 'no message was posted — the ownership check is vacuous').toBeGreaterThan(0);
+    const last = posts[posts.length - 1];
+    const auth = String(last.headers.Authorization ?? last.headers.authorization ?? '');
+    expect(auth, "B's message was posted under A's token").toContain('token-B');
+    expect(last.body.session_id, "B's message was posted into A's chat").not.toBe(id);
+    expect(window.localStorage.getItem(ACTIVE_KEY), 'the active pointer still points at A').not.toBe(id);
   });
 });
