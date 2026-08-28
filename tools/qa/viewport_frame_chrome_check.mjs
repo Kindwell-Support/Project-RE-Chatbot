@@ -17,6 +17,37 @@ import { readFileSync } from 'node:fs';
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const bundle = readFileSync('public/widget.js', 'utf8');
+
+/**
+ * FINDING-067 — THE SAMPLING BOUNDARIES ARE READ FROM THE BUILD, NOT RESTATED.
+ *
+ * They were literals ([400, 800, 900] and 436). Under a breakpoint mutation the
+ * sweep went on sampling the OLD boundaries and printed a density claim that was
+ * false about the build under test. No gate went inert and other instruments
+ * caught the mutation, so it was a stale claim rather than a stale scope — but a
+ * printed line that lies about coverage is precisely what rule 5 exists to stop.
+ * Rule 5 is about scope; this is its sibling: a CLAIM expressed in terms of the
+ * thing under test is as wrong as a scope expressed that way.
+ *
+ * The tier breakpoints come out of the bundle's own toggle calls, so a
+ * breakpoint change moves the sampling with it.
+ */
+function tierBreakpoints(src) {
+  const out = [];
+  const re = /classList\.toggle\(["'](jb-w-[a-z]+)["'],\s*\w+\s*<=\s*(\d+)\)/g;
+  let m;
+  while ((m = re.exec(src)) !== null) out.push({ tier: m[1], at: Number(m[2]) });
+  // POSITIVE-ASSERTION RULE: a parse that found nothing must refuse, not sample
+  // an empty set and call it dense.
+  if (out.length < 3) {
+    console.log('VERDICT: INVALID — parsed ' + out.length + ' tier breakpoints from the');
+    console.log('  bundle, expected at least 3. The sampling cannot be derived, so no');
+    console.log('  density claim can be made. Check the toggle call shape in widget.js.');
+    process.exit(1);
+  }
+  return out;
+}
+
 const MOUNT = '<div id="james-bot" style="width:100%;height:700px"></div>';
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
@@ -89,8 +120,30 @@ let examined = 0;
 //
 // WIDTHS: every tier boundary at +/-1px, plus a wide row above the old cap.
 // HEIGHTS: the clamp endpoint at +/-1px, plus rows either side of it.
-const W_BOUNDARIES = [400, 800, 900];
-const H_CLAMP = 436; // vh where avail (vh - FRAME_GUTTER) meets FRAME_MIN_H
+const TIERS = tierBreakpoints(bundle);
+const W_BOUNDARIES = TIERS.map((t) => t.at).sort((a, b) => a - b);
+// The height clamp is DERIVED FROM TWO PROBES rather than parsed: the minified
+// identifiers for FRAME_MIN_H and FRAME_GUTTER change between builds, and the
+// literal 420 also appears as .jb-root's min-height, so a text match could
+// bind to the wrong one. Measuring cannot mistake them.
+//   tall  -> unclamped, so gutter   = vh - mountH
+//   short -> clamped,   so minH     = mountH
+//   clamp endpoint = minH + gutter
+const probeTall = await boot(1280, 1100);
+const mTall = await probeTall.evaluate(read);
+await probeTall.close();
+const probeShort = await boot(1280, 300);
+const mShort = await probeShort.evaluate(read);
+await probeShort.close();
+const GUTTER = 1100 - mTall.mountH;
+const MIN_H = mShort.mountH;
+const H_CLAMP = MIN_H + GUTTER;
+// The probes must actually bracket the clamp, or the derivation is meaningless.
+if (!(mTall.mountH > MIN_H) || !(mShort.mountH === MIN_H) || !(GUTTER >= 0)) {
+  console.log('VERDICT: INVALID — the clamp probes did not bracket the clamp ' +
+    '(tall ' + mTall.mountH + ', short ' + mShort.mountH + '). No density claim made.');
+  process.exit(1);
+}
 const CASES = [];
 for (const b of W_BOUNDARIES) for (const d of [-1, 0, 1]) CASES.push([b + d, 800]);
 for (const d of [-1, 0, 1]) CASES.push([1280, H_CLAMP + d]);
@@ -199,7 +252,10 @@ console.log('INFORMATIONAL (not gated): hamburgerVisible — the control is');
 console.log('  rendered at every width, so its presence cannot fail. What it');
 console.log('  DOES is gated by the movement check above.');
 console.log('SAMPLING DENSITY: tier boundaries ' + W_BOUNDARIES.join('/') + ' and the');
-console.log('  FRAME_MIN_H clamp at vh=' + H_CLAMP + ' are each sampled at +/-1px.');
+console.log('  height clamp at vh=' + H_CLAMP + ' are each sampled at +/-1px.');
+console.log('  These are READ FROM THE BUILD, not restated: breakpoints parsed from the');
+console.log('  bundle (' + TIERS.map((t) => t.tier + '<=' + t.at).join(', ') + '), clamp');
+console.log('  derived as minH ' + MIN_H + ' + gutter ' + GUTTER + ' from two probes.');
 console.log('viewport rows examined: ' + examined);
 if (examined === 0) {
   console.log('VERDICT: INVALID — nothing was examined.');

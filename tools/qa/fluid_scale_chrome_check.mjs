@@ -23,6 +23,37 @@ import { readFileSync } from 'node:fs';
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const bundle = readFileSync('public/widget.js', 'utf8');
 
+/**
+ * FINDING-067 — THE SAMPLING BOUNDARIES ARE READ FROM THE BUILD, NOT RESTATED.
+ *
+ * They were literals ([400, 800, 900] and 436). Under a breakpoint mutation the
+ * sweep went on sampling the OLD boundaries and printed a density claim that was
+ * false about the build under test. No gate went inert and other instruments
+ * caught the mutation, so it was a stale claim rather than a stale scope — but a
+ * printed line that lies about coverage is precisely what rule 5 exists to stop.
+ * Rule 5 is about scope; this is its sibling: a CLAIM expressed in terms of the
+ * thing under test is as wrong as a scope expressed that way.
+ *
+ * The tier breakpoints come out of the bundle's own toggle calls, so a
+ * breakpoint change moves the sampling with it.
+ */
+function tierBreakpoints(src) {
+  const out = [];
+  const re = /classList\.toggle\(["'](jb-w-[a-z]+)["'],\s*\w+\s*<=\s*(\d+)\)/g;
+  let m;
+  while ((m = re.exec(src)) !== null) out.push({ tier: m[1], at: Number(m[2]) });
+  // POSITIVE-ASSERTION RULE: a parse that found nothing must refuse, not sample
+  // an empty set and call it dense.
+  if (out.length < 3) {
+    console.log('VERDICT: INVALID — parsed ' + out.length + ' tier breakpoints from the');
+    console.log('  bundle, expected at least 3. The sampling cannot be derived, so no');
+    console.log('  density claim can be made. Check the toggle call shape in widget.js.');
+    process.exit(1);
+  }
+  return out;
+}
+
+
 const BAND_FROM = 1024;
 const BAND = [60, 75];
 /** The measure floor applies wherever the rail is IN THE FLOW — that is read
@@ -33,14 +64,34 @@ const BAND = [60, 75];
  *  exists to catch sat in the table reading "ok". A gate scoped by a constant
  *  that the mutation also moves is not scoped at all. */
 const MEASURE_FLOOR = 50;
-/** Tier boundaries and clamp endpoints — every discontinuity in the range. */
-const BOUNDARIES = [400, 531, 800, 900, 1024, 3258];
+/** Tier boundaries and clamp endpoints — every discontinuity in the range.
+ *  FINDING-067: the tier boundaries are READ FROM THE BUNDLE, so a breakpoint
+ *  change moves the sampling with it instead of leaving a false density claim.
+ *  The curve clamp endpoints are COMPUTED from the approved curve below — that
+ *  one is a deliberate restatement, because the curve is the reference the
+ *  build is checked against, not a fact about the build. */
+const TIERS = tierBreakpoints(bundle);
 const STEP = 40; // no coarser than this through the sub-1024 range
 const TOUCH_MIN = 44;
 const AA_BODY = 4.5;
 
 /** The approved curve: clamp(16, 18 + (w-1440)*0.0022, 22), 0.5px steps. */
 const curve = (w) => Math.min(22, Math.max(16, Math.round((18 + (w - 1440) * 0.0022) * 2) / 2));
+/** The curve's clamp endpoints, SCANNED from the approved curve rather than
+ *  written down, so retuning the curve moves the samples with it. */
+const clampEnds = () => {
+  let release = null, engage = null;
+  for (let w = 300; w <= 4000; w += 1) {
+    if (release === null && curve(w) > 16) release = w;
+    if (engage === null && curve(w) >= 22) engage = w;
+  }
+  return [release, engage].filter((x) => x !== null);
+};
+const BOUNDARIES = [...new Set([
+  ...TIERS.map((t) => t.at),   // read from the build
+  ...clampEnds(),              // computed from the approved reference
+  BAND_FROM,                   // the ruling's own threshold
+])].sort((a, b) => a - b);
 /**
  * SAMPLING. A range claim from two endpoints is not a range claim: the previous
  * gate sampled 375 and 768 and straddled the dip it was meant to catch. This
@@ -223,14 +274,22 @@ for (const x of seen) {
   if (!byTier.has(x.m.tiers)) byTier.set(x.m.tiers, []);
   byTier.get(x.m.tiers).push(x);
 }
+// MINIMUM SAMPLES. A tier reduced to one sampled width satisfies "monotonic"
+// vacuously — there is no pair to compare — and would print `monotonic` while
+// asserting nothing. This is the examined-count refusal the other instruments
+// already carry, applied per group rather than once for the sweep.
+const MIN_SAMPLES = 3;
 for (const [tier, xs] of byTier) {
   let mono = true;
   for (let i = 1; i < xs.length; i += 1) if (xs[i].chars < xs[i - 1].chars) mono = false;
-  gates += 1;
-  if (!mono) bad += 1;
+  const thin = xs.length < MIN_SAMPLES;
+  gates += 2;
+  if (!mono || thin) bad += 1;
   const span = xs[0].w + '-' + xs[xs.length - 1].w;
-  console.log('    ' + (tier || 'full').padEnd(20) + span.padEnd(12) + xs.length + ' samples   ' +
-    (mono ? 'monotonic' : 'NOT MONOTONIC (' + xs.map((x) => x.chars).join(' ') + ')'));
+  console.log('    ' + (tier || 'full').padEnd(20) + span.padEnd(12) +
+    (xs.length + ' samples').padEnd(12) +
+    (thin ? 'TOO FEW — under ' + MIN_SAMPLES + ', monotonic is vacuous here'
+      : mono ? 'monotonic' : 'NOT MONOTONIC (' + xs.map((x) => x.chars).join(' ') + ')'));
 }
 
 // ---- 2. the partial-migration catcher -----------------------------------
@@ -308,9 +367,13 @@ await browser.close();
 console.log('');
 console.log('SAMPLING DENSITY: ' + WIDTHS.length + ' widths — every tier boundary and');
 console.log('  clamp endpoint at +/-1px (' + BOUNDARIES.join(', ') + '), and no coarser');
+console.log('  than ' + STEP + 'px through 320-1040 where the layout changes.');
+console.log('  Tier boundaries are READ FROM THE BUILD (' +
+  TIERS.map((t) => t.tier + '<=' + t.at).join(', ') + '); the curve clamp ends are');
+console.log('  SCANNED from the approved curve. Neither is restated, so a breakpoint or');
+console.log('  curve change moves the sampling instead of leaving this line false.');
 console.log('  The measure floor is scoped by the MEASURED rail position, not by a');
 console.log('  width constant, so moving a breakpoint cannot move the gate out of its way.');
-console.log('  than ' + STEP + 'px through 320-1040 where the layout changes.');
 console.log('INFORMATIONAL (not gated): text col width and rootW are printed to make');
 console.log('  the character counts auditable; the assertions are on chars, not px.');
 console.log('gates evaluated: ' + gates);
