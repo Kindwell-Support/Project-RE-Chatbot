@@ -150,3 +150,38 @@ All golden regression values reproduce exactly. The Land non-default case (L2) p
 7. **Widget session identity**: a per-browser `localStorage` UUID (`james-bot-session`), so history persists across page loads within the same browser. Member email is passed separately for logging.
 8. **Second-loan flip inputs** (`second_loan_points_pct`, `second_loan_interest_rate`, fee cells) are supported by the calculator but not exposed in the OpenAI tool schema, which follows the build document's parameter list. Easy to add if members ask for them.
 9. **`match_documents` RPC signature** is `(filter, match_count, query_embedding)`, confirmed against the live database during end-to-end testing. `src/agent/retrieval.ts` passes `filter: {}`.
+
+## Frame-level leak testing — filed, NOT fixed (2026-08-28)
+
+Raised by INSPECTOR against `tests/gatePassNewChat.test.ts` after the gate-pass
+slice. Recorded here because each one narrows a claim that is currently stated
+more broadly than the instrument supports.
+
+**FINDING-056 — the frame watch is blind to microtask transients.**
+`frameWatch()` samples on MACROTASK boundaries (`setTimeout(…, 0)`), so a
+refill→clear transient that lives entirely inside a single microtask drain is
+never observed. The instrument was built precisely for this class of leak and
+cannot see the tightest version of it. The `drop the draft clear` mutant is
+caught, but partly because its edit also breaks pinned source text rather than
+because a frame was seen carrying the draft. Needs microtask-level sampling — a
+`MutationObserver`, as used in the one-off probe — before any future
+frame-level claim rests on this helper.
+
+**FINDING-058 — two normalisation cases collapse into two others.**
+`<input type="email">` sanitises surrounding whitespace on assignment, so the
+`surrounding whitespace` and `both` cases submit the same strings as the plain
+and `UPPERCASE` cases. Their labels claim coverage they do not provide.
+Consequently `.trim()` inside `normaliseEmail` is pinned by EXACTLY ONE test —
+the unnormalised-token-payload fixture (`tokRaw('  A@X.com  ')`) — which is
+therefore load-bearing and sole. Retitle the collapsed cases honestly and say so
+at the payload fixture.
+
+**FINDING-059 — `Frame.active` is collected and never asserted.**
+`snapshot()` reads `localStorage[ACTIVE_KEY]` into every frame and no assertion
+reads it back. Either assert the active pointer at frame level (it is a genuine
+cross-member surface: it can point at another owner's chat) or stop collecting
+it. Collected-but-unread data reads as coverage that does not exist.
+
+**Standing note for future frame-level work.** A claim that no frame carried
+cross-member content is only as good as the sampling rate. State the sampling
+mechanism alongside the claim, not just the result.

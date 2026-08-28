@@ -740,10 +740,45 @@
    * james-bot-session before it: the widget no longer asserts device owners,
    * and a live-looking key invites the next reader to build on it. */
   var DEVICE_KEY = 'james-bot-device';
+  /**
+   * Set ONLY where the gate's submit handler accepts an email, and spent
+   * in persistActive(). While it is set, boot starts a NEW chat instead of
+   * restoring ACTIVE_KEY — the member typed their email just now, and
+   * landing them mid-way through an old conversation is not what that
+   * gesture means. sessionStorage, alongside the token, so it survives a
+   * GHL lesson swap in the same tab and dies with the tab.
+   */
+  var FRESH_KEY = 'james-bot-fresh-gate';
   var ACTIVE_KEY = 'james-bot-active-chat';
   var COLLAPSE_KEY = 'james-bot-sidebar-collapsed';
   var LEGACY_KEY = 'james-bot-session';
   var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /** Match mintToken's server-side normalisation exactly: trim + lower.
+   *  Comparing raw strings would make "A@x.com" a different member from
+   *  "a@x.com" and silently downgrade a recovery into a reset. */
+  function normaliseEmail(v) {
+    return String(v == null ? '' : v).trim().toLowerCase();
+  }
+  /**
+   * WHOSE token is this? The payload is base64url(JSON {email, iat, exp}), so
+   * the widget can read it without the signing key. This is used ONLY to tell
+   * a continuation from a new member at an expired gate — never as an
+   * authorisation decision, which stays server-side where the signature is
+   * checked. Any malformed or legacy token yields '' = unknown, and unknown
+   * is handled explicitly at the call site rather than guessed at.
+   */
+  function emailFromToken(token) {
+    try {
+      var payload = String(token == null ? '' : token).split('.')[0];
+      if (!payload) return '';
+      var b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      var obj = JSON.parse(window.atob(b64));
+      return normaliseEmail(obj && obj.email);
+    } catch (e) {
+      return ''; // unknown, not "nobody"
+    }
+  }
 
   function storageGet(key) {
     try {
@@ -1676,6 +1711,10 @@
       function persistActive(id) {
         sessionId = id;
         if (id) storageSet(ACTIVE_KEY, id);
+        // The fresh-gate reset is spent the moment a real chat is active —
+        // the member sent something, or picked a row. Both routes land
+        // here, so this is the one place it needs clearing.
+        if (id) sessionRemove(FRESH_KEY);
       }
 
       /**
@@ -2315,9 +2354,16 @@
        * accumulate empty chats anywhere but on this screen, and a reload
        * collapses them.
        */
-      function startNewChat() {
+      /**
+       * The ONE new-chat path. `origin` is 'user' for the + New chat button
+       * and 'gate' for a fresh gate pass — same placeholder mechanism (R6b),
+       * no second implementation. It only decides who owns the focus call:
+       * startAuthedSession already refocuses after bootChats, and focusing
+       * twice mid-boot fights the composer on touch.
+       */
+      function startNewChat(origin) {
         startPlaceholder();
-        refocusComposer();
+        if (origin !== 'gate') refocusComposer();
       }
 
       /**
@@ -2435,6 +2481,11 @@
           .then(function (rows) {
             if (stale(op)) return;
             var server = Array.isArray(rows) ? rows : (rows && rows.chats) || [];
+            // Read, not consumed here: it is spent in persistActive when a
+            // real chat becomes active. Clearing it at first boot would let
+            // the next lesson swap restore the member into the very chat
+            // this reset moved them out of.
+            var freshPass = sessionGet(FRESH_KEY) === '1';
 
             // THE RACE THAT MATTERS: a member can type and send before this
             // list arrives. `started` says they did. Taking over the active
@@ -2458,6 +2509,22 @@
               // been dealt with, or to a device that has moved on.
               chats = server;
               chatsState = 'ready';
+              // FRESH GATE PASS: the member typed their email just now, so
+              // they land on an empty chat with their history listed beside
+              // it — standard behaviour for this shape of app. The rail is
+              // already populated above; startPlaceholder does not clear it
+              // (resetChatState deliberately leaves chats/chatsState alone),
+              // and nothing is written until the first message, so passing
+              // the gate and sending nothing leaves no trace.
+              //
+              // ACTIVE_KEY is left ALONE rather than removed: it is a single
+              // global pointer on a possibly shared browser, and it is
+              // superseded the moment this chat materialises. Deleting it
+              // would reach past this owner for no gain.
+              if (freshPass) {
+                startNewChat('gate');
+                return;
+              }
               var preferred = storageGet(ACTIVE_KEY);
               var chosen = null;
               for (var i = 0; i < chats.length; i++) {
@@ -3128,6 +3195,29 @@
        * No /chats, no /history, no welcome until the token exists.
        */
       function showGate(mode) {
+        /**
+         * EXPIRY RECOVERY IS NOT A FRESH ARRIVAL. A token that died
+         * mid-conversation puts the gate up in 'expired' mode with the
+         * member's unsent text held; re-authenticating there is a
+         * CONTINUATION, and the ruled behaviour (tested in phase3Widget)
+         * is that they land back in the same chat with history repainted.
+         * The new-chat-on-gate-pass reset must not reach it: the member
+         * did not come here to start something, they came here to be let
+         * back into what they were already doing.
+         */
+        var isExpiryRecovery = mode === 'expired';
+        /**
+         * ...AND IT MUST BE THE SAME MEMBER. Mode alone is not enough: A's
+         * token expires mid-thread, B types their own email into that same
+         * expired gate, and mode is still 'expired'. Captured HERE, before
+         * any submission can overwrite lastAuthEmail, so the comparison is
+         * against the email the DEAD token was issued for.
+         * Normalised as mintToken normalises it server-side: trim + lower.
+         */
+        var recoveryEmail = isExpiryRecovery ? expiredForEmail : '';
+        /** Positive identity only: '' whenever the token could not name
+         *  its owner, which is what makes the draft rule fail closed. */
+        var confirmedEmail = isExpiryRecovery ? expiredTokenEmail : '';
         root.classList.add('jb-gated');
         list.innerHTML = '';
         historySkeleton = null;
@@ -3225,6 +3315,38 @@
                 lastAuthEmail = email;
                 authToken = result.body.token;
                 sessionSet(TOKEN_KEY, authToken);
+                // THE ONLY PLACE THIS IS SET. A cached pass on remount does
+                // not come through here, which is the whole distinction.
+                // An expiry re-auth by the SAME member is excluded: that is
+                // a continuation, not an arrival. A DIFFERENT email in the
+                // same expired gate is a new member and gets the full reset.
+                // TWO QUESTIONS, OPPOSITE DEFAULTS (ruled, FINDING-050/052).
+                //
+                // (1) CONTINUE THE CONVERSATION? An unknown owner continues.
+                // The transcript is server-scoped and re-fetched under the NEW
+                // token, so continuing costs nothing when the guess is wrong —
+                // a stranger simply lands in their own chats. Refusing would
+                // destroy a real member's conversation, which is the loss.
+                var isRecovery =
+                  isExpiryRecovery &&
+                  (!recoveryEmail || normaliseEmail(email) === recoveryEmail);
+                //
+                // (2) RELEASE THE DRAFT? Only on POSITIVE confirmation that the
+                // submitted address is the one the DEAD TOKEN named. The draft
+                // is client-only: no server check can catch a mis-attribution,
+                // and handing a stranger someone's private text has no undo.
+                // Empty decode, malformed token, no email field, fallback-only,
+                // different email — every one of them clears it. The asymmetry
+                // is deliberate: clearing costs a continuing member one retyped
+                // message, keeping costs a member their words.
+                var identityConfirmed =
+                  !!confirmedEmail && normaliseEmail(email) === confirmedEmail;
+                if (!isRecovery) sessionSet(FRESH_KEY, '1');
+                // CLEARED HERE, BEFORE startAuthedSession — which refills the
+                // composer from this variable synchronously. Clearing later (or
+                // leaning on the reset that bootChats eventually runs) leaves a
+                // real frame with A's text sitting in B's composer.
+                if (!identityConfirmed) pendingResendText = '';
                 startAuthedSession();
                 return;
               }
@@ -3261,9 +3383,25 @@
        * conversation, not a fresh one.
        */
       var reAuthing = false; // several calls can 401 together; gate once
+      var expiredForEmail = ''; // whose token just died; '' = unknown
+      /**
+       * The owner as DECODED FROM THE TOKEN ITSELF, with no fallback. Kept
+       * apart from expiredForEmail because the two answer different
+       * questions: continuing the conversation may lean on a best-effort
+       * guess, releasing the draft may not. A fallback-only match is not a
+       * confirmation — lastAuthEmail records who typed into this tab, not
+       * who the dead token belonged to.
+       */
+      var expiredTokenEmail = '';
       function authExpired(reason) {
         if (reAuthing) return;
         reAuthing = true;
+        // Read it off the DYING token, before it is thrown away — this is
+        // the only moment the widget still knows whose session ended, and
+        // a member who arrived on a cached token never submitted an email
+        // this mount for lastAuthEmail to hold.
+        expiredTokenEmail = emailFromToken(authToken);
+        expiredForEmail = expiredTokenEmail || normaliseEmail(lastAuthEmail);
         authToken = null;
         sessionRemove(TOKEN_KEY);
         resetChatState();

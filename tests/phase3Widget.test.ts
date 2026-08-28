@@ -256,7 +256,7 @@ describe('S4 — the three failure states, pairwise distinct', () => {
 });
 
 describe('S4 — mid-session expiry re-auths INTO the same conversation', () => {
-  it('401 expired on send -> gate in expired mode -> re-auth -> same chat, history repainted, text preserved', async () => {
+  it('401 expired on send -> gate in expired mode -> re-auth -> same chat, history repainted, and an UNVERIFIABLE identity does not receive the draft', async () => {
     window.sessionStorage.setItem('james-bot-token', 'old-token');
     const server = makeServer({
       expireChat: true,
@@ -289,8 +289,22 @@ describe('S4 — mid-session expiry re-auths INTO the same conversation', () => 
     // ACTIVE_KEY survived, boot landed in it, history repainted...
     expect(gate()).toBeNull();
     expect(bubbleText().some((t) => t.includes('yesterday: the numbers')), 'the member lost their conversation').toBe(true);
-    // ...and the unsent message is back in the composer, armed to resend.
-    expect(chatInput().value, 'the unsent message was lost').toBe('my unsent question');
+    // ...and the CONVERSATION is back. The DRAFT is not, and that is a later
+    // ruling superseding this line rather than a regression:
+    //
+    //   FINDING-050/052 — continuing the conversation and releasing the draft
+    //   are decoupled. The transcript is server-scoped and re-fetched under
+    //   the new token, so continuing on an unverifiable identity costs
+    //   nothing. The draft is client-only, no server check can catch a
+    //   mis-attribution, and handing a stranger someone's private text has no
+    //   undo. Releasing it therefore requires POSITIVE confirmation that the
+    //   submitted address is the one the dead token named.
+    //
+    // This test mints 'old-token', which carries no decodable payload, so the
+    // owner is unknown and the draft goes. A real token names its owner and
+    // the draft survives — proven behaviourally in gatePassNewChat.test.ts
+    // ('SAME email: continuation preserved').
+    expect(chatInput().value, 'an unverifiable identity was handed the draft').toBe('');
   });
 
   it('the token is cleared in exactly one place — a 401 on /chats mid-boot gates too', async () => {
