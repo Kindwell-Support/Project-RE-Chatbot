@@ -286,10 +286,13 @@ whatever height the snippet happens to carry.
 
 ## Instrument construction rule (adopted 2026-08-28)
 
-After five instances in one week of the same defect — the frame watch sampling
-past the transient, the 520px row that never reached the floor, the gated rail
-probe, railPos/railOnScreen feeding nothing, and the hamburger gate that only
-printed — this is now a construction rule rather than something a sweep catches:
+After repeated instances of the same defect — the frame watch sampling past the
+transient, the 520px row that never reached the floor, the gated rail probe,
+railPos/railOnScreen feeding nothing, the hamburger gate that only printed, the
+measure gate that straddled its own dip, and the floor scoped by the constant
+its mutation moves — this is a construction rule rather than something a sweep
+catches. Four slices of one family: **a gate that reads as coverage and is
+not.**
 
 1. **Every value read must either FEED THE VERDICT or be printed under an
    explicit INFORMATIONAL label.** There is no third category. A value that is
@@ -300,6 +303,24 @@ printed — this is now a construction rule rather than something a sweep catche
 3. **A gate is not finished until the gate itself can fail.** FINDING-060 sat
    inside the block written to fix FINDING-059 — the fix for "a value that does
    not gate" was itself a value that did not gate.
+4. **A gate asserting a property across a RANGE must sample every
+   discontinuity in that range** — tier boundaries, breakpoints, clamp
+   endpoints — and must state its sampling density in its own output. A range
+   claim from two endpoints is not a range claim. (FINDING-065: the measure
+   gate sampled 375 and 768 and straddled the dip it existed to catch.)
+5. **Scope a gate by MEASURED STATE, not by the constants it guards.** When you
+   write a scope condition, ask whether the mutation you named would also move
+   the scope. If it would, the gate is inert against its own mutation. This is
+   distinct from rules 1 and 4: the value gates, the sampling is dense, and the
+   gate is still blind — because the region it inspects slides out from under
+   the violation. (FINDING-065: the measure floor read `w >= 801`; reverting
+   the breakpoint put the rail in the flow at 561, outside the scope, and the
+   gate printed `ok` over a 19-character dip.)
+
+Rule 4 was ruled standing at the end of the previous slice and was applied in
+the instruments, but was never written down here — which is the same failure
+mode this block exists to prevent, one level up. Rules are recorded here on the
+turn they are made.
 
 ---
 
@@ -317,7 +338,12 @@ nest — leaving mid at 700 would have put a 750px widget in narrow-but-not-mid,
 a combination no rule anticipates.
 
 Measured across the transition: **73 characters at 800, 65 at 801.** The
-predicted 57 was pessimistic; the mid rail is 11.5 units, not 13.5.
+predicted 57 was pessimistic, and the reason matters: **the rail is
+`--jb-rail-w-mid` (11.5 base units) in the `jb-w-mid` tier the transition lands
+in, not `--jb-rail-w` (13.5).** The arithmetic above uses 13.5 and is therefore
+conservative by two base units — about 8 characters. That margin is what made
+the icon-only fallback unnecessary; anyone re-deriving this breakpoint from
+13.5 will conclude the transition is tighter than it is.
 
 ## FINDING-065 — range claims sampled at two points
 
@@ -359,3 +385,18 @@ probe under-reported by 2px because `elementFromPoint` is exclusive at the
 exact boundary, and it measured `.jb-calc`'s children **mid-animation** —
 `jb-card-in` starts at a sub-1 scale, so a 44px box read as 43.1px. Entry
 animations are now finished deterministically before anything is measured.
+
+---
+
+## FOLLOW-UP (not this slice) — separate the chat action buttons so both reach 44
+
+`.jb-chat-act` is ruled acceptable at 26×26 (FINDING-066): its rename and delete
+instances sit 2px apart, so 44×44 hit areas centred 24px apart would overlap by
+20px, and one of the two is DELETE. An accidental delete is unrecoverable while
+a missed tap costs a retry, so the small target is the safer trade **at the
+current spacing**.
+
+The spacing is the actual constraint. Separating the two controls — more gap,
+or moving delete behind the existing confirm step rather than beside rename —
+would let both reach 44×44 with no overlap and remove the trade entirely. That
+is a layout change to the chat row, out of scope here.
