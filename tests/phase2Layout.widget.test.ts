@@ -226,8 +226,15 @@ describe('S4.1 — the tier CSS is keyed to the classes, per rule', () => {
 
   it('S4.3: the mid tier decrams the composer', () => {
     boot();
-    expect(declOf('.jb-root.jb-w-mid .jb-form', 'padding')).toBe('10px');
-    expect(declOf('.jb-root.jb-w-mid .jb-send', 'width')).toBe('40px');
+    // Token now: calc(base * 0.5556) is exactly 10px at base 18, so the tier
+    // still decrams by the same amount at the anchor and scales from there.
+    expect(declOf('.jb-root.jb-w-mid .jb-form', 'padding')).toBe(
+      'calc(var(--jb-font-base) * 0.5556)',
+    );
+    // Touch target: 40px at base 18, floored at the 44px minimum.
+    expect(declOf('.jb-root.jb-w-mid .jb-send', 'width')).toBe(
+      'max(44px, calc(var(--jb-font-base) * 2.2222))',
+    );
     // And narrows the rail, which is where the conversation's width goes.
     // Now a token: the rail holds type, so its width rides --jb-font-base like
     // the padding does. calc(base * 11.5) is exactly 184px at base 16, so the
@@ -246,7 +253,12 @@ describe('S4.1 — the tier CSS is keyed to the classes, per rule', () => {
     boot();
     // Now a token: the narrow-mode header is one step down from --jb-font-xl.
     expect(declOf('.jb-root.jb-w-narrow .jb-head', 'font-size')).toBe('var(--jb-font-lg)');
-    expect(declOf('.jb-root.jb-w-tight .jb-send', 'width')).toBe('42px');
+    // The send button is a TOUCH TARGET: calc(base * 2.3333) is 42px at base
+    // 18, but it is floored at the 44px accessibility minimum so a small
+    // base cannot shrink it below a usable tap area.
+    expect(declOf('.jb-root.jb-w-tight .jb-send', 'width')).toBe(
+      'max(44px, calc(var(--jb-font-base) * 2.3333))',
+    );
   });
 });
 

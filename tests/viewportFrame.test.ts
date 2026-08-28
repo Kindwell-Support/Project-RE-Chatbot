@@ -179,12 +179,15 @@ describe('viewport fill — the mount is sized by the widget', () => {
     expect(target().style.width).toBe('100%');
   });
 
-  it('SOURCE: the max content width rides the type scale, not a round number', () => {
-    // 58 base units, derived from the comfortable measure — see the comment at
-    // the declaration. Pinned so it cannot quietly become a magic pixel value.
-    expect(WIDGET_SRC).toMatch(/--jb-max-w:calc\(var\(--jb-font-base\) \* 58\)/);
-    expect(WIDGET_SRC, 'the root no longer caps or centres').toContain(
-      'max-width:var(--jb-max-w);margin-left:auto;margin-right:auto;',
+  it('SOURCE: the root no longer caps its own width', () => {
+    // --jb-max-w is REMOVED. Capping the root held line length by starving the
+    // widget; the measure now lives on the text column instead, in
+    // font-relative units. The behavioural proof is in
+    // tools/qa/fluid_scale_chrome_check.mjs — this only pins that the cap has
+    // not crept back.
+    expect(WIDGET_SRC).not.toMatch(/--jb-max-w:\s*calc/);
+    expect(WIDGET_SRC, 'the measure token is gone').toMatch(
+      /--jb-measure:calc\(var\(--jb-font-base\) \* 36\)/,
     );
   });
 

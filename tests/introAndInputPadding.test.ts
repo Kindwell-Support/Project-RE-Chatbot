@@ -158,13 +158,14 @@ describe('welcome copy — the comps line lands without disturbing the pinned co
 });
 
 describe('input padding — matched, and defended at (0,2,0)', () => {
-  it('the composer carries the new horizontal padding', async () => {
-    window.sessionStorage.setItem('james-bot-token', 't');
-    mount();
-    await tick();
-    const composer = pad('.jb-input');
-    expect(composer.left).toBe('18px');
-    expect(composer.right).toBe('18px');
+  it('the composer padding rides the knob, declared', () => {
+    // Was a computed-pixel assertion. The padding is calc(var(--jb-font-base)
+    // * 1) now — exactly 18px at base 18 — and jsdom returns '0' for
+    // calc(var(...)), so the pixels are measured in
+    // tools/qa/input_padding_chrome_check.mjs instead.
+    expect(WIDGET_SRC).toMatch(
+      /'\.jb-input\{[^']*padding:calc\(var\(--jb-font-base\) \* 0\.6667\) calc\(var\(--jb-font-base\) \* 1\)/,
+    );
   });
 
   it('the GATE input padding rides the knob, declared', () => {
@@ -189,7 +190,12 @@ describe('input padding — matched, and defended at (0,2,0)', () => {
       padding: 0;
     }`);
     await tick();
-    expect(pad('.jb-input').left, 'host reset beat the composer padding').toBe('18px');
+    // The DEFENDED-ness is what jsdom can still answer: the tier must carry an
+    // !important padding for this control, or the host reset takes it. The
+    // resolved value under a hostile sheet is measured in Chrome.
+    expect(WIDGET_SRC, 'the composer lost its tier padding').toMatch(
+      /'\.jb-root \.jb-input\{padding:[^']*!important;\}'/,
+    );
   });
 
   it('DEFENCE: same for the gate input', async () => {
@@ -207,7 +213,8 @@ describe('input padding — matched, and defended at (0,2,0)', () => {
     mount('.editor-content input { padding: 0 !important; }');
     await tick();
     // Both sides !important, so SPECIFICITY decides: (0,2,0) over (0,1,1).
-    expect(pad('.jb-input').left).toBe('18px');
+    // Asserted on the declaration for the calc(var(...)) reason above.
+    expect(WIDGET_SRC).toMatch(/'\.jb-root \.jb-input\{padding:[^']*!important;\}'/);
   });
 
   it('CONTROL: without the defensive tier the host reset WOULD win', async () => {
@@ -224,8 +231,8 @@ describe('input padding — matched, and defended at (0,2,0)', () => {
   });
 
   it('NO DIVERGENCE: the base rule and the defensive tier declare the same value', () => {
-    const base = WIDGET_SRC.match(/'\.jb-input\{[^']*padding:(\d+px \d+px);/);
-    const guard = WIDGET_SRC.match(/'\.jb-root \.jb-input\{padding:(\d+px \d+px) !important;\}'/);
+    const base = WIDGET_SRC.match(/'\.jb-input\{[^']*padding:(calc\([^;]*\));/);
+    const guard = WIDGET_SRC.match(/'\.jb-root \.jb-input\{padding:(calc\([^;]*\)) !important;\}'/);
     expect(base, 'base .jb-input padding not found').not.toBeNull();
     expect(guard, 'defensive .jb-input padding not found').not.toBeNull();
     expect(
@@ -245,19 +252,22 @@ describe('input padding — matched, and defended at (0,2,0)', () => {
     expect(gGuard![1], 'gate tiers DRIFTED').toBe(gBase![1]);
   });
 
-  it('composer and gate still resolve to the SAME horizontal padding at base 16', () => {
-    // They no longer MATCH IN SOURCE — the composer is still the 12px/18px
-    // literal while the gate rides --jb-ctl-pad-*, which is
-    // calc(base * 1.125) = exactly 18px at base 16. So the two agree at the
-    // old base and diverge as the knob turns, which is deliberate: the gate
-    // was moved onto the knob and the composer has not been yet. Pinning the
-    // ARITHMETIC keeps that honest — if the ratio is ever retuned, this fails
-    // and someone has to decide about the composer too.
+  it('composer AND gate are both on the knob — neither is a literal any more', () => {
+    // The old assertion pinned a coincidence: both happened to be 18px at base
+    // 18 while the composer was still a literal. Both ride the token now, so
+    // the durable property is that NEITHER is hardcoded — they scale together
+    // even though their multipliers differ (composer 1.0, gate 1.125; the gate
+    // input is a larger target on a standalone card).
     const h = (re: RegExp) => WIDGET_SRC.match(re)?.[1];
-    const composer = h(/'\.jb-input\{[^']*padding:\d+px (\d+)px;/);
-    const ratio = h(/--jb-ctl-pad-x:calc\(var\(--jb-font-base\) \* ([\d.]+)\)/);
-    expect(composer, 'composer horizontal not parsed').toBeTruthy();
-    expect(ratio, 'the ctl padding ratio not parsed').toBeTruthy();
-    expect(Number(ratio) * 16, 'gate and composer disagree at base 16').toBe(Number(composer));
+    // NOT [^)]* for the first calc — it contains a nested var(...) whose
+    // close-paren ends the class early. Match the whole shape instead.
+    const composerX = h(
+      /'\.jb-input\{[^']*padding:calc\(var\(--jb-font-base\) \* [\d.]+\) calc\(var\(--jb-font-base\) \* ([\d.]+)\)/,
+    );
+    const gateX = h(/--jb-ctl-pad-x:calc\(var\(--jb-font-base\) \* ([\d.]+)\)/);
+    expect(composerX, 'the composer padding is not on the token').toBeTruthy();
+    expect(gateX, 'the gate padding is not on the token').toBeTruthy();
+    expect(Number(composerX)).toBeGreaterThan(0);
+    expect(Number(gateX)).toBeGreaterThan(0);
   });
 });

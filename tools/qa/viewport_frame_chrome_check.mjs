@@ -52,7 +52,6 @@ async function boot(vw, vh) {
   return page;
 }
 
-const MAX_W = 18 * 58; // --jb-max-w = calc(var(--jb-font-base) * 58)
 
 const read = () => ({
   mountH: Math.round(document.getElementById('james-bot').getBoundingClientRect().height),
@@ -97,18 +96,16 @@ for (const [vw, vh] of [[1600, 1100], [1280, 1100], [1280, 520], [1280, 380], [1
   const railWrong = narrow
     ? (m.railPos !== 'absolute' || m.railOnScreen)
     : (m.railPos !== 'static' || !m.railOnScreen);
-  // FINDING-061 — THE 1044 CAP IS HALF THIS SLICE AND WAS PINNED ONLY BY A
-  // SOURCE REGEX. Measured now: above the cap the root must stop AT it; below
-  // the cap the root must take everything the mount offers. Fails on: deleting
-  // max-width:var(--jb-max-w) from .jb-root.
-  const widthWrong = m.mountW > MAX_W
-    ? Math.abs(m.rootW - MAX_W) > 1
-    : Math.abs(m.rootW - m.mountW) > 1;
+  // FULL BLEED. --jb-max-w is removed: the root must take the whole mount at
+  // every width, with no centring gap. The measure is held on the text column
+  // instead — asserted in fluid_scale_chrome_check.mjs.
+  // Fails on: restoring any max-width on .jb-root.
+  const widthWrong = Math.abs(m.rootW - m.mountW) > 1;
   if (m.pageX || !m.listScrolls || !m.composerPinned || m.mountH !== expected ||
       railWrong || widthWrong) bad += 1;
   console.log(
     (vw + 'x' + vh).padEnd(14) + (m.mountH + 'px').padEnd(8) +
-    (m.rootW + 'px').padEnd(7) + (m.mountW > MAX_W ? 'capped' : ' fills').padEnd(7) +
+    (m.rootW + 'px').padEnd(7) + (Math.abs(m.rootW - m.mountW) <= 1 ? ' fills' : 'CAPPED').padEnd(7) +
     (floored ? 'FLOOR' : '  -').padEnd(9) + m.tiers.padEnd(18) +
     m.railPos.padEnd(14) + (m.railOnScreen ? 'yes' : 'no').padEnd(10) +
     (m.listScrolls ? 'yes' : 'NO').padEnd(12) + (m.composerPinned ? 'yes' : 'NO').padEnd(8) +
