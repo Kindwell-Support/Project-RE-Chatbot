@@ -1122,6 +1122,11 @@
     options = options || {};
     var apiUrl = String(options.apiUrl == null ? '' : options.apiUrl).replace(/\/+$/, '');
     var targetSelector = options.target || '#james-bot';
+    // Frame wiring is per-mount, but GHL swaps lessons without a page load,
+    // so mount() runs again on a NEW target element. Without this handle each
+    // swap added another resize listener and another observer bound to a
+    // detached root — the churn this slice is meant to avoid, not create.
+    var teardownFrame = null;
     // VESTIGIAL, KEPT (P3 hard contract): the widget now collects and
     // verifies the email itself, so this option plays no part in identity —
     // but removing it from the signature would force a hand-edit of the live
@@ -1149,6 +1154,9 @@
     var lastAuthEmail = ''; // re-auth prefill only; never sent unverified
 
     function mount() {
+      // A lesson swap mounts again on a new element; drop the previous
+      // mount's listeners and observers before installing this one's.
+      if (teardownFrame) { teardownFrame(); teardownFrame = null; }
       var target = document.querySelector(targetSelector);
       if (!target || target.getAttribute('data-mounted') === 'true') return;
       target.setAttribute('data-mounted', 'true');
@@ -1330,15 +1338,20 @@
         return total;
       }
 
+      // Returns the height it computed, or null when nothing is measurable.
+      // The settle loop below compares that return across frames — it is the
+      // only value that reflects BOTH causes of a late layout change.
       function applyFrame() {
-        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        if (typeof window === 'undefined' || typeof document === 'undefined') return null;
         var vh = window.innerHeight || 0;
+        var computed = null;
         // Nothing measurable (jsdom before layout, a hidden tab): keep the last
         // good box rather than collapsing to the floor.
         if (vh && target && target.getBoundingClientRect) {
           var top = target.getBoundingClientRect().top;
           var avail = vh - top - FRAME_GUTTER - spaceBelow(target);
           var h = Math.max(FRAME_MIN_H, Math.round(avail));
+          computed = h;
           // Idempotent: the ResizeObserver below fires on our own write, and
           // an unconditional write would spin.
           if (target.style.height !== h + 'px') target.style.height = h + 'px';
@@ -1358,18 +1371,117 @@
           }
         }
         applyWidthClasses();
+        return computed;
+      }
+
+      /**
+       * FINDING-068 — THE GEOMETRY IS NOT FINAL AT MOUNT.
+       *
+       * GHL's Custom JS applies .ajm-lesson after we mount, which display:none's
+       * the comments container and Mark As Complete. Those sit BELOW the widget,
+       * so what moves is spaceBelow() — measured at 324px on the repro — while
+       * mountTop does not move at all. The height computed at mount is therefore
+       * short by that much, and nothing re-runs: the ResizeObserver watches the
+       * ROOT, whose height we set ourselves, so its box never changes on its own.
+       * A resize (any zoom change) recomputes and repairs it, which is exactly
+       * the reported symptom.
+       *
+       * THE SIGNAL IS THE COMPUTED HEIGHT, not mountTop. On the real page
+       * mountTop is stable from the first frame, so a mountTop-stability
+       * condition would terminate immediately and fix nothing.
+       *
+       * TERMINATION — two independent bounds, whichever comes first:
+       *   1. the computed height is identical on SETTLE_STABLE_FRAMES
+       *      consecutive animation frames, or
+       *   2. SETTLE_MAX_MS of wall clock elapses.
+       * There is no unbounded polling: the loop cannot outlive the deadline even
+       * if the height never stabilises.
+       */
+      var SETTLE_STABLE_FRAMES = 3;
+      var SETTLE_MAX_MS = 3000;
+      var settleRaf = 0;
+      var settleStart = 0;
+      var settleStable = 0;
+      var settleLastH = -1;
+      var disposed = false;
+      var raf = typeof window.requestAnimationFrame === 'function'
+        ? function (fn) { return window.requestAnimationFrame(fn); }
+        : null;
+
+      function cancelSettle() {
+        if (settleRaf && typeof window.cancelAnimationFrame === 'function') {
+          window.cancelAnimationFrame(settleRaf);
+        }
+        settleRaf = 0;
+      }
+
+      function settleStep() {
+        settleRaf = raf(function () {
+          settleRaf = 0;
+          if (disposed) return;
+          var h = applyFrame();
+          if (h !== null && h === settleLastH) settleStable += 1;
+          else { settleStable = 0; settleLastH = h; }
+          // Both exits are hard stops. Neither depends on the height ever
+          // settling, so a page whose layout never quiets still terminates.
+          if (settleStable >= SETTLE_STABLE_FRAMES) return;
+          if (Date.now() - settleStart >= SETTLE_MAX_MS) return;
+          settleStep();
+        });
+      }
+
+      // Re-entrant by design: a second call restarts the window rather than
+      // running a second loop, so repeated resize events cannot stack loops.
+      function settle() {
+        if (disposed) return;
+        applyFrame();
+        if (!raf) return; // jsdom without rAF: the single pass above is all there is
+        cancelSettle();
+        settleStart = Date.now();
+        settleStable = 0;
+        settleLastH = -1;
+        settleStep();
       }
 
       if (typeof window.ResizeObserver === 'function') {
-        new window.ResizeObserver(applyFrame).observe(root);
+        var ro = new window.ResizeObserver(applyFrame);
+        ro.observe(root);
+        // THE ANCESTOR CHAIN is what the root cannot see. When a sibling below
+        // the mount hides, every ancestor's box changes and the root's does not.
+        // This covers the whole life of the page — lazy content, a late comments
+        // block, an accordion opened an hour in — where the settle window covers
+        // only first paint. Bounded and event-driven: one observer, one entry per
+        // ancestor (single digits), firing only on real box changes. Our own
+        // height write is idempotent-guarded, so it cannot feed itself a loop.
+        var anc = target.parentElement;
+        while (anc) {
+          ro.observe(anc);
+          if (anc === document.body) break;
+          anc = anc.parentElement;
+        }
       }
       // ALWAYS, not just as a ResizeObserver fallback: the observer watches the
       // ROOT, and a viewport change that does not change the root's own box —
       // the window growing while the mount stays at a stale fixed height — is
       // exactly the case this slice exists to fix.
-      window.addEventListener('resize', applyFrame);
-      window.addEventListener('orientationchange', applyFrame);
-      applyFrame();
+      window.addEventListener('resize', settle);
+      window.addEventListener('orientationchange', settle);
+      // Webfont swap reflows the page after mount; one-shot, no window of its own.
+      if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
+        document.fonts.ready.then(function () { if (!disposed) settle(); });
+      }
+
+      teardownFrame = function () {
+        disposed = true;
+        cancelSettle();
+        if (typeof ro !== 'undefined' && ro) ro.disconnect();
+        window.removeEventListener('resize', settle);
+        window.removeEventListener('orientationchange', settle);
+      };
+
+      // Runs on EVERY mount, so a lesson swap re-settles against the new
+      // layout rather than inheriting the previous lesson's geometry.
+      settle();
 
       function isNarrow() {
         return root.classList.contains('jb-w-narrow');
