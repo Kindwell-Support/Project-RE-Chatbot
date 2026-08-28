@@ -660,3 +660,65 @@ show through it. Nothing in our CSS has a horizontal px-based extent in that ban
 The caveat worth stating: the fixture is a bare page. Anything GHL renders *on top
 of* the widget would not appear in it. But given an opaque root and flat measured
 layers, whatever produces that break sits outside our stylesheet.
+
+---
+
+## FINDING-070 — the upper segment had to change shape to grow
+
+The extended curve was approved and then asked to go further at 2K and 4K, with
+1080p still frozen. The slope could not simply be raised, and the reason is
+structural rather than a matter of taste.
+
+**A ray through the origin has its slope pinned by continuity.** The previous
+upper segment was `base = w × 0.009925`, and that constant is not free: for the
+ray to meet the lower segment at the join it must equal `19 / 1920 = 0.0099`.
+Any steeper ray opens a visible jump at 1920 — the widget would snap a full step
+larger the moment a window crossed that width. So "make it bigger" and "keep the
+join continuous" cannot both hold for a ray.
+
+The segment is therefore **affine from the join**:
+
+```
+w > 1920 :  base = min(48, 19 + (w − 1920) × 0.014)
+```
+
+Anchoring at the join value and growing from there lifts the far end while
+leaving the join exact. Both segments give 19.00 at 1920, so the join now steps
+by **0.01px** — the upper segment's own 2dp quantisation, and better than the
+0.07px of the ray it replaces.
+
+### What this changes about the ratio invariant
+
+The previous slice gated *constancy*: `bubble/widget = 36 × 0.009925 = 35.73%` at
+every width above the join. An affine segment cannot hold that — the ratio now
+**rises** with width. That is the intent, not a regression: 4K should exceed
+1080p's proportions rather than merely match them.
+
+| widget | base | was | change | bubble | bubble/widget | rail | rail % |
+|---|---|---|---|---|---|---|---|
+| 1758 (1080p) | 18.50px | 18.50px | **unchanged** | 666px | 37.9% | 250px | 14.2% |
+| 1920 (join) | 19.00px | 19.00px | **unchanged** | 684px | 35.6% | 257px | 13.4% |
+| 2347 (2K) | 24.98px | 23.29px | +7.3% | 899px | 38.3% | 337px | 14.4% |
+| 2560 | 27.96px | 25.41px | +10.0% | 1007px | 39.3% | 377px | 14.7% |
+| 3520 (4K) | 41.40px | 34.94px | +18.5% | 1490px | 42.3% | 559px | 15.9% |
+| 3840 | 45.88px | 38.11px | +20.4% | 1652px | 43.0% | 619px | 16.1% |
+
+The constancy gate was replaced by two that actually describe the new shape:
+
+1. **The ratio never goes backwards** as the screen grows. Its tolerance is
+   derived from the segment's own 0.01px quantisation rather than written down —
+   without that, rounding alone dips the ratio by a hair between adjacent widths
+   and reads as a regression. (It did, on the first run.)
+2. **4K exceeds the 1080p reference.** Reverting to a ray reports
+   `NOT BIGGER THAN 1080p` at 3520, because continuity pins that ray at 0.0099
+   and lands it at 35.7% against 1080p's 37.9%.
+
+The 48px ceiling engages at 3992 — past a full-bleed 4K panel, still short of an
+ultrawide running away. Measure holds at 73 characters across the whole range,
+because the 36-unit measure scales with the base.
+
+### The hard constraint, again
+
+**0 widths move between 320 and 1920.** Only the upper branch changed. Verified
+by the same frozen-pre-curve gate: mutating the lower anchor 18 → 18.5 produces
+33 `MOVED 1080p` failures.
