@@ -185,3 +185,67 @@ it. Collected-but-unread data reads as coverage that does not exist.
 **Standing note for future frame-level work.** A claim that no frame carried
 cross-member content is only as good as the sampling rate. State the sampling
 mechanism alongside the claim, not just the result.
+
+## (d) Lesson-page width chain — CLOSED, no CSS change (2026-08-28)
+
+**Question:** does the GHL grid column cap the widget's width on lesson pages?
+**Answer: no.** `.content-fix-width` measures `max-width: 1800px` on a real
+lesson page (operator, DevTools). Our own `--jb-max-w` is
+`calc(var(--jb-font-base) * 58)` = **1044px at base 18**, so the container is
+756px wider than anything we would use. It never constrains us, and the space
+beside the widget on a wide screen is our own centring, by design.
+
+**Custom CSS v2 already does its part.** With
+`html.ajm-lesson .content-fix-width > .col-span-8 { grid-column: span 12 / span 12 }`
+and the siblings hidden, the column takes the container's full content width —
+measured, not assumed. What remained in the sweep was only the container's own
+cap, which at 1800px is inert for us.
+
+**Measured sweep** (Chrome, `.membership-preview-remote.ajm-lesson` wrapper,
+Custom CSS v2 rules applied, mount inside `.col-span-8`):
+
+| `.content-fix-width` | mount @1920 | mount @2560 | widget root |
+| --- | --- | --- | --- |
+| no cap | 1920 | 2560 | 1044 |
+| max-width 1280 | 1280 | 1280 | 1044 |
+| max-width 1280 + pad 24 | 1280 | 1280 | 1044 |
+| padding 48 only | 1824 | 2464 | 1044 |
+| max-width 1024 + pad 32 | 1024 | 1024 | **1024** |
+
+The widget renders at its own 1044px measure in every shape EXCEPT one whose
+cap is narrower than 1044. That is the only case where a container override
+would buy anything.
+
+**The gap decomposes into two things needing different rules**, if a future
+template ever does cap below 1044:
+- **max-width** — produces the bulk, and lands as AUTO MARGIN, so it scales
+  with the viewport (a 1280 cap gives 640px at 1920 and 1280px at 2560).
+- **padding** — a FIXED amount on top, constant at any viewport (48px → 96px).
+
+**The override, kept here and NOT pasted into Custom CSS.** Verified to close
+every shape above to a zero gap at 1920 and 2560 with no horizontal scrollbar.
+Positive-marker scope only — no `:not()`, because a negated scope matches by
+default once GHL rewrites `html` to its app wrapper:
+
+```css
+html.ajm-lesson .content-fix-width {
+  max-width: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+```
+
+**Caveat if it is ever applied:** removing the cap widens EVERYTHING in
+`.col-span-8`, not only our mount — any remaining lesson copy or video goes
+full-bleed with it. The v2 rules hide the title, comments and Mark As Complete,
+but not necessarily everything else in that column.
+
+**Not reachable from this repo, for the next person who tries:**
+`.content-fix-width` appears 0 times in `clientportal-core-*.css`, 0 times in
+`index-*.css`, 0 times in the portal HTML and 0 times in the 3.3MB
+`app-*.js` bundle. It ships in a member-only route chunk, and the lesson DOM is
+behind member auth — so its computed style can only come from a real member
+session. That is why the sweep above is parameterised rather than measured
+directly.
