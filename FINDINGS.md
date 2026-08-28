@@ -286,10 +286,43 @@ whatever height the snippet happens to carry.
 
 ## Instrument construction rule (adopted 2026-08-28)
 
-After five instances in one week of the same defect — the frame watch sampling
-past the transient, the 520px row that never reached the floor, the gated rail
-probe, railPos/railOnScreen feeding nothing, and the hamburger gate that only
-printed — this is now a construction rule rather than something a sweep catches:
+This is one defect wearing five costumes: **a gate that reads as coverage and is
+not.** It has appeared in five consecutive slices, each time in a form the
+previous rule did not cover, and each time it was found by an adversarial pass
+rather than by the suite going red. That is the point — a suite cannot catch this
+class, because in every instance the suite was green and the *instrument* was the
+broken thing.
+
+Read the arc before the rules; the rules only make sense against it.
+
+| # | The defect | Why it read as coverage | Rule it produced |
+|---|---|---|---|
+| 1 | A value measured, printed, never gated. `railPos`/`railOnScreen` sat in the output feeding nothing; the rail could have stopped collapsing at 375px and the row would have printed `static / yes` and passed. | Output volume looks like assertion. Anyone scanning the table sees a number and assumes something checked it. | **1** — every value read either feeds the verdict or is labelled INFORMATIONAL. No third category. |
+| 2 | An instrument sampling past the transient it was built for. The frame watch measured after the thing it was watching for had already resolved. | The measurement was real and correct — about the wrong moment. | **2** — name the mutation that makes each gate fail. Naming it forces the question of *when* the mutation is visible. |
+| 3 | A gate inside the fix for the previous gate. FINDING-060 sat in the block written to close FINDING-059: the fix for "a value that does not gate" was itself a value that did not gate. | Recency. The block had just been reviewed, so it was assumed clean. | **3** — a gate is not finished until the gate itself can fail. Run the mutation. |
+| 4 | A range claim from two endpoints. The measure gate sampled 375 and 768 and straddled a 40-character dip between them — the defect sat inside the gate's stated range the whole time and the table read `ok`. | Both sampled points were genuinely fine. The claim was about the range; the evidence was about two points. | **4** — sample every discontinuity in the range, and state the sampling density in the output. |
+| 5 | A gate scoped by the constant its own mutation moves. The measure floor read `w >= 801`; reverting the breakpoint put the rail in the flow at 561, outside the scope, so the gate printed `ok` over the dip it exists to catch. | The value gated, the sampling was dense, the mutation was named. Everything the first four rules ask for was satisfied. | **5** — scope by measured state, not by the constants you guard. |
+
+The fifth is worth dwelling on: it is the first that satisfies every earlier rule
+and is still inert. Rules 1–4 govern *what* is measured and *where*. Rule 5
+governs the region the gate inspects sliding out from under the violation when
+the build changes. The test is one question: **would the mutation you named also
+move the scope?**
+
+FINDING-067 is rule 5's sibling, and the reason this family is worth naming
+rather than enumerating. The viewport sweep's boundaries were literals restating
+product constants, so under a breakpoint mutation it sampled the old boundaries
+while printing a density claim that was false about the build under test. No gate
+went inert — a stale *claim*, not a stale *scope*. But deriving those boundaries
+from the build exposed something worse than staleness: two of the literals had
+been **wrong from the start** (the curve clamp endpoints are 645 and 3145; they
+were written as 531 and 3258), so the line had been claiming ±1px coverage of
+discontinuities it never visited. Restating a constant does not merely risk going
+stale. It risks never having been right.
+
+The generalisation: **a claim expressed in terms of the thing under test is as
+wrong as a scope expressed that way.** Read constants from the build, or compute
+them from the approved reference — never transcribe them.
 
 1. **Every value read must either FEED THE VERDICT or be printed under an
    explicit INFORMATIONAL label.** There is no third category. A value that is
@@ -300,3 +333,146 @@ printed — this is now a construction rule rather than something a sweep catche
 3. **A gate is not finished until the gate itself can fail.** FINDING-060 sat
    inside the block written to fix FINDING-059 — the fix for "a value that does
    not gate" was itself a value that did not gate.
+4. **A gate asserting a property across a RANGE must sample every
+   discontinuity in that range** — tier boundaries, breakpoints, clamp
+   endpoints — and must state its sampling density in its own output. A range
+   claim from two endpoints is not a range claim. (FINDING-065: the measure
+   gate sampled 375 and 768 and straddled the dip it existed to catch.)
+5. **Scope a gate by MEASURED STATE, not by the constants it guards.** When you
+   write a scope condition, ask whether the mutation you named would also move
+   the scope. If it would, the gate is inert against its own mutation. This is
+   distinct from rules 1 and 4: the value gates, the sampling is dense, and the
+   gate is still blind — because the region it inspects slides out from under
+   the violation. (FINDING-065: the measure floor read `w >= 801`; reverting
+   the breakpoint put the rail in the flow at 561, outside the scope, and the
+   gate printed `ok` over a 19-character dip.)
+
+Rule 4 was ruled standing at the end of the previous slice and was applied in
+the instruments, but was never written down here — which is the same failure
+mode this block exists to prevent, one level up. Rules are recorded here on the
+turn they are made.
+
+---
+
+## FINDING-064 — the rail entered the flow before there was room for it
+
+The drawer→flow breakpoint was 560px. Crossing it removed 11.5 base units from
+the text column in one step, and the measure fell to **40 characters** — below
+anything readable — and stayed there until ~700px.
+
+The breakpoint is now set by what the column can afford, not by a round number.
+With `chars ≈ [0.86W − 15.03b] / 0.5b`, requiring ≥50 gives `W ≥ 46.5b`, which
+against the curve (b = 16.5 in that region) is `W ≥ 769`. **800** is the first
+sensible stop above it. `jb-w-mid` moved 700 → 900 alongside so the tiers still
+nest — leaving mid at 700 would have put a 750px widget in narrow-but-not-mid,
+a combination no rule anticipates.
+
+Measured across the transition: **73 characters at 800, 65 at 801.** The
+predicted 57 was pessimistic, and the reason matters: **the rail is
+`--jb-rail-w-mid` (11.5 base units) in the `jb-w-mid` tier the transition lands
+in, not `--jb-rail-w` (13.5).** The arithmetic above uses 13.5 and is therefore
+conservative by two base units — about 8 characters. That margin is what made
+the icon-only fallback unnecessary; anyone re-deriving this breakpoint from
+13.5 will conclude the transition is tighter than it is.
+
+## FINDING-065 — range claims sampled at two points
+
+Gates asserting a property across a range were sampling their endpoints and
+missing every discontinuity between them. The measure gate sampled 375 and 768
+and straddled the dip in FINDING-064 — the defect was inside the gate's stated
+range the whole time and the table read `ok`. The viewport sweep straddled all
+three tier boundaries and the `FRAME_MIN_H` clamp endpoint.
+
+Both instruments now sample every tier boundary and clamp endpoint at ±1px, and
+no coarser than 40px through the sub-1024 range, and each **states its sampling
+density in its own output**.
+
+**A gate scoped by a constant that the mutation also moves is not scoped at
+all.** The first version of the measure floor read `w >= 801`. Reverting the
+breakpoint to 560 put the rail in the flow at 561 — outside a scope pinned to
+801 — so the gate could not catch its own named mutation, and printed `ok` over
+a 19-character dip. The floor is now scoped by the **measured** rail position.
+Verified: with the breakpoint reverted, four rows report `UNDER 50`.
+
+## FINDING-066 — touch targets below the accessibility minimum
+
+An audit of all 20 interactive controls at base 16 found **13** below 44×44,
+not the two originally named. Two techniques, chosen per control:
+
+- `min-height:44px` where a 44px box is simply an ordinary button (nine
+  controls, plus `.jb-btn-link` which needed `inline-flex` to centre against).
+- an `::after` hit overlay for `.jb-side-toggle`, whose visual box must stay
+  small in the header. The overlay extends the hit area only: no layout shift.
+
+`.jb-chat-act` is **deliberately** at 26×26 and needs a ruling. Its two
+instances sit 2px apart, so 44px overlays centred 24px apart would overlap by
+20px — and one of the two is DELETE. A hit area that can swallow a click aimed
+at its destructive neighbour is worse than a small one. 26×26 clears WCAG
+2.5.8's 24×24 minimum; going further needs the buttons separated first.
+
+Two instrument defects surfaced during this audit and are worth carrying: the
+probe under-reported by 2px because `elementFromPoint` is exclusive at the
+exact boundary, and it measured `.jb-calc`'s children **mid-animation** —
+`jb-card-in` starts at a sub-1 scale, so a 44px box read as 43.1px. Entry
+animations are now finished deterministically before anything is measured.
+
+---
+
+## FOLLOW-UP (not this slice) — separate the chat action buttons so both reach 44
+
+`.jb-chat-act` is ruled acceptable at 26×26 (FINDING-066): its rename and delete
+instances sit 2px apart, so 44×44 hit areas centred 24px apart would overlap by
+20px, and one of the two is DELETE. An accidental delete is unrecoverable while
+a missed tap costs a retry, so the small target is the safer trade **at the
+current spacing**.
+
+The spacing is the actual constraint. Separating the two controls — more gap,
+or moving delete behind the existing confirm step rather than beside rename —
+would let both reach 44×44 with no overlap and remove the trade entirely. That
+is a layout change to the chat row, out of scope here.
+
+---
+
+## FINDING-067 — sampling boundaries that restated product constants
+
+`W_BOUNDARIES = [400, 800, 900]` and `H_CLAMP = 436` in the viewport instrument,
+and `BOUNDARIES = [400, 531, 800, 900, 1024, 3258]` in the fluid instrument, were
+literals restating constants that live in the widget. Under a breakpoint mutation
+both went on sampling the old boundaries while printing a density claim that was
+false about the build under test. No gate went inert and two other instruments
+caught the mutation, so this was a stale claim rather than a stale scope — but a
+printed line that lies about coverage is what the standing rules exist to prevent.
+
+Both are now derived:
+
+- **Tier breakpoints** are parsed from the bundle's own
+  `classList.toggle("jb-w-*", w <= N)` calls. The parse refuses to run if it
+  finds fewer than three, rather than sampling an empty set and calling it dense.
+- **The height clamp** is derived from two probes rather than parsed, because the
+  minified identifiers for `FRAME_MIN_H`/`FRAME_GUTTER` change between builds and
+  the literal `420` also appears as `.jb-root`'s `min-height`, so a text match
+  could bind to the wrong one. A tall probe gives the gutter (`vh − mountH`), a
+  short probe gives the floor, and the endpoint is their sum. The probes must
+  bracket the clamp or the run is refused.
+- **The curve clamp endpoints** are scanned from the approved `curve()`. That one
+  is a deliberate restatement: the curve is the reference the build is checked
+  *against*, not a fact about the build.
+
+**The literals were not merely fragile — two were wrong.** The scan returns 645
+and 3145 for the curve's clamp endpoints; they had been written as 531 and 3258.
+The instrument had been claiming ±1px coverage of two discontinuities it never
+visited, from the moment the density line was introduced.
+
+Proof, with `jb-w-narrow` mutated 800 → 560: the printed density reports
+`400/560/900`, rows appear at 559/560/561, and the rail is observed flipping to
+`static` at 561. The fluid instrument's failure count rose from **4 to 7** —
+deriving the boundaries made the gate strictly stronger, because it now samples
+561, the worst point of the dip at 35 characters, which the hardcoded set never
+reached.
+
+**Also fixed (INSPECTOR, latent):** the per-tier monotonicity gate had no
+minimum-sample guard. A tier reduced to one sampled width satisfies "monotonic"
+vacuously — there is no pair to compare — and would print `monotonic` while
+asserting nothing. Not live (groups are 5/16/5/16), but it is the examined-count
+refusal the other instruments already carry, applied per group rather than once
+per sweep. Under three samples the group now fails.

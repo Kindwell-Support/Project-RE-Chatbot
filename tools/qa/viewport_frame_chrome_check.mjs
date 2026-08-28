@@ -17,6 +17,37 @@ import { readFileSync } from 'node:fs';
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const bundle = readFileSync('public/widget.js', 'utf8');
+
+/**
+ * FINDING-067 — THE SAMPLING BOUNDARIES ARE READ FROM THE BUILD, NOT RESTATED.
+ *
+ * They were literals ([400, 800, 900] and 436). Under a breakpoint mutation the
+ * sweep went on sampling the OLD boundaries and printed a density claim that was
+ * false about the build under test. No gate went inert and other instruments
+ * caught the mutation, so it was a stale claim rather than a stale scope — but a
+ * printed line that lies about coverage is precisely what rule 5 exists to stop.
+ * Rule 5 is about scope; this is its sibling: a CLAIM expressed in terms of the
+ * thing under test is as wrong as a scope expressed that way.
+ *
+ * The tier breakpoints come out of the bundle's own toggle calls, so a
+ * breakpoint change moves the sampling with it.
+ */
+function tierBreakpoints(src) {
+  const out = [];
+  const re = /classList\.toggle\(["'](jb-w-[a-z]+)["'],\s*\w+\s*<=\s*(\d+)\)/g;
+  let m;
+  while ((m = re.exec(src)) !== null) out.push({ tier: m[1], at: Number(m[2]) });
+  // POSITIVE-ASSERTION RULE: a parse that found nothing must refuse, not sample
+  // an empty set and call it dense.
+  if (out.length < 3) {
+    console.log('VERDICT: INVALID — parsed ' + out.length + ' tier breakpoints from the');
+    console.log('  bundle, expected at least 3. The sampling cannot be derived, so no');
+    console.log('  density claim can be made. Check the toggle call shape in widget.js.');
+    process.exit(1);
+  }
+  return out;
+}
+
 const MOUNT = '<div id="james-bot" style="width:100%;height:700px"></div>';
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
@@ -52,7 +83,6 @@ async function boot(vw, vh) {
   return page;
 }
 
-const MAX_W = 18 * 58; // --jb-max-w = calc(var(--jb-font-base) * 58)
 
 const read = () => ({
   mountH: Math.round(document.getElementById('james-bot').getBoundingClientRect().height),
@@ -80,9 +110,52 @@ console.log('viewport      mount   rootW  cap?   floor?   tiers             rail
 console.log('-'.repeat(122));
 let bad = 0;
 let examined = 0;
-// 1600 exercises the CAPPED branch (mount 1600 > 1044); the rest exercise
-// the fills branch. Without a row above the cap the width gate is half dead.
-for (const [vw, vh] of [[1600, 1100], [1280, 1100], [1280, 520], [1280, 380], [1280, 300], [900, 800], [520, 800], [375, 800], [320, 700]]) {
+// FINDING-065 — SAMPLING DENSITY. The rail gate is a claim across the whole
+// width range and the height gate a claim across the whole height range, and
+// neither sampled its own discontinuities: the tier boundaries (400/800/900,
+// where railWrong flips) were STRADDLED by 375/520/900, and the FRAME_MIN_H
+// clamp endpoint (avail == 420 at vh == 436) sat between the 380 and 520 rows.
+// A boundary that is straddled is a boundary that is not tested — an off-by-one
+// in a breakpoint moves the rail for a 1px band that no row ever visits.
+//
+// WIDTHS: every tier boundary at +/-1px, plus a wide row above the old cap.
+// HEIGHTS: the clamp endpoint at +/-1px, plus rows either side of it.
+const TIERS = tierBreakpoints(bundle);
+const W_BOUNDARIES = TIERS.map((t) => t.at).sort((a, b) => a - b);
+// The height clamp is DERIVED FROM TWO PROBES rather than parsed: the minified
+// identifiers for FRAME_MIN_H and FRAME_GUTTER change between builds, and the
+// literal 420 also appears as .jb-root's min-height, so a text match could
+// bind to the wrong one. Measuring cannot mistake them.
+//   tall  -> unclamped, so gutter   = vh - mountH
+//   short -> clamped,   so minH     = mountH
+//   clamp endpoint = minH + gutter
+const probeTall = await boot(1280, 1100);
+const mTall = await probeTall.evaluate(read);
+await probeTall.close();
+const probeShort = await boot(1280, 300);
+const mShort = await probeShort.evaluate(read);
+await probeShort.close();
+const GUTTER = 1100 - mTall.mountH;
+const MIN_H = mShort.mountH;
+const H_CLAMP = MIN_H + GUTTER;
+// The probes must actually bracket the clamp, or the derivation is meaningless.
+if (!(mTall.mountH > MIN_H) || !(mShort.mountH === MIN_H) || !(GUTTER >= 0)) {
+  console.log('VERDICT: INVALID — the clamp probes did not bracket the clamp ' +
+    '(tall ' + mTall.mountH + ', short ' + mShort.mountH + '). No density claim made.');
+  process.exit(1);
+}
+const CASES = [];
+for (const b of W_BOUNDARIES) for (const d of [-1, 0, 1]) CASES.push([b + d, 800]);
+for (const d of [-1, 0, 1]) CASES.push([1280, H_CLAMP + d]);
+for (const c of [[1600, 1100], [1280, 1100], [1280, 520], [1280, 380], [1280, 300],
+  [900, 800], [520, 800], [375, 800], [320, 700]]) CASES.push(c);
+const SEEN = new Set();
+const SWEEP = CASES.filter((c) => {
+  const k = c[0] + 'x' + c[1];
+  if (SEEN.has(k)) return false;
+  SEEN.add(k); return true;
+}).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+for (const [vw, vh] of SWEEP) {
   const page = await boot(vw, vh);
   const m = await page.evaluate(read);
   const expected = Math.max(420, vh - 0 - 16);
@@ -97,18 +170,16 @@ for (const [vw, vh] of [[1600, 1100], [1280, 1100], [1280, 520], [1280, 380], [1
   const railWrong = narrow
     ? (m.railPos !== 'absolute' || m.railOnScreen)
     : (m.railPos !== 'static' || !m.railOnScreen);
-  // FINDING-061 — THE 1044 CAP IS HALF THIS SLICE AND WAS PINNED ONLY BY A
-  // SOURCE REGEX. Measured now: above the cap the root must stop AT it; below
-  // the cap the root must take everything the mount offers. Fails on: deleting
-  // max-width:var(--jb-max-w) from .jb-root.
-  const widthWrong = m.mountW > MAX_W
-    ? Math.abs(m.rootW - MAX_W) > 1
-    : Math.abs(m.rootW - m.mountW) > 1;
+  // FULL BLEED. --jb-max-w is removed: the root must take the whole mount at
+  // every width, with no centring gap. The measure is held on the text column
+  // instead — asserted in fluid_scale_chrome_check.mjs.
+  // Fails on: restoring any max-width on .jb-root.
+  const widthWrong = Math.abs(m.rootW - m.mountW) > 1;
   if (m.pageX || !m.listScrolls || !m.composerPinned || m.mountH !== expected ||
       railWrong || widthWrong) bad += 1;
   console.log(
     (vw + 'x' + vh).padEnd(14) + (m.mountH + 'px').padEnd(8) +
-    (m.rootW + 'px').padEnd(7) + (m.mountW > MAX_W ? 'capped' : ' fills').padEnd(7) +
+    (m.rootW + 'px').padEnd(7) + (Math.abs(m.rootW - m.mountW) <= 1 ? ' fills' : 'CAPPED').padEnd(7) +
     (floored ? 'FLOOR' : '  -').padEnd(9) + m.tiers.padEnd(18) +
     m.railPos.padEnd(14) + (m.railOnScreen ? 'yes' : 'no').padEnd(10) +
     (m.listScrolls ? 'yes' : 'NO').padEnd(12) + (m.composerPinned ? 'yes' : 'NO').padEnd(8) +
@@ -180,6 +251,11 @@ console.log('');
 console.log('INFORMATIONAL (not gated): hamburgerVisible — the control is');
 console.log('  rendered at every width, so its presence cannot fail. What it');
 console.log('  DOES is gated by the movement check above.');
+console.log('SAMPLING DENSITY: tier boundaries ' + W_BOUNDARIES.join('/') + ' and the');
+console.log('  height clamp at vh=' + H_CLAMP + ' are each sampled at +/-1px.');
+console.log('  These are READ FROM THE BUILD, not restated: breakpoints parsed from the');
+console.log('  bundle (' + TIERS.map((t) => t.tier + '<=' + t.at).join(', ') + '), clamp');
+console.log('  derived as minH ' + MIN_H + ' + gutter ' + GUTTER + ' from two probes.');
 console.log('viewport rows examined: ' + examined);
 if (examined === 0) {
   console.log('VERDICT: INVALID — nothing was examined.');

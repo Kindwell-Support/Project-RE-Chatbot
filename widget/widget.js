@@ -73,7 +73,7 @@
        !important note below. */
     '.jb-root{',
     '--jb-bg-base:#0A0A0B;--jb-bg-raised:#141416;--jb-bg-sunken:#060607;',
-    '--jb-text-primary:#F5F5F7;--jb-text-secondary:rgba(245,245,247,0.62);--jb-text-tertiary:rgba(245,245,247,0.38);',
+    '--jb-text-primary:#F5F5F7;--jb-text-secondary:rgba(245,245,247,0.62);--jb-text-tertiary:rgba(245,245,247,0.5);',
     '--jb-accent:#F7B211;--jb-accent-hover:#FFC53D;--jb-accent-pressed:#D99A0A;--jb-on-accent:#0A0A0B;',
     '--jb-glass-fill:rgba(255,255,255,0.055);--jb-glass-border:rgba(255,255,255,0.10);--jb-glass-edge:rgba(255,255,255,0.22);',
     '--jb-danger:#FF6B5A;--jb-danger-solid:#D93025;',
@@ -103,12 +103,21 @@
        characters. 13.5/11.5 give exactly today's 216/184 at base 16. */
     '--jb-rail-w:calc(var(--jb-font-base) * 13.5);',
     '--jb-rail-w-mid:calc(var(--jb-font-base) * 11.5);',
-    /* MAX CONTENT WIDTH. Full-bleed on an ultrawide gives chat lines a
-       metre long, which is worse than the dead space this slice removes.
-       58 base units = 1044px at base 18, derived: ~70 characters of body
-       text (630px) + bubble padding (34) / the 86% bubble cap (772) + list
-       padding (36) = an 808px transcript, plus the 13.5-base rail. */
-    '--jb-max-w:calc(var(--jb-font-base) * 58);',
+    /* THE MEASURE. --jb-max-w is GONE: capping the ROOT held the line length
+       by starving the widget, which left ~750px unused on an 1800px lesson
+       container and made the widget an island at 50% zoom.
+
+       Line length is now held where it belongs — on the text column — and
+       in FONT-RELATIVE units, so it is an invariant of the system rather
+       than something the curve has to be tuned around. 36 base units
+       reproduces exactly today's 73 characters at base 18 (measured, not
+       derived: 34em gave 65, 38em gave 77).
+
+       NOT `36em`: em resolves against the ELEMENT's own font-size, so the
+       same declaration would mean something different on any control that
+       sets its own size, and nesting compounds. The standing constraint
+       bans em for that reason; this says what it means. */
+    '--jb-measure:calc(var(--jb-font-base) * 36);',
     /* CONTROL PADDING on the knob. Same defect the rail had: the type
        scaled ~20% and the padding framing it did not, so "Continue" sat
        hard against the button edges. 0.6875/1.125 are exactly 11/18 at
@@ -133,10 +142,9 @@
        horizontally instead. Stated consequence, not an accident: a scrollable
        300px widget beats 280px of wrapped nonsense. */
     'position:relative;display:flex;flex-direction:column;height:100%;min-height:420px;min-width:300px;overflow:hidden;',
-    /* Centred once the container is wider than the comfortable measure.
-       margin auto rather than a transform: it must not create a new
-       containing block for the drawer's position:absolute rail. */
-    'max-width:var(--jb-max-w);margin-left:auto;margin-right:auto;',
+    /* No max-width: the widget goes FULL BLEED and the measure is held on
+       the text column instead. The auto margins stay harmless at 100%. */
+    'margin-left:auto;margin-right:auto;',
     /* V-2: the 1px light border is GONE (operator call). It is free here, and
        that was checked rather than assumed: the portal sets
        body{background-color:var(--gray-50)} = #f9fafb, so a #0A0A0B widget on
@@ -187,7 +195,7 @@
 
     /* --- Layout: header / list / composer sit above the orbs ------------------ */
     '.jb-head,.jb-list,.jb-form{position:relative;z-index:1;}',
-    '.jb-head{display:flex;align-items:center;gap:10px;padding:14px 18px;flex:0 0 auto;',
+    '.jb-head{display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.7778) calc(var(--jb-font-base) * 1);flex:0 0 auto;',
     'border-radius:0;border-left:none;border-right:none;border-top:none;font-weight:600;font-size:var(--jb-font-xl);line-height:var(--jb-line-tight);letter-spacing:-0.01em;',
     /* V-2: drop the inset top highlight, KEEP the drop shadow — with the
        highlight gone the shadow is the only thing separating header from
@@ -197,17 +205,17 @@
        on source order: same (0,1,0) specificity, declared later. */
     'box-shadow:0 8px 32px rgba(0,0,0,0.4);}',
     '.jb-title{color:var(--jb-text-primary);}',
-    '.jb-dot{width:9px;height:9px;border-radius:50%;background:var(--jb-accent);flex:0 0 auto;',
+    '.jb-dot{width:calc(var(--jb-font-base) * 0.5);height:calc(var(--jb-font-base) * 0.5);border-radius:50%;background:var(--jb-accent);flex:0 0 auto;',
     'box-shadow:0 0 0 0 rgba(247,178,17,0.5);animation:jb-pulse-dot 3.4s var(--jb-ease) infinite;}',
     '@keyframes jb-pulse-dot{0%{box-shadow:0 0 0 0 rgba(247,178,17,0.45);}70%{box-shadow:0 0 0 7px rgba(247,178,17,0);}100%{box-shadow:0 0 0 0 rgba(247,178,17,0);}}',
 
-    '.jb-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:18px 16px;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch;}',
+    '.jb-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:calc(var(--jb-font-base) * 1) calc(var(--jb-font-base) * 0.8889);display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.7778);-webkit-overflow-scrolling:touch;}',
 
     /* --- Message bubbles (flat translucent fills — glass is reserved for chrome) */
     '.jb-row{display:flex;animation:jb-in 220ms var(--jb-ease) both;}',
     '.jb-row.jb-user{justify-content:flex-end;}',
     '@keyframes jb-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}',
-    '.jb-bubble{max-width:86%;padding:13px 17px;font-size:var(--jb-font-md);line-height:var(--jb-line-body);word-break:break-word;overflow-wrap:anywhere;border-radius:var(--jb-radius);}',
+    '.jb-bubble{max-width:min(86%, var(--jb-measure));padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.9444);font-size:var(--jb-font-md);line-height:var(--jb-line-body);word-break:break-word;overflow-wrap:anywhere;border-radius:var(--jb-radius);}',
     '.jb-bot .jb-bubble{background:var(--jb-bot-bg);color:var(--jb-bot-text);border:1px solid var(--jb-bot-border);',
     'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
     '.jb-user .jb-bubble{background:var(--jb-user-bg);color:var(--jb-user-text);border-top-right-radius:5px;white-space:pre-wrap;font-weight:500;}',
@@ -218,93 +226,93 @@
        parent's from reaching IN. Without this, James's multi-paragraph
        answers — comps output, step-by-step explanations, the widget's most
        valuable content — collapse into unspaced text. */
-    '.jb-bubble p{margin:0 0 8px !important;}',
+    '.jb-bubble p{margin:0 0 calc(var(--jb-font-base) * 0.4444) !important;}',
     '.jb-bubble p:last-child{margin-bottom:0 !important;}',
-    '.jb-bubble h4{margin:12px 0 6px;font-size:var(--jb-font-md);font-weight:700;letter-spacing:-0.01em;}',
+    '.jb-bubble h4{margin:calc(var(--jb-font-base) * 0.6667) 0 calc(var(--jb-font-base) * 0.3333);font-size:var(--jb-font-md);font-weight:700;letter-spacing:-0.01em;}',
     '.jb-bubble h4:first-child{margin-top:0;}',
-    '.jb-bubble ul{margin:0 0 8px;padding-left:18px;}',
+    '.jb-bubble ul{margin:0 0 calc(var(--jb-font-base) * 0.4444);padding-left:calc(var(--jb-font-base) * 1);}',
     '.jb-bubble ul:last-child{margin-bottom:0;}',
-    '.jb-bubble li{margin:3px 0;}',
+    '.jb-bubble li{margin:calc(var(--jb-font-base) * 0.1667) 0;}',
     '.jb-bubble li::marker{color:var(--jb-accent);}',
-    '.jb-bubble code{background:var(--jb-bg-sunken);padding:1px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--jb-font-xs);}',
+    '.jb-bubble code{background:var(--jb-bg-sunken);padding:1px calc(var(--jb-font-base) * 0.2778);border-radius:calc(var(--jb-font-base) * 0.2222);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--jb-font-xs);}',
     '.jb-bubble strong{font-weight:700;color:#fff;}',
     /* The lead figure the count-up lands on — confident, tabular, amber. */
     '.jb-fig{font-weight:650;letter-spacing:-0.01em;color:var(--jb-accent);font-variant-numeric:tabular-nums;}',
 
     /* --- Thinking state ------------------------------------------------------ */
     '.jb-think-row{display:flex;}',
-    '.jb-think{display:inline-flex;align-items:center;gap:10px;padding:11px 15px;border-radius:var(--jb-radius);',
+    '.jb-think{display:inline-flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.8333);border-radius:var(--jb-radius);',
     'background:var(--jb-bot-bg);border:1px solid var(--jb-bot-border);border-left:2px solid var(--jb-accent);border-top-left-radius:5px;',
     'color:var(--jb-text-secondary);font-size:var(--jb-font-sm);}',
-    '.jb-think-dots{display:inline-flex;gap:4px;}',
-    '.jb-think-dots i{width:6px;height:6px;border-radius:50%;background:var(--jb-accent);opacity:0.5;animation:jb-blink 1.2s var(--jb-ease) infinite;}',
+    '.jb-think-dots{display:inline-flex;gap:calc(var(--jb-font-base) * 0.2222);}',
+    '.jb-think-dots i{width:calc(var(--jb-font-base) * 0.3333);height:calc(var(--jb-font-base) * 0.3333);border-radius:50%;background:var(--jb-accent);opacity:0.5;animation:jb-blink 1.2s var(--jb-ease) infinite;}',
     '.jb-think-dots i:nth-child(2){animation-delay:0.18s;}',
     '.jb-think-dots i:nth-child(3){animation-delay:0.36s;}',
     '@keyframes jb-blink{0%,100%{opacity:0.35;transform:translateY(0);}50%{opacity:1;transform:translateY(-2px);}}',
 
     /* --- Composer ------------------------------------------------------------ */
-    '.jb-form{display:flex;gap:10px;align-items:center;padding:12px;flex:0 0 auto;margin:0 10px 10px;border-radius:14px;}',
+    '.jb-form{display:flex;gap:calc(var(--jb-font-base) * 0.5556);align-items:center;padding:calc(var(--jb-font-base) * 0.6667);flex:0 0 auto;margin:0 calc(var(--jb-font-base) * 0.5556) calc(var(--jb-font-base) * 0.5556);border-radius:calc(var(--jb-font-base) * 0.7778);}',
     /* 16px font keeps iOS Safari from zooming the page on focus. */
-    '.jb-input{flex:1 1 auto;min-width:0;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    '.jb-input{flex:1 1 auto;min-width:0;padding:calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 1);border-radius:calc(var(--jb-font-base) * 0.5556);border:1px solid rgba(255,255,255,0.08);',
     'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
     '.jb-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-input::placeholder{color:var(--jb-text-tertiary);}',
-    '.jb-send{flex:0 0 auto;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;',
+    '.jb-send{flex:0 0 auto;width:max(44px, calc(var(--jb-font-base) * 2.4444));height:max(44px, calc(var(--jb-font-base) * 2.4444));display:inline-flex;align-items:center;justify-content:center;',
     'border:none;border-radius:50%;background:var(--jb-accent);color:var(--jb-on-accent);cursor:pointer;',
     'transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);}',
     '.jb-send:hover{background:var(--jb-accent-hover);}',
     '.jb-send:active{transform:scale(0.94);background:var(--jb-accent-pressed);}',
     '.jb-send:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
     '.jb-send[disabled]{opacity:0.5;cursor:default;}',
-    '.jb-send .jb-send-i{width:20px;height:20px;display:block;}',
+    '.jb-send .jb-send-i{width:calc(var(--jb-font-base) * 1.1111);height:calc(var(--jb-font-base) * 1.1111);display:block;}',
     /* Send hints it is armed only when there is something to send. */
     '.jb-form.jb-armed .jb-send{animation:jb-arm 2.2s var(--jb-ease) infinite;}',
     '@keyframes jb-arm{0%,100%{box-shadow:0 0 0 0 rgba(247,178,17,0);}50%{box-shadow:0 0 0 5px rgba(247,178,17,0.18);}}',
     /* Visually-hidden text so the icon-only button still reads "Send". */
     '.jb-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}',
 
-    '.jb-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:8px;padding:6px 13px;font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
+    '.jb-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
+    'border-radius:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.7222);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
 
     /* --- Inline calculator form (glass card inset into the thread) ----------- */
-    '.jb-calc{max-width:100%;width:100%;border-radius:16px;padding:16px;animation:jb-card-in 320ms var(--jb-ease) both;}',
+    '.jb-calc{max-width:100%;width:100%;border-radius:calc(var(--jb-font-base) * 0.8889);padding:calc(var(--jb-font-base) * 0.8889);animation:jb-card-in 320ms var(--jb-ease) both;}',
     '@keyframes jb-card-in{from{opacity:0;transform:scale(0.98);}to{opacity:1;transform:scale(1);}}',
-    '.jb-calc-title{font-weight:700;font-size:var(--jb-font-md);letter-spacing:-0.01em;margin:0 0 4px;color:var(--jb-text-primary);}',
-    '.jb-calc-sub{color:var(--jb-text-secondary);font-size:var(--jb-font-sm);margin:0 0 14px;}',
-    '.jb-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}',
+    '.jb-calc-title{font-weight:700;font-size:var(--jb-font-md);letter-spacing:-0.01em;margin:0 0 calc(var(--jb-font-base) * 0.2222);color:var(--jb-text-primary);}',
+    '.jb-calc-sub{color:var(--jb-text-secondary);font-size:var(--jb-font-sm);margin:0 0 calc(var(--jb-font-base) * 0.7778);}',
+    '.jb-field{display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.2778);margin-bottom:calc(var(--jb-font-base) * 0.6667);}',
     '.jb-label{font-size:var(--jb-font-sm);letter-spacing:0.01em;color:var(--jb-text-secondary);font-weight:600;}',
-    '.jb-req{color:var(--jb-accent);margin-left:3px;}',
+    '.jb-req{color:var(--jb-accent);margin-left:calc(var(--jb-font-base) * 0.1667);}',
     '.jb-unit{color:var(--jb-text-tertiary);font-weight:400;}',
-    '.jb-control{width:100%;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    '.jb-control{width:100%;padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.7222);border-radius:calc(var(--jb-font-base) * 0.5556);border:1px solid rgba(255,255,255,0.08);',
     'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;',
     'transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
     '.jb-control:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-control[aria-invalid="true"]{border-color:var(--jb-danger);box-shadow:0 0 0 3px rgba(255,107,90,0.18);}',
-    '.jb-adv{margin:4px 0 14px;}',
-    '.jb-adv-toggle{background:transparent;border:none;color:var(--jb-accent);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;padding:5px 0;}',
+    '.jb-adv{margin:calc(var(--jb-font-base) * 0.2222) 0 calc(var(--jb-font-base) * 0.7778);}',
+    '.jb-adv-toggle{min-height:44px;background:transparent;border:none;color:var(--jb-accent);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;padding:calc(var(--jb-font-base) * 0.2778) 0;}',
     '.jb-adv-toggle:hover{color:var(--jb-accent-hover);}',
-    '.jb-adv-body{margin-top:12px;padding-top:12px;border-top:1px solid var(--jb-glass-border);}',
-    '.jb-calc-actions{display:flex;gap:10px;align-items:center;margin-top:4px;}',
-    '.jb-btn{border:none;border-radius:10px;padding:11px 20px;background:var(--jb-accent);color:var(--jb-on-accent);',
+    '.jb-adv-body{margin-top:calc(var(--jb-font-base) * 0.6667);padding-top:calc(var(--jb-font-base) * 0.6667);border-top:1px solid var(--jb-glass-border);}',
+    '.jb-calc-actions{display:flex;gap:calc(var(--jb-font-base) * 0.5556);align-items:center;margin-top:calc(var(--jb-font-base) * 0.2222);}',
+    '.jb-btn{min-height:44px;border:none;border-radius:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1.1111);background:var(--jb-accent);color:var(--jb-on-accent);',
     'font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);',
-    'display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:118px;}',
+    'display:inline-flex;align-items:center;justify-content:center;gap:calc(var(--jb-font-base) * 0.4444);min-width:calc(var(--jb-font-base) * 6.5556);}',
     '.jb-btn:hover{background:var(--jb-accent-hover);}',
     '.jb-btn:active{transform:scale(0.97);background:var(--jb-accent-pressed);}',
     '.jb-btn:focus-visible,.jb-calc-cancel:focus-visible,.jb-adv-toggle:focus-visible,.jb-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
-    '.jb-calc-cancel{background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--jb-text-secondary);',
-    'border-radius:10px;padding:11px 16px;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
+    '.jb-calc-cancel{min-height:44px;background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--jb-text-secondary);',
+    'border-radius:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.8889);font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-calc-cancel:hover{border-color:var(--jb-text-secondary);color:var(--jb-text-primary);}',
-    '.jb-calc-error{color:var(--jb-danger);font-size:var(--jb-font-sm);margin-top:10px;}',
+    '.jb-calc-error{color:var(--jb-danger);font-size:var(--jb-font-sm);margin-top:calc(var(--jb-font-base) * 0.5556);}',
     /* Session ARV pre-fill note — amber-tinted so it reads as the system
        having done work for you, with the bound address always visible. */
-    '.jb-prefill-note{margin-top:5px;font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-accent);opacity:0.92;}',
+    '.jb-prefill-note{margin-top:calc(var(--jb-font-base) * 0.2778);font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-accent);opacity:0.92;}',
     // Only-a-link lines render as buttons (§14.18) — same anchor semantics,
     // button presentation. Colors ride the existing accent variable.
-    '.jb-btnrow{margin:6px 0 4px;}',
+    '.jb-btnrow{margin:calc(var(--jb-font-base) * 0.3333) 0 calc(var(--jb-font-base) * 0.2222);}',
     // Text rides --jb-on-accent (near-black), the widget's own token for
     // text on the amber accent — white was wrong against #F7B211.
-    '.jb-btn-link{display:inline-block;padding:6px 14px;border-radius:8px;background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:var(--jb-font-sm);font-weight:600;line-height:var(--jb-line-tight);}',
+    '.jb-btn-link{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.7778);border-radius:calc(var(--jb-font-base) * 0.4444);background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:var(--jb-font-sm);font-weight:600;line-height:var(--jb-line-tight);}',
     '.jb-btn-link:hover{opacity:0.88;}',
     /* Disabled controls during a run: readable, obviously inert, not greyed to
        the point the member thinks the card broke. */
@@ -316,7 +324,7 @@
        Same room, working: the orbs warm via .jb-busy on the root (the existing
        thinking treatment), the button acknowledges the click with zero delay,
        and a skeleton of the result card stands where the answer will land. */
-    '.jb-spin{width:13px;height:13px;flex:0 0 auto;border-radius:50%;',
+    '.jb-spin{width:calc(var(--jb-font-base) * 0.7222);height:calc(var(--jb-font-base) * 0.7222);flex:0 0 auto;border-radius:50%;',
     'border:2px solid rgba(10,10,11,0.28);border-top-color:var(--jb-on-accent);',
     'animation:jb-spin 620ms linear infinite;}',
     '@keyframes jb-spin{to{transform:rotate(360deg);}}',
@@ -325,14 +333,14 @@
        it is what makes .jb-think and the bot bubbles read on a near-black
        background. Without it the card was measurably in view but too dim to
        register as working, which is the whole point of the state. */
-    '.jb-pending{max-width:100%;width:100%;border-radius:16px;padding:16px;animation:jb-card-in 320ms var(--jb-ease) both;',
+    '.jb-pending{max-width:100%;width:100%;border-radius:calc(var(--jb-font-base) * 0.8889);padding:calc(var(--jb-font-base) * 0.8889);animation:jb-card-in 320ms var(--jb-ease) both;',
     'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
-    '.jb-pending-head{display:flex;align-items:center;gap:10px;color:var(--jb-text-primary);font-size:var(--jb-font-sm);font-weight:600;margin-bottom:14px;}',
+    '.jb-pending-head{display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5556);color:var(--jb-text-primary);font-size:var(--jb-font-sm);font-weight:600;margin-bottom:calc(var(--jb-font-base) * 0.7778);}',
     /* Full-strength amber dots here (the ambient .jb-think-dots sit at 0.5). */
     '.jb-pending .jb-think-dots i{opacity:0.9;}',
-    '.jb-pending-bars{display:flex;flex-direction:column;gap:10px;}',
-    '.jb-bar{height:12px;border-radius:6px;background:rgba(255,255,255,0.11);position:relative;overflow:hidden;}',
-    '.jb-bar-lead{height:26px;width:52%;background:rgba(247,178,17,0.16);}',
+    '.jb-pending-bars{display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.5556);}',
+    '.jb-bar{height:calc(var(--jb-font-base) * 0.6667);border-radius:calc(var(--jb-font-base) * 0.3333);background:rgba(255,255,255,0.11);position:relative;overflow:hidden;}',
+    '.jb-bar-lead{height:calc(var(--jb-font-base) * 1.4444);width:52%;background:rgba(247,178,17,0.16);}',
     '.jb-bar:nth-child(2){width:88%;}',
     '.jb-bar:nth-child(3){width:70%;}',
     /* Amber sweep, not a grey shimmer — it reads as this app doing the work. */
@@ -361,17 +369,27 @@
        column is narrower than the screen that holds it.
        Coarse-pointer rules stay @media — pointer is a device property, not a
        width. */
-    '.jb-root.jb-w-mid .jb-form{margin:0 8px 8px;padding:10px;gap:8px;}',
-    '.jb-root.jb-w-mid .jb-send{width:40px;height:40px;}',
+    '.jb-root.jb-w-mid .jb-form{margin:0 calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-font-base) * 0.5556);gap:calc(var(--jb-font-base) * 0.4444);}',
+    /* Floored like the base rule: these tier overrides are MORE specific,
+       so without the floor they win and drop the touch target below 44px
+       exactly where touch matters most. Measured at the 16px base they
+       came out 37px. The narrow-width intent (a smaller button to save
+       composer width) is kept above the floor, not through it. */
+    '.jb-root.jb-w-mid .jb-send{width:max(44px, calc(var(--jb-font-base) * 2.2222));height:max(44px, calc(var(--jb-font-base) * 2.2222));}',
     '.jb-root.jb-w-mid .jb-side{width:var(--jb-rail-w-mid);flex-basis:var(--jb-rail-w-mid);}',
-    '.jb-root.jb-w-mid .jb-bubble{max-width:92%;}',
+    '.jb-root.jb-w-mid .jb-bubble{max-width:min(92%, var(--jb-measure));}',
     '.jb-root.jb-w-narrow{--jb-blur:14px;}',
     '.jb-root.jb-w-narrow .jb-bubble{font-size:var(--jb-font-md);}',
-    '.jb-root.jb-w-narrow .jb-list{padding:14px 12px;}',
-    '.jb-root.jb-w-narrow .jb-head{font-size:var(--jb-font-lg);padding:13px 15px;}',
-    '.jb-root.jb-w-narrow .jb-calc{padding:13px;}',
-    '.jb-root.jb-w-tight .jb-form{gap:8px;padding:10px;}',
-    '.jb-root.jb-w-tight .jb-send{width:42px;height:42px;}',
+    '.jb-root.jb-w-narrow .jb-list{padding:calc(var(--jb-font-base) * 0.7778) calc(var(--jb-font-base) * 0.6667);}',
+    '.jb-root.jb-w-narrow .jb-head{font-size:var(--jb-font-lg);padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.8333);}',
+    '.jb-root.jb-w-narrow .jb-calc{padding:calc(var(--jb-font-base) * 0.7222);}',
+    '.jb-root.jb-w-tight .jb-form{gap:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-font-base) * 0.5556);}',
+    /* Floored like the base rule: these tier overrides are MORE specific,
+       so without the floor they win and drop the touch target below 44px
+       exactly where touch matters most. Measured at the 16px base they
+       came out 37px. The narrow-width intent (a smaller button to save
+       composer width) is kept above the floor, not through it. */
+    '.jb-root.jb-w-tight .jb-send{width:max(44px, calc(var(--jb-font-base) * 2.3333));height:max(44px, calc(var(--jb-font-base) * 2.3333));}',
 
     /* --- Reduced motion: kill drift, count-up (JS-gated), and all transforms.
        Keep opacity fades — they aid comprehension and don't trigger vestibular
@@ -406,13 +424,13 @@
        controls leave the tab order with it. */
     '.jb-side-collapsed{width:0;flex-basis:0;border-right:none;}',
     '.jb-side-top{padding:10px var(--jb-rail-inset);flex:0 0 auto;}',
-    '.jb-new{width:100%;box-sizing:border-box;padding:8px var(--jb-rail-inset);border-radius:9px;cursor:pointer;',
+    '.jb-new{min-height:44px;width:100%;box-sizing:border-box;padding:8px var(--jb-rail-inset);border-radius:calc(var(--jb-font-base) * 0.5);cursor:pointer;',
     'font:inherit;font-size:var(--jb-font-xs);font-weight:650;color:var(--jb-on-accent);background:var(--jb-accent);',
     'border:none;transition:background 140ms var(--jb-ease);}',
     '.jb-new:hover{background:var(--jb-accent-hover);}',
     '.jb-new:active{background:var(--jb-accent-pressed);}',
     '.jb-side-list{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:0 var(--jb-rail-inset) 10px;min-height:0;}',
-    '.jb-chat-row{display:flex;align-items:center;gap:2px;border-radius:8px;margin-bottom:2px;min-width:0;max-width:100%;}',
+    '.jb-chat-row{display:flex;align-items:center;gap:2px;border-radius:calc(var(--jb-font-base) * 0.4444);margin-bottom:2px;min-width:0;max-width:100%;}',
     '.jb-chat-row:hover{background:rgba(255,255,255,0.05);}',
     '.jb-chat-active{background:rgba(247,178,17,0.14);}',
     '.jb-chat-open{flex:1 1 auto;min-width:0;text-align:left;background:none;border:none;cursor:pointer;',
@@ -436,7 +454,7 @@
        timestamp (it has no last_message_at — nothing has happened in it). */
     '.jb-chat-pending .jb-chat-title{font-style:italic;color:var(--jb-text-tertiary);}',
     '.jb-chat-active .jb-chat-open{color:var(--jb-text-primary);font-weight:600;}',
-    '.jb-chat-act{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px var(--jb-rail-inset-sm);border-radius:6px;',
+    '.jb-chat-act{min-width:26px;min-height:26px;flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px var(--jb-rail-inset-sm);border-radius:calc(var(--jb-font-base) * 0.3333);',
     'color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-xs);line-height:1;opacity:0;',
     'transition:opacity 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
     /* Row actions appear on hover or keyboard focus — focus-within is what
@@ -460,25 +478,33 @@
        type: the question takes its own line and the buttons keep full-scale
        labels. A destructive control abbreviated to "Del..." would be a worse
        answer than a two-line row in a scrollable rail. */
-    '.jb-chat-confirm{display:flex;align-items:center;flex-wrap:wrap;gap:8px;width:100%;min-width:0;padding:3px 4px 3px 6px;}',
+    '.jb-chat-confirm{display:flex;align-items:center;flex-wrap:wrap;gap:calc(var(--jb-font-base) * 0.4444);width:100%;min-width:0;padding:calc(var(--jb-font-base) * 0.1667) calc(var(--jb-font-base) * 0.2222) calc(var(--jb-font-base) * 0.1667) calc(var(--jb-font-base) * 0.3333);}',
     '.jb-chat-confirm-q{flex:1 1 100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
     'font-size:var(--jb-font-xs);color:var(--jb-text-secondary);}',
-    '.jb-chat-confirm-yes,.jb-chat-confirm-no{flex:0 0 auto;font:inherit;font-size:var(--jb-font-xs);font-weight:700;',
-    'border-radius:6px;padding:5px 12px;cursor:pointer;border:1px solid transparent;}',
+    '.jb-chat-confirm-yes,.jb-chat-confirm-no{min-height:44px;flex:0 0 auto;font:inherit;font-size:var(--jb-font-xs);font-weight:700;',
+    'border-radius:calc(var(--jb-font-base) * 0.3333);padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6667);cursor:pointer;border:1px solid transparent;}',
     '.jb-chat-confirm-yes{background:var(--jb-danger-solid);color:#FFFFFF;border-color:var(--jb-danger-solid);}',
     '.jb-chat-confirm-no{background:transparent;color:var(--jb-text-secondary);border-color:var(--jb-glass-border);}',
     '.jb-chat-confirm-no:hover{color:var(--jb-text-primary);border-color:var(--jb-text-secondary);}',
     '.jb-chat-confirm-yes:focus-visible,.jb-chat-confirm-no:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:1px;}',
     /* A destructive control needs a real tap target where there is no cursor. */
-    '@media (hover: none),(pointer: coarse){.jb-chat-confirm-yes,.jb-chat-confirm-no{padding:8px 10px;}}',
-    '.jb-chat-rename-input{flex:1 1 auto;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;',
+    '@media (hover: none),(pointer: coarse){.jb-chat-confirm-yes,.jb-chat-confirm-no{padding:calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.5556);}}',
+    '.jb-chat-rename-input{min-height:44px;flex:1 1 auto;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;',
     'font-size:var(--jb-font-xs);padding:6px var(--jb-rail-inset-sm);',
-    'border-radius:6px;border:1px solid var(--jb-glass-edge);background:var(--jb-bg-sunken);',
+    'border-radius:calc(var(--jb-font-base) * 0.3333);border:1px solid var(--jb-glass-edge);background:var(--jb-bg-sunken);',
     'color:var(--jb-text-primary);}',
-    '.jb-side-toggle{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px 6px;margin-right:2px;',
-    'border-radius:6px;color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-sm);line-height:1;}',
+    /* TOUCH TARGET (WCAG 2.5.8 / FINDING-066). The visual box stays small —
+       a 44px chip in the header would look wrong — and the HIT AREA is
+       extended by a centred overlay instead. No layout shift, no visible
+       change. Its neighbours in the header are text, not controls, so the
+       overlay cannot steal a click from anything. */
+    '.jb-side-toggle{position:relative;}',
+    '.jb-side-toggle::after{content:\'\';position:absolute;left:50%;top:50%;',
+    'width:100%;height:100%;min-width:44px;min-height:44px;transform:translate(-50%,-50%);}',
+    '.jb-side-toggle{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:calc(var(--jb-font-base) * 0.2222) calc(var(--jb-font-base) * 0.3333);margin-right:2px;',
+    'border-radius:calc(var(--jb-font-base) * 0.3333);color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-sm);line-height:1;}',
     '.jb-side-toggle:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
-    '.jb-side-empty{padding:10px 8px;font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);}',
+    '.jb-side-empty{padding:calc(var(--jb-font-base) * 0.5556) calc(var(--jb-font-base) * 0.4444);font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);}',
 
     /* --- Honest loading (S1.1/S1.2/S1.3) -----------------------------------
        Three states, three appearances. The rail used to collapse all three
@@ -487,7 +513,7 @@
        to misread, no control to click, and aria-hidden so a screen reader is
        not handed three meaningless rows (the list carries aria-busy instead). */
     '.jb-skel-row{display:flex;align-items:center;padding:8px var(--jb-rail-inset);margin-bottom:2px;}',
-    '.jb-skel{height:9px;border-radius:5px;background:rgba(255,255,255,0.09);',
+    '.jb-skel{height:calc(var(--jb-font-base) * 0.5);border-radius:calc(var(--jb-font-base) * 0.2778);background:rgba(255,255,255,0.09);',
     'position:relative;overflow:hidden;display:block;}',
     '.jb-skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);',
     'background:linear-gradient(90deg,transparent,rgba(255,255,255,0.13),transparent);',
@@ -498,7 +524,7 @@
     '.jb-skel-a{width:82%;}.jb-skel-b{width:64%;}.jb-skel-c{width:47%;}',
     '.jb-skel-b::after{animation-delay:150ms;}',
     '.jb-skel-c::after{animation-delay:300ms;}',
-    '.jb-side-error{padding:10px 8px;font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-text-secondary);}',
+    '.jb-side-error{padding:calc(var(--jb-font-base) * 0.5556) calc(var(--jb-font-base) * 0.4444);font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-text-secondary);}',
 
     /* --- Phase 3: the member gate (S4) ------------------------------------
        The FIRST thing an ungated session sees — the gate replaces the
@@ -506,29 +532,29 @@
        so there is no chat behind it to invite peeking. jb-gated hides the
        rail, its toggle and the composer. */
     '.jb-root.jb-gated .jb-side,.jb-root.jb-gated .jb-side-toggle,.jb-root.jb-gated .jb-form{display:none;}',
-    '.jb-gate{max-width:400px;margin:auto;padding:calc(var(--jb-font-base) * 1.625) calc(var(--jb-font-base) * 1.375);',
-    'border-radius:16px;text-align:left;width:100%;}',
-    '.jb-gate-title{font-size:var(--jb-font-lg);font-weight:700;margin:0 0 6px;color:var(--jb-text-primary);}',
-    '.jb-gate-copy{font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);margin:0 0 14px;}',
+    '.jb-gate{max-width:calc(var(--jb-font-base) * 22.2222);margin:auto;padding:calc(var(--jb-font-base) * 1.625) calc(var(--jb-font-base) * 1.375);',
+    'border-radius:calc(var(--jb-font-base) * 0.8889);text-align:left;width:100%;}',
+    '.jb-gate-title{font-size:var(--jb-font-lg);font-weight:700;margin:0 0 calc(var(--jb-font-base) * 0.3333);color:var(--jb-text-primary);}',
+    '.jb-gate-copy{font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);margin:0 0 calc(var(--jb-font-base) * 0.7778);}',
     '.jb-gate-row{display:flex;gap:calc(var(--jb-font-base) * 0.5);}',
-    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);border-radius:10px;border:1px solid rgba(255,255,255,0.08);',
+    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);border-radius:calc(var(--jb-font-base) * 0.5556);border:1px solid rgba(255,255,255,0.08);',
     'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;}',
     '.jb-gate-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
-    '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:10px;padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);background:var(--jb-accent);',
+    '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:calc(var(--jb-font-base) * 0.5556);padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);background:var(--jb-accent);',
     'color:var(--jb-on-accent);font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;}',
     '.jb-gate-btn:hover{background:var(--jb-accent-hover);}',
     '.jb-gate-btn[disabled]{opacity:0.6;cursor:default;}',
     '.jb-gate-btn:focus-visible,.jb-gate-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
     /* The three failure states are DIFFERENT PROBLEMS: copy distinguishes all
        three, and only could-not-check gets a retry control. */
-    '.jb-gate-status{margin:12px 0 0;font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-danger);min-height:1em;}',
+    '.jb-gate-status{margin:calc(var(--jb-font-base) * 0.6667) 0 0;font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-danger);min-height:1em;}',
     '.jb-gate-status[data-kind="lookup_failed"]{color:var(--jb-text-secondary);}',
-    '.jb-gate-retry{margin-top:10px;background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:8px;padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722);',
+    '.jb-gate-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
+    'border-radius:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722);',
     'font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;}',
     '.jb-gate-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
-    '.jb-side-retry{margin-top:8px;background:transparent;border:1px solid var(--jb-accent);',
-    'color:var(--jb-accent);border-radius:7px;padding:5px 11px;font-size:var(--jb-font-xs);font-weight:700;',
+    '.jb-side-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.4444);background:transparent;border:1px solid var(--jb-accent);',
+    'color:var(--jb-accent);border-radius:calc(var(--jb-font-base) * 0.3889);padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6111);font-size:var(--jb-font-xs);font-weight:700;',
     'font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-side-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
     '.jb-side-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
@@ -536,17 +562,17 @@
     /* Transcript skeleton: the SHAPE of a restored conversation — alternating
        sides, varied line counts — rather than a spinner, so the pane reads as
        "your conversation is coming back" instead of "something is happening". */
-    '.jb-hist-skel{display:flex;flex-direction:column;gap:12px;}',
+    '.jb-hist-skel{display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.6667);}',
     '.jb-hist-line{display:flex;}',
     '.jb-hist-line.jb-hist-right{justify-content:flex-end;}',
-    '.jb-hist-block{max-width:70%;border-radius:var(--jb-radius);padding:13px 15px;',
+    '.jb-hist-block{max-width:70%;border-radius:var(--jb-radius);padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.8333);',
     'background:var(--jb-bot-bg);border:1px solid var(--jb-bot-border);',
     'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;',
-    'display:flex;flex-direction:column;gap:8px;min-width:130px;}',
+    'display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.4444);min-width:calc(var(--jb-font-base) * 7.2222);}',
     '.jb-hist-right .jb-hist-block{background:rgba(247,178,17,0.10);',
     'border:1px solid rgba(247,178,17,0.18);border-top-right-radius:5px;',
     'border-top-left-radius:var(--jb-radius);}',
-    '.jb-hist-block .jb-skel{height:11px;}',
+    '.jb-hist-block .jb-skel{height:calc(var(--jb-font-base) * 0.6111);}',
     /* Narrow hosts (a GHL lesson column) get the rail closed by default via
        the same collapsed class the toggle uses; nothing here is layout-only. */
     /* S4.2 — below the narrow tier the rail is a DRAWER: closed by default,
@@ -620,7 +646,7 @@
     /* Padding, same (0,2,0) tier. Declared per-control rather than as one
        shared rule because the VERTICAL values legitimately differ (12 vs
        11) and a shared shorthand would flatten that difference. */
-    '.jb-root .jb-input{padding:12px 18px !important;}',
+    '.jb-root .jb-input{padding:calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 1) !important;}',
     '.jb-root .jb-gate-input{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
     '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
     'line-height:var(--jb-line-tight) !important;}',
@@ -649,7 +675,7 @@
     'max-width:100% !important;box-sizing:border-box !important;',
     'padding:6px var(--jb-rail-inset-sm) !important;}',
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
-    'font-size:var(--jb-font-xs) !important;font-weight:700 !important;padding:5px 12px !important;}',
+    'font-size:var(--jb-font-xs) !important;font-weight:700 !important;padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6667) !important;}',
     /* THE FIRST NON-FONT PROPERTY OBSERVED LOSING TO THE HOST. The resting
        surface needs (0,2,0); the STATE rules then need (0,3,0) or the
        resting !important would swallow them and the button would never
@@ -663,7 +689,7 @@
     '.jb-root .jb-chat-confirm-yes{background:var(--jb-danger-solid) !important;',
     'color:#FFFFFF !important;border-color:var(--jb-danger-solid) !important;}',
     '@media (hover: none),(pointer: coarse){',
-    '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{padding:8px 14px !important;}}',
+    '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{padding:calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.7778) !important;}}',
 
     /* ::placeholder guard — LOAD-BEARING. Do not remove it as redundant.
        This comment previously said the opposite, and the correction is worth
@@ -1211,8 +1237,19 @@
         if (typeof document === 'undefined') return;
         var w = root.clientWidth;
         if (!w) return; // display:none or not yet laid out — keep last classes
-        root.classList.toggle('jb-w-mid', w <= 700);
-        root.classList.toggle('jb-w-narrow', w <= 560);
+        // FINDING-064 — THE BREAKPOINTS ARE SET BY THE MEASURE, not by round
+        // numbers. The rail entering the flow removes 13.5 base units in one
+        // step, so it must not enter until there is room for it afterwards.
+        //
+        //   chars ~= [0.86W - 15.03b] / 0.5b   (b = base at width W)
+        //   chars >= 50  =>  W >= 46.5b  =>  W >= 769 once b is 16.5
+        //
+        // 800 is the first sensible stop above that, leaving margin for the
+        // approximation. mid moves to 900 so the tier ORDER still nests
+        // (mid ⊃ narrow ⊃ tight); leaving mid at 700 would have put a widget at
+        // 750 in narrow-but-not-mid, which no rule anticipates.
+        root.classList.toggle('jb-w-mid', w <= 900);
+        root.classList.toggle('jb-w-narrow', w <= 800);
         root.classList.toggle('jb-w-tight', w <= 400);
         // Crossing a tier re-derives the drawer. Leaving narrow CLEARS the
         // flag, not just the class: a flag that survived the wide layout
@@ -1241,6 +1278,32 @@
        */
       var FRAME_GUTTER = 16; // breathing room under the widget
       var FRAME_MIN_H = 420; // matches .jb-root's min-height floor
+
+      /**
+       * THE TYPE CURVE. Sub-linear, anchored so a 1440px-wide widget renders at
+       * exactly today's 18px — nobody's current experience regresses.
+       *
+       *   base = clamp(16, 18 + (width - 1440) * 0.0022, 22)
+       *
+       * FLOOR 16px, reached at 531px, and it is not a preference: below 16px
+       * mobile Safari zooms the whole host page when an input takes focus.
+       * --jb-font-control already pins the text-entry controls at max(16px,md)
+       * for that reason, and letting the base fall below 16 would split body
+       * text from its own controls while fixing nothing.
+       *
+       * CEILING 22px, reached at 3258px. Past that the rail (13.5 base units,
+       * 297px at 22) starts eating a disproportionate share of the width and
+       * the type stops reading as comfortable and starts reading as an
+       * accessibility mode nobody asked for.
+       *
+       * MEASURED WIDTH, not vw: the widget tracks its ancestor and the viewport
+       * can diverge from it — that is what (d) established. vw would scale the
+       * type to a container the widget may not have.
+       */
+      function baseForWidth(w) {
+        var v = 18 + (w - 1440) * 0.0022;
+        return Math.min(22, Math.max(16, Math.round(v * 2) / 2));
+      }
 
       /**
        * Height of whatever follows the mount in document order. The widget must
@@ -1284,6 +1347,15 @@
           // measure and centres it. Going wider — or escaping ancestor padding
           // with negative margins — is what produces a horizontal scrollbar.
           if (target.style.width !== '100%') target.style.width = '100%';
+          // THE TYPE RIDES THE SAME PASS. Width and height are already decided
+          // here; deciding the scale anywhere else would let the two disagree
+          // mid-resize. The root's width is the mount's width — no max-width
+          // any more — so there is no feedback loop: setting the base cannot
+          // change the width that produced it.
+          var px = baseForWidth(Math.round(target.getBoundingClientRect().width));
+          if (root.style.getPropertyValue('--jb-font-base') !== px + 'px') {
+            root.style.setProperty('--jb-font-base', px + 'px');
+          }
         }
         applyWidthClasses();
       }
