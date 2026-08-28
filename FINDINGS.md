@@ -249,3 +249,54 @@ but not necessarily everything else in that column.
 behind member auth — so its computed style can only come from a real member
 session. That is why the sweep above is parameterised rather than measured
 directly.
+
+## FINDING-062 — spaceBelow has two stable fixed points (filed, NOT fixed)
+
+Raised by INSPECTOR against the viewport-fill slice. **Deliberately not fixed:**
+picking the semantics for out-of-flow siblings is a design decision and the
+operator ruled it should be made on its own, not under merge pressure.
+
+**The incoherence.** `applyFrame()` derives the widget's height from the
+viewport, but `spaceBelow()` measures sibling rects — and those rects move when
+the widget resizes. With an OUT-OF-FLOW sibling the loop settles at a fixed
+point determined by the mount's STARTING inline height rather than by the
+viewport. INSPECTOR's reproducing numbers:
+
+| GHL snippet `height:` | settles at |
+| --- | --- |
+| `700px` | 784px |
+| `900px` | 984px |
+
+Both land at start + 84. A function whose output depends on its own initial
+condition is not deriving anything — it is remembering.
+
+**Why it does not bite today.** It requires an out-of-flow sibling below the
+mount, and (d) established that `.content-fix-width` is IN FLOW on the current
+lesson page (`max-width: 1800px`, ordinary grid container). The current chain
+has no absolutely-positioned sibling under the widget, so the loop converges on
+the viewport-derived value as intended.
+
+**THE TRAP, stated plainly:** changing the GHL snippet's `height:700px` to some
+other value would SILENTLY MOVE THE OUTCOME if an out-of-flow sibling is ever
+introduced. The snippet is hand-edited and not in this repo, so that edit could
+happen without anything here changing. Whoever revisits this should decide what
+an out-of-flow sibling MEANS — does it compete for vertical space or not — and
+make `spaceBelow` say so explicitly, rather than inheriting an answer from
+whatever height the snippet happens to carry.
+
+## Instrument construction rule (adopted 2026-08-28)
+
+After five instances in one week of the same defect — the frame watch sampling
+past the transient, the 520px row that never reached the floor, the gated rail
+probe, railPos/railOnScreen feeding nothing, and the hamburger gate that only
+printed — this is now a construction rule rather than something a sweep catches:
+
+1. **Every value read must either FEED THE VERDICT or be printed under an
+   explicit INFORMATIONAL label.** There is no third category. A value that is
+   measured, printed, and unconnected to the outcome reads as coverage and is
+   not.
+2. **For each gate, name the mutation that makes it fail.** If you cannot name
+   one, the gate is not real yet. Put the mutation in the comment beside it.
+3. **A gate is not finished until the gate itself can fail.** FINDING-060 sat
+   inside the block written to fix FINDING-059 — the fix for "a value that does
+   not gate" was itself a value that did not gate.

@@ -52,14 +52,17 @@ async function boot(vw, vh) {
   return page;
 }
 
+const MAX_W = 18 * 58; // --jb-max-w = calc(var(--jb-font-base) * 58)
+
 const read = () => ({
-  vh: window.innerHeight, vw: window.innerWidth,
   mountH: Math.round(document.getElementById('james-bot').getBoundingClientRect().height),
   tiers: ['mid', 'narrow', 'tight'].filter((c) => document.querySelector('.jb-root').classList.contains('jb-w-' + c)).join('+') || 'full',
   railPos: (() => { const r = document.querySelector('.jb-side'); const cs = getComputedStyle(r);
     return cs.display === 'none' ? 'display:none' : cs.position; })(),
   railOnScreen: (() => { const r = document.querySelector('.jb-side').getBoundingClientRect();
     return r.right > 1 && r.width > 0; })(),
+  rootW: Math.round(document.querySelector('.jb-root').getBoundingClientRect().width),
+  mountW: Math.round(document.getElementById('james-bot').getBoundingClientRect().width),
   hamburgerVisible: (() => { const t = document.querySelector('.jb-side-toggle');
     if (!t) return false; const cs = getComputedStyle(t); const r = t.getBoundingClientRect();
     return cs.display !== 'none' && r.width > 0; })(),
@@ -73,11 +76,13 @@ const read = () => ({
   pageY: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
 });
 
-console.log('viewport      mount   floor?   tiers             rail          onScreen  burger  listScroll  pinned  pageX');
-console.log('-'.repeat(118));
+console.log('viewport      mount   rootW  cap?   floor?   tiers             rail          onScreen  listScroll  pinned  pageX');
+console.log('-'.repeat(122));
 let bad = 0;
 let examined = 0;
-for (const [vw, vh] of [[1280, 1100], [1280, 520], [1280, 380], [1280, 300], [900, 800], [520, 800], [375, 800], [320, 700]]) {
+// 1600 exercises the CAPPED branch (mount 1600 > 1044); the rest exercise
+// the fills branch. Without a row above the cap the width gate is half dead.
+for (const [vw, vh] of [[1600, 1100], [1280, 1100], [1280, 520], [1280, 380], [1280, 300], [900, 800], [520, 800], [375, 800], [320, 700]]) {
   const page = await boot(vw, vh);
   const m = await page.evaluate(read);
   const expected = Math.max(420, vh - 0 - 16);
@@ -92,12 +97,20 @@ for (const [vw, vh] of [[1280, 1100], [1280, 520], [1280, 380], [1280, 300], [90
   const railWrong = narrow
     ? (m.railPos !== 'absolute' || m.railOnScreen)
     : (m.railPos !== 'static' || !m.railOnScreen);
-  if (m.pageX || !m.listScrolls || !m.composerPinned || m.mountH !== expected || railWrong) bad += 1;
+  // FINDING-061 — THE 1044 CAP IS HALF THIS SLICE AND WAS PINNED ONLY BY A
+  // SOURCE REGEX. Measured now: above the cap the root must stop AT it; below
+  // the cap the root must take everything the mount offers. Fails on: deleting
+  // max-width:var(--jb-max-w) from .jb-root.
+  const widthWrong = m.mountW > MAX_W
+    ? Math.abs(m.rootW - MAX_W) > 1
+    : Math.abs(m.rootW - m.mountW) > 1;
+  if (m.pageX || !m.listScrolls || !m.composerPinned || m.mountH !== expected ||
+      railWrong || widthWrong) bad += 1;
   console.log(
     (vw + 'x' + vh).padEnd(14) + (m.mountH + 'px').padEnd(8) +
+    (m.rootW + 'px').padEnd(7) + (m.mountW > MAX_W ? 'capped' : ' fills').padEnd(7) +
     (floored ? 'FLOOR' : '  -').padEnd(9) + m.tiers.padEnd(18) +
     m.railPos.padEnd(14) + (m.railOnScreen ? 'yes' : 'no').padEnd(10) +
-    (m.hamburgerVisible ? 'yes' : 'no').padEnd(8) +
     (m.listScrolls ? 'yes' : 'NO').padEnd(12) + (m.composerPinned ? 'yes' : 'NO').padEnd(8) +
     (m.pageX ? 'YES' : 'no'));
   await page.close();
@@ -135,7 +148,13 @@ for (const [vw, vh] of [[1280, 1100], [1280, 520], [1280, 380], [1280, 300], [90
   await page.close();
 }
 
-// Does the hamburger actually COLLAPSE the rail, or is it merely present?
+// FINDING-060 — THE HAMBURGER MUST GATE, NOT NARRATE.
+// This block previously computed before/after/drawerOpen, printed MOVES or
+// "present but inert", and touched nothing. Neutering the drawer toggle left
+// both instruments green with the rail permanently off-canvas on a 375px phone
+// and NO ROUTE TO CHAT HISTORY. Note where that sat: inside the block written
+// to fix 059. Gating a value is not finished until the gate itself can fail.
+// Fails on: no-op'ing the jb-drawer-open classList toggle.
 {
   const page = await boot(375, 800);
   const before = await page.evaluate(() => document.querySelector('.jb-side').getBoundingClientRect().right);
@@ -143,15 +162,24 @@ for (const [vw, vh] of [[1280, 1100], [1280, 520], [1280, 380], [1280, 300], [90
   await new Promise((r) => setTimeout(r, 400));
   const after = await page.evaluate(() => document.querySelector('.jb-side').getBoundingClientRect().right);
   const drawerOpen = await page.evaluate(() => document.querySelector('.jb-root').classList.contains('jb-drawer-open'));
+  // The rail must actually TRAVEL, and end up on screen. Movement alone is not
+  // enough — a 1px jitter is not a usable drawer.
+  const moved = Math.round(after) - Math.round(before);
+  const opened = drawerOpen && moved > 100 && Math.round(after) > 0;
+  if (!opened) bad += 1;
   console.log('');
   console.log('HAMBURGER at 375px: rail right edge ' + Math.round(before) + 'px -> ' + Math.round(after) +
-    'px, jb-drawer-open=' + drawerOpen + '  ' + (Math.round(before) !== Math.round(after) ? '(it MOVES — real collapse)' : '(NO MOVEMENT — present but inert)'));
+    'px (moved ' + moved + 'px), jb-drawer-open=' + drawerOpen +
+    '  ' + (opened ? 'ok — a real, usable collapse' : 'FAIL — present but inert'));
   await page.close();
 }
 await browser.close();
 console.log('');
 // POSITIVE-ASSERTION RULE: a sweep that examined nothing reports the same
 // 'every row as expected' as a sweep that examined everything.
+console.log('INFORMATIONAL (not gated): hamburgerVisible — the control is');
+console.log('  rendered at every width, so its presence cannot fail. What it');
+console.log('  DOES is gated by the movement check above.');
 console.log('viewport rows examined: ' + examined);
 if (examined === 0) {
   console.log('VERDICT: INVALID — nothing was examined.');
