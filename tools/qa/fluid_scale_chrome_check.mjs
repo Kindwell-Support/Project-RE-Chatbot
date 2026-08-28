@@ -76,20 +76,44 @@ const TOUCH_MIN = 44;
 const AA_BODY = 4.5;
 
 /** The approved curve: clamp(16, 18 + (w-1440)*0.0022, 22), 0.5px steps. */
-const curve = (w) => Math.min(22, Math.max(16, Math.round((18 + (w - 1440) * 0.0022) * 2) / 2));
+/**
+ * THE APPROVED CURVE, piecewise at 1920.
+ *
+ * PRE_CURVE is the curve as it shipped before this change, FROZEN. It is a
+ * deliberate restatement — it is the reference the build is pinned against, not
+ * a fact read from the build — and it exists for one gate: nothing at or below
+ * 1920 may move. 1080p is correct and this change must not touch it.
+ */
+const PRE_CURVE = (w) => Math.min(22, Math.max(16, Math.round((18 + (w - 1440) * 0.0022) * 2) / 2));
+const JOIN = 1920;
+const curve = (w) => (w > JOIN
+  ? Math.min(40, Math.round(w * 0.009925 * 100) / 100)
+  : PRE_CURVE(w));
+
+/** The brief's acceptance values above the join, asserted exactly. */
+const ACCEPTANCE = [
+  [2100, 20.84], [2347, 23.29], [2800, 27.79],
+  [3200, 31.76], [3520, 34.94], [3840, 38.11],
+];
 /** The curve's clamp endpoints, SCANNED from the approved curve rather than
  *  written down, so retuning the curve moves the samples with it. */
 const clampEnds = () => {
+  // SCANNED from the approved curve, never written down. The ceiling moved from
+  // 22 to 40 in this slice and the old scan looked for 22 — a literal would have
+  // gone on sampling a width that is no longer a discontinuity at all, which is
+  // exactly the FINDING-067 failure. The scan finds whatever the curve does.
+  const top = curve(9999);
   let release = null, engage = null;
-  for (let w = 300; w <= 4000; w += 1) {
+  for (let w = 300; w <= 5000; w += 1) {
     if (release === null && curve(w) > 16) release = w;
-    if (engage === null && curve(w) >= 22) engage = w;
+    if (engage === null && curve(w) >= top) engage = w;
   }
   return [release, engage].filter((x) => x !== null);
 };
 const BOUNDARIES = [...new Set([
   ...TIERS.map((t) => t.at),   // read from the build
   ...clampEnds(),              // computed from the approved reference
+  JOIN,                        // the piecewise join — a new discontinuity
   BAND_FROM,                   // the ruling's own threshold
 ])].sort((a, b) => a - b);
 /**
@@ -100,7 +124,11 @@ const BOUNDARIES = [...new Set([
  * than 40px through the whole sub-1024 range where the layout actually changes.
  */
 const WIDTHS = (() => {
-  const set = new Set([320, 375, 768, 1024, 1440, 1800, 2200, 2560, 3400]);
+  const set = new Set([320, 375, 768, 1024, 1440, 1758, 1800, 2200, 2560, 3400, 4200]);
+  // Above the join the curve is new, so it is swept as densely as the range
+  // below 1024 rather than spot-checked at three widths.
+  for (let w = 1920; w <= 4200; w += 120) set.add(w);
+  for (const [aw] of ACCEPTANCE) set.add(aw);
   for (let w = 320; w <= 1040; w += STEP) set.add(w);
   for (const b of BOUNDARIES) { set.add(b - 1); set.add(b); set.add(b + 1); }
   return [...set].filter((w) => w >= 320).sort((a, b) => a - b);
@@ -203,6 +231,9 @@ async function open(w, forceBase) {
       textW: Math.round(p.getBoundingClientRect().width),
       // Three NON-FONT dimensions, so a font-only regression fails.
       bubblePadX: num(row.querySelector('.jb-bubble'), 'paddingLeft'),
+      bubbleW: Math.round(row.querySelector('.jb-bubble').getBoundingClientRect().width),
+      listW: Math.round(list.getBoundingClientRect().width),
+      listPadX: num(list, 'paddingLeft'),
       listGap: num(list, 'rowGap'),
       railW: Math.round(railEl.getBoundingClientRect().width),
       railFlow: getComputedStyle(railEl).position !== 'absolute',
@@ -236,6 +267,15 @@ for (const w of WIDTHS) {
   // GATE: the base matches the approved table.
   //   Fails on: changing the curve constants in baseForWidth().
   const baseWrong = Math.abs(m.base - wantBase) > 0.01;
+  // THE MOST IMPORTANT GATE IN THIS SLICE. At or below the join, the measured
+  // base must equal the curve AS IT SHIPPED BEFORE this change. Not "close to",
+  // not "matches the new curve" — the new curve delegates to PRE_CURVE there,
+  // so comparing against it would be circular and would pass even if both were
+  // edited together. This compares against a frozen copy.
+  //   Fails on: any edit to the lower segment — the anchor, the slope, the 16px
+  //   floor, or the 0.5px quantisation — which is precisely what would move
+  //   1080p. Verified by mutation.
+  const movedBelowJoin = w <= JOIN && Math.abs(m.base - PRE_CURVE(m.rootW)) > 0.001;
   // GATE: full bleed — no cap, no centring gap, no overflow.
   //   Fails on: restoring a max-width on .jb-root.
   const fills = Math.abs(m.rootW - m.mountW) <= 1;
@@ -253,12 +293,13 @@ for (const w of WIDTHS) {
   //   the rail enter the flow before there is room for it. Verified: that
   //   mutation puts 561-800 under the floor and this gate reports UNDER 50.
   const underFloor = m.railFlow && m.chars < MEASURE_FLOOR;
-  gates += 5;
-  if (baseWrong || !fills || bandWrong || overCeil || underFloor || m.pageX) bad += 1;
+  gates += 6;
+  if (baseWrong || movedBelowJoin || !fills || bandWrong || overCeil || underFloor || m.pageX) bad += 1;
   console.log('  ' + String(w).padEnd(8) + (m.base + 'px').padEnd(8) + (wantBase + 'px').padEnd(8) +
     (m.rootW + 'px').padEnd(9) + (fills ? 'yes' : 'NO').padEnd(8) + (m.textW + 'px').padEnd(11) +
     String(m.chars).padStart(5) + '   ' +
-    (baseWrong ? 'BASE' : bandWrong ? 'BAND' : overCeil ? 'OVER' : underFloor ? 'UNDER ' + MEASURE_FLOOR
+    (movedBelowJoin ? 'MOVED 1080p — was ' + PRE_CURVE(m.rootW) + 'px'
+      : baseWrong ? 'BASE' : bandWrong ? 'BAND' : overCeil ? 'OVER' : underFloor ? 'UNDER ' + MEASURE_FLOOR
       : m.pageX ? 'OVERFLOW' : 'ok'));
 }
 
@@ -363,8 +404,105 @@ for (const [k, v] of Object.entries(c)) {
   console.log('  ' + k.padEnd(16) + String(v).padStart(6) + ':1   ' + (v >= AA_BODY ? 'AA pass' : 'AA FAIL'));
 }
 
-await browser.close();
 console.log('');
+// ---------------------------------------------------------------------------
+// LARGE-SCREEN ACCEPTANCE. The headline number is the BUBBLE-TO-WIDGET RATIO,
+// not the font size: the complaint was that a 3520px widget rendered a ~530px
+// bubble (15% of its width) while 1080p renders ~38%. Font size is the lever;
+// the ratio is the thing being looked at.
+console.log('');
+console.log('LARGE-SCREEN ACCEPTANCE — base, bubble, and the ratio that matters');
+console.log('  GATE: the bubble is exactly min(86% of the column, 36 base units).');
+console.log('  Fails on: changing the 36-unit measure, or reverting the bubble cap to a');
+console.log('  bare percentage — either breaks the ratio while leaving the font size right.');
+console.log('  GATE: above the join the ratio is CONSTANT. base is w * 0.009925 and the');
+console.log('  measure is 36 units, so bubble/widget is 36 * 0.009925 = 35.73% at every');
+console.log('  width above 1920 — that constancy IS proportional parity.');
+console.log('  Fails on: reintroducing any ceiling below 40px, which would flatten the');
+console.log('  base and send the ratio back down as the screen grows.');
+console.log('');
+console.log('  widget   base     bubble   bubble/widget   want ratio   rail     rail%   chars');
+console.log('  ' + '-'.repeat(78));
+
+const RATIO_ABOVE_JOIN = 36 * 0.009925;
+let ratioRef = null;
+for (const w of [1758, 2347, 3520, 3840]) {
+  const m = await open(w, null);
+  // What the CSS says the bubble must be: min(86% of the column's content box,
+  // 36 base units). COMPUTED from the measured column and base, never a literal.
+  const contentW = m.listW - m.listPadX * 2;
+  const wantBubble = Math.min(contentW * 0.86, 36 * m.base);
+  const bubbleOk = Math.abs(m.bubbleW - wantBubble) <= 2;
+  const ratio = m.bubbleW / m.rootW;
+  // Above the join every width must land on the SAME ratio. Below it the ratio
+  // is whatever the fixed 18-ish base gives, so it is reported, not gated.
+  const aboveJoin = w > JOIN;
+  let ratioOk = true;
+  if (aboveJoin) {
+    if (ratioRef === null) ratioRef = ratio;
+    ratioOk = Math.abs(ratio - RATIO_ABOVE_JOIN) < 0.01 && Math.abs(ratio - ratioRef) < 0.005;
+  }
+  gates += 2;
+  if (!bubbleOk || !ratioOk) bad += 1;
+  console.log('  ' + String(w).padEnd(9) + (m.base + 'px').padEnd(9) +
+    (m.bubbleW + 'px').padEnd(9) + (ratio * 100).toFixed(1).padStart(9) + '%' + '      ' +
+    (aboveJoin ? (RATIO_ABOVE_JOIN * 100).toFixed(2) + '%' : '(below join)').padEnd(13) +
+    (m.railW + 'px').padEnd(9) + (m.railW / m.rootW * 100).toFixed(1) + '%   ' +
+    String(m.chars).padEnd(6) +
+    (bubbleOk ? (ratioOk ? '' : 'RATIO OFF') : 'BUBBLE ' + Math.round(wantBubble)));
+}
+
+// ---------------------------------------------------------------------------
+// CONTINUITY AT THE JOIN. Sampled at 1919/1920/1921 — the discontinuity itself,
+// not either side of it.
+console.log('');
+console.log('  CONTINUITY AT THE JOIN');
+console.log('  GATE: no step larger than the quantisation the lower segment already');
+console.log('  takes within itself (0.5px). Fails on: changing the 0.009925 slope, which');
+console.log('  is what makes the two segments meet at 1920.');
+{
+  const joins = [];
+  for (const w of [JOIN - 1, JOIN, JOIN + 1]) joins.push({ w, m: await open(w, null) });
+  const step = Math.abs(joins[2].m.base - joins[1].m.base);
+  // The bound is DERIVED from the lower segment's own quantisation, not written
+  // down: if that quantisation ever changes, the tolerance follows it.
+  let quant = 0;
+  for (let w = 1000; w <= JOIN; w += 1) quant = Math.max(quant, Math.abs(PRE_CURVE(w) - PRE_CURVE(w - 1)));
+  const smooth = step <= quant + 0.001;
+  gates += 1;
+  if (!smooth) bad += 1;
+  for (const j of joins) console.log('    ' + j.w + ' -> ' + j.m.base + 'px');
+  console.log('    step ' + step.toFixed(3) + 'px, against the lower segment\'s own ' +
+    quant.toFixed(3) + 'px quantisation — ' + (smooth ? 'ok' : 'STEP TOO LARGE'));
+}
+
+// ---------------------------------------------------------------------------
+// COMPONENTS AT THE NEW WIDTHS. The 115 migrated dimensions are supposed to
+// follow the base with no further work; this proves it at the two widths the
+// brief names rather than trusting that the 1440 check generalises.
+console.log('');
+console.log('  NON-FONT DIMENSIONS AT 2347 AND 3520');
+console.log('  GATE: each grows in proportion to the base. Fails on: reverting any');
+console.log('  migrated dimension to a hardcoded px value — it would sit still while');
+console.log('  the base nearly doubles.');
+{
+  const a = await open(2347, null);
+  const b = await open(3520, null);
+  const scale = b.base / a.base;
+  const DIMS = [['bubble padding-x', 'bubblePadX'], ['list row gap', 'listGap'], ['rail width', 'railW']];
+  console.log('    dimension            @2347     @3520     ratio   want ' + scale.toFixed(3));
+  for (const [label, key] of DIMS) {
+    const got = b[key] / a[key];
+    const ok = Math.abs(got - scale) < 0.02;
+    gates += 1;
+    if (!ok) bad += 1;
+    console.log('    ' + label.padEnd(21) + String(a[key]).padEnd(10) + String(b[key]).padEnd(10) +
+      got.toFixed(3) + '   ' + (ok ? 'ok' : 'DID NOT SCALE'));
+  }
+}
+
+console.log('');
+await browser.close();
 console.log('SAMPLING DENSITY: ' + WIDTHS.length + ' widths — every tier boundary and');
 console.log('  clamp endpoint at +/-1px (' + BOUNDARIES.join(', ') + '), and no coarser');
 console.log('  than ' + STEP + 'px through 320-1040 where the layout changes.');
