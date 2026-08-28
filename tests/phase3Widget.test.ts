@@ -256,7 +256,7 @@ describe('S4 — the three failure states, pairwise distinct', () => {
 });
 
 describe('S4 — mid-session expiry re-auths INTO the same conversation', () => {
-  it('401 expired on send -> gate in expired mode -> re-auth -> same chat, history repainted, text preserved', async () => {
+  it('401 expired on send -> gate in expired mode -> re-auth -> same chat, history repainted, and an UNVERIFIABLE identity does not receive the draft', async () => {
     window.sessionStorage.setItem('james-bot-token', 'old-token');
     const server = makeServer({
       expireChat: true,
