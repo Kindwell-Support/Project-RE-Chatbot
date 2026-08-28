@@ -76,12 +76,23 @@ const read = () => ({
 console.log('viewport      mount   floor?   tiers             rail          onScreen  burger  listScroll  pinned  pageX');
 console.log('-'.repeat(118));
 let bad = 0;
+let examined = 0;
 for (const [vw, vh] of [[1280, 1100], [1280, 520], [1280, 380], [1280, 300], [900, 800], [520, 800], [375, 800], [320, 700]]) {
   const page = await boot(vw, vh);
   const m = await page.evaluate(read);
   const expected = Math.max(420, vh - 0 - 16);
   const floored = m.mountH === 420;
-  if (m.pageX || !m.listScrolls || !m.composerPinned || m.mountH !== expected) bad += 1;
+  examined += 1;
+  // THE RAIL IS GATED, NOT MERELY REPORTED. The sweep printed railPos and
+  // railOnScreen without either feeding the verdict, so a regression where
+  // the rail stopped collapsing at 375px would have printed 'static / yes'
+  // and still passed. Narrow tiers must put it off-canvas; wide tiers must
+  // keep it in flow and on screen.
+  const narrow = m.tiers.indexOf('narrow') !== -1;
+  const railWrong = narrow
+    ? (m.railPos !== 'absolute' || m.railOnScreen)
+    : (m.railPos !== 'static' || !m.railOnScreen);
+  if (m.pageX || !m.listScrolls || !m.composerPinned || m.mountH !== expected || railWrong) bad += 1;
   console.log(
     (vw + 'x' + vh).padEnd(14) + (m.mountH + 'px').padEnd(8) +
     (floored ? 'FLOOR' : '  -').padEnd(9) + m.tiers.padEnd(18) +
@@ -139,5 +150,12 @@ for (const [vw, vh] of [[1280, 1100], [1280, 520], [1280, 380], [1280, 300], [90
 }
 await browser.close();
 console.log('');
+// POSITIVE-ASSERTION RULE: a sweep that examined nothing reports the same
+// 'every row as expected' as a sweep that examined everything.
+console.log('viewport rows examined: ' + examined);
+if (examined === 0) {
+  console.log('VERDICT: INVALID — nothing was examined.');
+  process.exit(1);
+}
 console.log('VERDICT: ' + (bad === 0 ? 'every row as expected' : bad + ' row(s) off'));
 process.exit(bad === 0 ? 0 : 1);

@@ -14,6 +14,28 @@
  * tools/qa/viewport_frame_chrome_check.mjs, which is part of `npm run
  * qa:chrome`. Do not "strengthen" the assertions below into layout claims;
  * they would pass against zeros.
+ *
+ * ────────────────────────────────────────────────────────────────────────
+ * STRUCTURAL BLIND SPOT — READ BEFORE ADDING A TEST HERE.
+ *
+ * This is not a quirk of this file. jsdom implements no layout engine at all:
+ * getBoundingClientRect returns zeros for every element, always. Any assertion
+ * about POSITION or SIZE therefore passes here whether the behaviour exists or
+ * not, and passes IDENTICALLY when the behaviour is deleted.
+ *
+ * Worked example, from this slice: spaceBelow() subtracts the height of
+ * anything below the mount so the widget never covers it. Removing that
+ * subtraction entirely changes nothing in jsdom — every rect is zero, so the
+ * subtraction is always zero — and all ten tests in this file stay green. The
+ * Chrome instrument catches it immediately (mount 984 instead of 684, the
+ * content below pushed off screen, the page gaining a scrollbar).
+ *
+ * So: a geometric behaviour tested only here is UNTESTED. If what you are
+ * about to assert involves a rect, a scroll position, an overflow, an
+ * intersection or a computed length that depends on layout, it belongs in the
+ * Chrome instrument. What belongs HERE is arithmetic and wiring — did the
+ * listener fire, was the value written, did the remount recompute.
+ * ────────────────────────────────────────────────────────────────────────
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
