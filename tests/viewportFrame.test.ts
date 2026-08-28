@@ -199,6 +199,43 @@ describe('viewport fill — the mount is sized by the widget', () => {
   });
 
   /**
+   * FINDING-069 — the type curve above 1920. STRUCTURAL only: whether the base
+   * actually resolves is a rect question and jsdom has no layout engine, so the
+   * behavioural table (including the hard constraint that nothing at or below
+   * 1920 moves) is gated in tools/qa/fluid_scale_chrome_check.mjs against a
+   * frozen copy of the pre-change curve.
+   */
+  describe('FINDING-069 — piecewise type curve (structural; values are in Chrome)', () => {
+    it('SOURCE: the segment at or below the join is the ORIGINAL expression', () => {
+      // 1080p is correct and must not move. The lower segment keeps its anchor,
+      // its slope, its 16px floor and its 0.5px quantisation — character for
+      // character. If this changes, 1080p changes.
+      expect(WIDGET_SRC).toMatch(/var v = 18 \+ \(w - 1440\) \* 0\.0022;/);
+      expect(WIDGET_SRC).toMatch(
+        /return Math\.min\(22, Math\.max\(16, Math\.round\(v \* 2\) \/ 2\)\);/,
+      );
+    });
+
+    it('SOURCE: the upper segment is guarded by the join and carries the 40px ceiling', () => {
+      // The guard must be a strict > 1920, so 1920 itself resolves through the
+      // lower segment. An off-by-one here is exactly the mutation that moves
+      // 1080p at its top edge.
+      expect(WIDGET_SRC).toMatch(
+        /if \(w > 1920\) return Math\.min\(40, Math\.round\(w \* 0\.009925 \* 100\) \/ 100\);/,
+      );
+    });
+
+    it('SOURCE: the 36-unit measure is what carries the bubble ratio', () => {
+      // Above the join base is w * 0.009925 and the bubble is capped at 36 base
+      // units, so bubble/widget is a constant 35.73% at every width. That
+      // constancy is the proportional parity the change exists to deliver —
+      // the font size is only the lever.
+      expect(WIDGET_SRC).toMatch(/--jb-measure:calc\(var\(--jb-font-base\) \* 36\)/);
+      expect(WIDGET_SRC).toMatch(/max-width:min\(86%, ?var\(--jb-measure\)\)/);
+    });
+  });
+
+  /**
    * FINDING-068 — the settle wiring. These are STRUCTURAL only. Whether the
    * geometry actually converges is a rect question, and jsdom returns zeros for
    * every rect, so the behaviour is gated in

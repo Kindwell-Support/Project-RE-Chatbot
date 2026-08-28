@@ -553,3 +553,110 @@ than by the suite going red:
 `settle()`. The gate correctly keeps passing under that edit, and the instrument
 now says so rather than claiming a mutation it does not catch. Two gates had
 their stated mutations narrowed to only what was actually proven.
+
+---
+
+## The (d) closure is OBSOLETE — and it went stale because of our own change
+
+The earlier finding closed (d) with "no CSS change needed: the GHL lesson
+container's `max-width: 1800px` never constrains the widget." **That was true when
+it was written and stopped being true two slices later.**
+
+It was true because `--jb-max-w` capped the root at 1044px, so the container's
+1800px cap could never bind — 1044 < 1800 at every viewport. Removing `--jb-max-w`
+in the fluid-scale slice made the widget fill its mount, and from that moment the
+container cap was the binding constraint on 2K and 4K: the widget rendered ~1800px
+on both a 2560 and a 3840 screen. Custom CSS v3 (`max-width: none`, container
+still `xl:w-11/12 mx-auto` so proportion and centring are unchanged) released it
+to ~2347 at 2K and ~3520 at 4K.
+
+At 1920 the cap never bound either way — 11/12 of 1918 is 1758, under 1800 — so
+1080p was untouched by the CSS change.
+
+**The lesson is about the shape of the conclusion, not the arithmetic.** "This
+external constraint never binds" was a claim about a relationship between their
+number and ours, recorded as though it were a fact about theirs alone. Our number
+then changed. A finding that depends on one of our own values should say which
+value, so that changing it surfaces the dependency. This one did not, and nothing
+re-opened it — the defect was found from a screenshot two slices later.
+
+## FINDING-069 — the type curve did not extend above 1920
+
+At the post-release widths the curve clamped at its 22px ceiling (reached at
+3258). A 3520px widget rendered a ~530px bubble — **15% of its width**, against
+~38% at 1080p. The 22px ceiling was chosen for the 1440–1800 range and does not
+hold above 2000px.
+
+The curve is now piecewise, joined at 1920:
+
+| segment | expression |
+|---|---|
+| `w <= 1920` | `clamp(16, 18 + (w − 1440) × 0.0022, 22)`, quantised to 0.5px — **byte-identical to what shipped** |
+| `w > 1920` | `min(40, w × 0.009925)`, to 2dp; the 40px ceiling is reached at 4030 |
+
+### The hard constraint, and how it is held
+
+Nothing at or below 1920 moves. This is enforced by construction — the lower
+branch is the original expression, untouched — and asserted behaviourally against
+a **frozen copy** of the pre-change curve in the Chrome instrument. The gate
+compares the measured base to `PRE_CURVE`, not to the new curve, because the new
+curve delegates to the lower segment there and comparing against it would be
+circular: both could be edited together and still agree.
+
+Verified: **0 differing widths across every integer from 320 to 1920.** Mutating
+the lower segment's anchor from 18 to 18.5 produces 33 `MOVED 1080p` failures.
+
+### Two acceptance values in the brief conflicted with the hard constraint
+
+The brief listed `1758 -> 18.70` and `1920 -> 19.06` as "identical to today".
+They are the **unrounded** curve; the shipped code quantises to 0.5px, so today
+returns **18.50** and **19.00**. Honouring the acceptance values would have
+required removing the quantisation, which would have moved 1080p — the one thing
+the slice must not do. The hard constraint won. Every value above the join matches
+the brief exactly (2347 lands at 23.29 against a stated 23.30, a 2dp presentation
+difference).
+
+The same quantisation makes the join step by **0.07px** rather than being exactly
+continuous. That is smaller than the 0.5px steps the lower segment already takes
+within itself, and the continuity gate derives its tolerance from that
+quantisation rather than hardcoding one.
+
+### Measured acceptance — the ratio, not the font size
+
+| widget | base | bubble | bubble/widget | rail | rail % | chars |
+|---|---|---|---|---|---|---|
+| 1758 | 18.50px | 666px | **37.9%** | 250px | 14.2% | 73 |
+| 2347 | 23.29px | 838px | **35.7%** | 314px | 13.4% | 73 |
+| 3520 | 34.94px | 1258px | **35.7%** | 472px | 13.4% | 73 |
+| 3840 | 38.11px | 1372px | **35.7%** | 514px | 13.4% | 73 |
+
+The ratio is **constant above the join**, and that is not a coincidence to be
+spot-checked — it is arithmetic worth gating. Base is `w × 0.009925` and the
+bubble is capped at 36 base units, so `bubble/widget = 36 × 0.009925 = 35.73%` at
+every width above 1920. That constancy *is* proportional parity, which makes it a
+better assertion than any single font size. Reverting the ceiling to 22px sends
+the ratio to 33.7 / 22.5 / 20.6% and the gate reports `RATIO OFF` at all three.
+
+Measure holds at 73 characters across the whole extended range, and the three
+non-font dimensions scale at 1.500 against a base ratio of 1.500 between 2347 and
+3520.
+
+## The header tonal break is NOT ours
+
+Reported as lighter up to ~1075px from the widget's left edge and darker beyond,
+on both large captures. Measured rather than reasoned about: a 1px strip across
+the header was captured and decoded (PNG via zlib, in
+`scratchpad/header_scan.mjs`) at widget widths 1800, 2347 and 3520.
+
+**The header is flat — 59.1 luminance edge to edge at all three widths.** The only
+step the scan finds is the rounded left corner at x=24. Disabling the orbs changes
+it by at most 0.3; disabling `.jb-glass::before` drops the whole strip uniformly
+from 59 to 23, confirming that gradient is vertical and full-width as intended.
+
+`.jb-root` sets `background: var(--jb-bg-base)` — `#0A0A0B`, fully opaque — so the
+header's `backdrop-filter` samples only our own surface and the host page cannot
+show through it. Nothing in our CSS has a horizontal px-based extent in that band.
+
+The caveat worth stating: the fixture is a bare page. Anything GHL renders *on top
+of* the widget would not appear in it. But given an opaque root and flat measured
+layers, whatever produces that break sits outside our stylesheet.

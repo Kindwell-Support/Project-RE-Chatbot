@@ -1309,6 +1309,27 @@
        * type to a container the widget may not have.
        */
       function baseForWidth(w) {
+        // PIECEWISE, and the join is at 1920 for a reason: 1080p is correct and
+        // must not move. Everything at or below 1920 goes through the ORIGINAL
+        // expression untouched — same anchor, same slope, same floor, same 0.5px
+        // quantisation. That is asserted behaviourally against a frozen copy of
+        // the pre-change curve in tools/qa/fluid_scale_chrome_check.mjs.
+        //
+        // Above 1920 the old ceiling of 22px was chosen for the 1440-1800 range
+        // and does not hold: after the Custom CSS v3 release the widget is ~2347
+        // wide at 2K and ~3520 at 4K, where 22px is far below proportional
+        // parity with 1080p (18.7px at 1758 — a ratio of 0.010637). The segment
+        // above the join tracks width directly at 0.009925 and stops at 40px,
+        // which it reaches at ~4030 — enough for 4K, short of an ultrawide
+        // becoming absurd.
+        //
+        // Continuity: 1920 * 0.009925 = 19.056, and the segment below returns
+        // 19.0 there because it quantises to 0.5px. The join therefore steps by
+        // 0.06px — smaller than the 0.5px steps the lower segment already takes
+        // within itself, and far below anything visible. Removing the lower
+        // quantisation would make the join exactly continuous but would move
+        // 1080p, which is the one thing this change must not do.
+        if (w > 1920) return Math.min(40, Math.round(w * 0.009925 * 100) / 100);
         var v = 18 + (w - 1440) * 0.0022;
         return Math.min(22, Math.max(16, Math.round(v * 2) / 2));
       }
