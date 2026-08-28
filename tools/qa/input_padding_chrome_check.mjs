@@ -33,7 +33,8 @@ const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new'
 const page = await browser.newPage();
 await page.setContent(
   '<!doctype html><html><body style="margin:0">' +
-    '<div id="james-bot" style="width:900px;height:640px"></div></body></html>',
+    '<div id="frame" style="width:900px">' +
+      '<div id="james-bot" style="height:640px"></div></div></body></html>',
   { waitUntil: 'domcontentloaded' },
 );
 await page.addScriptTag({ content: bundle });
@@ -55,7 +56,14 @@ const result = await page.evaluate(async (widths) => {
   // class to reproduce the AUTHED layout, which is all this measures.
   const root = document.querySelector('.jb-root');
   root.classList.remove('jb-gated');
-  const host = document.querySelector('#james-bot');
+  // SIZE THE ANCESTOR, NOT THE MOUNT. The widget now OWNS the mount's inline
+  // width (it overwrites style.width to 100% on every recompute, so a fixed
+  // width left in the GHL snippet is not a ceiling). Driving this sweep by
+  // writing #james-bot's own style therefore fought the widget and the mount
+  // never narrowed — the width-class guard below caught it rather than
+  // reporting a desktop layout at every width. An ancestor is also what
+  // actually constrains us in production.
+  const host = document.querySelector('#frame');
   const input = document.querySelector('.jb-input');
   const send = document.querySelector('.jb-send');
   if (!input || !send) return { INVALID: 'composer or send button not in the DOM' };
