@@ -476,3 +476,80 @@ vacuously — there is no pair to compare — and would print `monotonic` while
 asserting nothing. Not live (groups are 5/16/5/16), but it is the examined-count
 refusal the other instruments already carry, applied per group rather than once
 per sweep. Under three samples the group now fails.
+
+---
+
+## FINDING-068 — the geometry is not final at mount
+
+Fresh load on a real member page left empty space below the widget. Any zoom
+change repaired it; returning to 100% kept it repaired; refresh reproduced it.
+
+**The reported mechanism was right and the attribution was wrong, in a way that
+changes the fix.** The report named `mountTop`. Measured, at 1280×900:
+
+| hidden content | mountTop Δ | spaceBelow Δ | height short by |
+|---|---|---|---|
+| **below the mount** (the real case) | **0** | −324 | 324 |
+| above the mount | −300 | 0 | 300 |
+| both | −300 | −324 | 344 |
+
+GHL's comments container and Mark As Complete sit *below* the lesson body, so
+hiding them changes `spaceBelow()` — which `applyFrame` subtracts — by 324px
+while the mount does not move at all. **A termination condition on "mountTop
+unchanged across N frames" would have terminated on the first frame and repaired
+nothing.** The signal has to be the computed height, which reflects both causes.
+
+The rest of the diagnosis reproduced exactly: nothing recomputes, because the
+`ResizeObserver` watches the ROOT, whose height we set ourselves, so its box
+never changes on its own. A synthetic resize repaired it to the correct value.
+
+### The fix — two mechanisms, each bounded
+
+1. **Ancestor-chain observation.** The `ResizeObserver` now also observes every
+   ancestor from the mount up to `body`. When a sibling below the widget hides,
+   every ancestor's box changes and the root's does not — precisely the signal
+   the root cannot see. Event-driven, no polling, single-digit observer count,
+   and it holds for the life of the page rather than for a window.
+2. **A bounded rAF settle loop**, run on every mount and on `document.fonts.ready`.
+   **Termination, two independent bounds, whichever comes first:** the computed
+   height is identical across `SETTLE_STABLE_FRAMES` (3) consecutive frames, or
+   `SETTLE_MAX_MS` (3000) elapses. Neither depends on the layout ever quieting,
+   so a page that never settles still stops.
+
+`mount()` now tears the previous wiring down before installing its own. GHL swaps
+lessons without a page load, so without teardown every swap left another resize
+listener and another observer bound to a detached root — the churn this slice was
+meant to avoid rather than create.
+
+### What the mutation runs corrected
+
+Four defects in my own instrument, each found by running a named mutation rather
+than by the suite going red:
+
+1. **The rAF counter never installed.** `evaluateOnNewDocument` does not fire for
+   `setContent`, so the counter read 0 — which made every termination gate
+   vacuously true (`0 === 0` is quiescent; `0 <= ceiling` is bounded). Moved to a
+   script tag ahead of the bundle, and a `rafsInstalled` gate now fails if the
+   apparatus is ever silently absent again.
+2. **The stacking ceiling was 100× too loose.** It was derived from the settle
+   window (395 frames), but stacked wiring after four mounts costs about four
+   times one mount — roughly 16 frames — which sailed under it. The gate named a
+   mutation it could not catch. The ceiling is now a MEASURED single-mount
+   baseline plus 2. Proven: removing teardown gives 20 against a baseline of 4.
+3. **The delay table's "repaired by" column was false.** It claimed the rows
+   under the deadline were repaired by the settle loop. Removing the ancestor
+   observation fails EVERY row including 60ms: the loop exits after 3 stable
+   frames — about 64ms — so it is finished long before a class landing at 250ms.
+   The observer does all of that work.
+4. **Which left the loop with no gate at all.** Removing it passed everything.
+   The loop now has its own fixture: a FIXED-HEIGHT ancestor, where hiding
+   content inside changes no ancestor box, so the observer cannot fire and the
+   loop is the only mechanism left. That gate asserts the premise too — if an
+   ancestor box did move, the gate would be testing the observer instead. Proven:
+   removing the rAF loop leaves the height at 584 where it should reach 884.
+
+**The naming precision that came out of (4):** "revert `settle()` to a single
+`applyFrame()` at mount" does *not* remove the loop — `fonts.ready` still calls
+`settle()`. The gate correctly keeps passing under that edit, and the instrument
+now says so rather than claiming a mutation it does not catch. Two gates had
+their stated mutations narrowed to only what was actually proven.

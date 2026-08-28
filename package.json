@@ -14,7 +14,7 @@
     "test:apify": "RUN_LIVE_APIFY=1 vitest run tests/comps/apify.live.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:gated": "node tools/qa/run_gated.mjs",
-    "qa:chrome": "npm run build:widget && node tools/qa/type_scale_chrome_check.mjs && node tools/qa/bug046_chrome_check.mjs && node tools/qa/bug046_placeholder_check.mjs && node tools/qa/input_padding_chrome_check.mjs && node tools/qa/viewport_frame_chrome_check.mjs && node tools/qa/fluid_scale_chrome_check.mjs"
+    "qa:chrome": "npm run build:widget && node tools/qa/type_scale_chrome_check.mjs && node tools/qa/bug046_chrome_check.mjs && node tools/qa/bug046_placeholder_check.mjs && node tools/qa/input_padding_chrome_check.mjs && node tools/qa/viewport_frame_chrome_check.mjs && node tools/qa/fluid_scale_chrome_check.mjs && node tools/qa/frame_settle_chrome_check.mjs"
   },
   "keywords": [],
   "author": "",

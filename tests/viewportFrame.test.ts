@@ -197,4 +197,57 @@ describe('viewport fill — the mount is sized by the widget', () => {
       'window.innerHeight',
     );
   });
+
+  /**
+   * FINDING-068 — the settle wiring. These are STRUCTURAL only. Whether the
+   * geometry actually converges is a rect question, and jsdom returns zeros for
+   * every rect, so the behaviour is gated in
+   * tools/qa/frame_settle_chrome_check.mjs. What jsdom can honestly hold is that
+   * the wiring exists and that both termination bounds are still present — a
+   * removed bound is a source-level edit, visible here.
+   */
+  describe('FINDING-068 — settle wiring (structural; behaviour is in Chrome)', () => {
+    it('SOURCE: the settle loop has BOTH termination bounds', () => {
+      // Either one alone is not a bound: without the deadline a layout that
+      // never quiets loops forever, and without the stable-frame exit every
+      // mount burns the whole window. The Chrome instrument proves the loop
+      // stops; this pins that neither exit is quietly deleted.
+      expect(WIDGET_SRC, 'the stable-frame exit is gone').toMatch(
+        /if \(settleStable >= SETTLE_STABLE_FRAMES\) return;/,
+      );
+      expect(WIDGET_SRC, 'the deadline exit is gone').toMatch(
+        /if \(Date\.now\(\) - settleStart >= SETTLE_MAX_MS\) return;/,
+      );
+    });
+
+    it('SOURCE: the ancestor chain is observed, not just the root', () => {
+      // The root's box is set by us, so it cannot report a layout change that
+      // happens around it. This is the mechanism that repairs the real GHL case,
+      // where hiding the comments block below the widget moves spaceBelow by
+      // ~324px and leaves mountTop untouched.
+      expect(WIDGET_SRC).toMatch(/var anc = target\.parentElement;/);
+      expect(WIDGET_SRC).toMatch(/ro\.observe\(anc\);/);
+    });
+
+    it('SOURCE: every mount tears the previous wiring down first', () => {
+      // GHL swaps lessons without a page load, so mount() runs again on a new
+      // element. Without teardown each swap leaves another resize listener and
+      // another observer bound to a detached root.
+      expect(WIDGET_SRC).toMatch(/if \(teardownFrame\) \{ teardownFrame\(\); teardownFrame = null; \}/);
+      expect(WIDGET_SRC, 'teardown must remove what it added').toMatch(
+        /window\.removeEventListener\('resize', settle\)/,
+      );
+    });
+
+    it('SOURCE: applyFrame returns its computed height, which is the settle signal', () => {
+      // The signal cannot be mountTop: in the reported case mountTop never
+      // moves, so a mountTop-stability condition would terminate on frame one
+      // and repair nothing. The measured cause is spaceBelow.
+      expect(WIDGET_SRC).toMatch(/var computed = null;/);
+      expect(WIDGET_SRC).toMatch(/return computed;/);
+      expect(WIDGET_SRC, 'the loop must compare the computed height').toMatch(
+        /var h = applyFrame\(\);/,
+      );
+    });
+  });
 });
