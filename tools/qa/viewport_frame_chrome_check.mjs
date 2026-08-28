@@ -79,9 +79,30 @@ console.log('viewport      mount   rootW  cap?   floor?   tiers             rail
 console.log('-'.repeat(122));
 let bad = 0;
 let examined = 0;
-// 1600 exercises the CAPPED branch (mount 1600 > 1044); the rest exercise
-// the fills branch. Without a row above the cap the width gate is half dead.
-for (const [vw, vh] of [[1600, 1100], [1280, 1100], [1280, 520], [1280, 380], [1280, 300], [900, 800], [520, 800], [375, 800], [320, 700]]) {
+// FINDING-065 — SAMPLING DENSITY. The rail gate is a claim across the whole
+// width range and the height gate a claim across the whole height range, and
+// neither sampled its own discontinuities: the tier boundaries (400/800/900,
+// where railWrong flips) were STRADDLED by 375/520/900, and the FRAME_MIN_H
+// clamp endpoint (avail == 420 at vh == 436) sat between the 380 and 520 rows.
+// A boundary that is straddled is a boundary that is not tested — an off-by-one
+// in a breakpoint moves the rail for a 1px band that no row ever visits.
+//
+// WIDTHS: every tier boundary at +/-1px, plus a wide row above the old cap.
+// HEIGHTS: the clamp endpoint at +/-1px, plus rows either side of it.
+const W_BOUNDARIES = [400, 800, 900];
+const H_CLAMP = 436; // vh where avail (vh - FRAME_GUTTER) meets FRAME_MIN_H
+const CASES = [];
+for (const b of W_BOUNDARIES) for (const d of [-1, 0, 1]) CASES.push([b + d, 800]);
+for (const d of [-1, 0, 1]) CASES.push([1280, H_CLAMP + d]);
+for (const c of [[1600, 1100], [1280, 1100], [1280, 520], [1280, 380], [1280, 300],
+  [900, 800], [520, 800], [375, 800], [320, 700]]) CASES.push(c);
+const SEEN = new Set();
+const SWEEP = CASES.filter((c) => {
+  const k = c[0] + 'x' + c[1];
+  if (SEEN.has(k)) return false;
+  SEEN.add(k); return true;
+}).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+for (const [vw, vh] of SWEEP) {
   const page = await boot(vw, vh);
   const m = await page.evaluate(read);
   const expected = Math.max(420, vh - 0 - 16);
@@ -177,6 +198,8 @@ console.log('');
 console.log('INFORMATIONAL (not gated): hamburgerVisible — the control is');
 console.log('  rendered at every width, so its presence cannot fail. What it');
 console.log('  DOES is gated by the movement check above.');
+console.log('SAMPLING DENSITY: tier boundaries ' + W_BOUNDARIES.join('/') + ' and the');
+console.log('  FRAME_MIN_H clamp at vh=' + H_CLAMP + ' are each sampled at +/-1px.');
 console.log('viewport rows examined: ' + examined);
 if (examined === 0) {
   console.log('VERDICT: INVALID — nothing was examined.');

@@ -25,12 +25,35 @@ const bundle = readFileSync('public/widget.js', 'utf8');
 
 const BAND_FROM = 1024;
 const BAND = [60, 75];
+/** The measure floor applies wherever the rail is IN THE FLOW — that is read
+ *  from the layout at each width, NOT written here as a width constant. It was
+ *  a constant (801) for one revision and the gate could not catch its own named
+ *  mutation: moving the breakpoint back to 560 put the rail in the flow at 561,
+ *  which fell outside a scope pinned to 801, so the 19-character dip the gate
+ *  exists to catch sat in the table reading "ok". A gate scoped by a constant
+ *  that the mutation also moves is not scoped at all. */
+const MEASURE_FLOOR = 50;
+/** Tier boundaries and clamp endpoints — every discontinuity in the range. */
+const BOUNDARIES = [400, 531, 800, 900, 1024, 3258];
+const STEP = 40; // no coarser than this through the sub-1024 range
 const TOUCH_MIN = 44;
 const AA_BODY = 4.5;
 
 /** The approved curve: clamp(16, 18 + (w-1440)*0.0022, 22), 0.5px steps. */
 const curve = (w) => Math.min(22, Math.max(16, Math.round((18 + (w - 1440) * 0.0022) * 2) / 2));
-const WIDTHS = [375, 768, 1024, 1440, 1800, 2200, 2560, 3400];
+/**
+ * SAMPLING. A range claim from two endpoints is not a range claim: the previous
+ * gate sampled 375 and 768 and straddled the dip it was meant to catch. This
+ * samples every tier boundary at +/-1px, both clamp endpoints (531 where the
+ * 16px floor releases, 3258 where the 22px ceiling engages), and no coarser
+ * than 40px through the whole sub-1024 range where the layout actually changes.
+ */
+const WIDTHS = (() => {
+  const set = new Set([320, 375, 768, 1024, 1440, 1800, 2200, 2560, 3400]);
+  for (let w = 320; w <= 1040; w += STEP) set.add(w);
+  for (const b of BOUNDARIES) { set.add(b - 1); set.add(b); set.add(b + 1); }
+  return [...set].filter((w) => w >= 320).sort((a, b) => a - b);
+})();
 
 const PARA =
   'Comparable sales in that submarket have been running about three hundred and twelve dollars ' +
@@ -131,6 +154,8 @@ async function open(w, forceBase) {
       bubblePadX: num(row.querySelector('.jb-bubble'), 'paddingLeft'),
       listGap: num(list, 'rowGap'),
       railW: Math.round(railEl.getBoundingClientRect().width),
+      railFlow: getComputedStyle(railEl).position !== 'absolute',
+      tiers: ['mid', 'narrow', 'tight'].filter((c) => root.classList.contains('jb-w-' + c)).join('+') || 'full',
       sendW: Math.round(document.querySelector('.jb-send').getBoundingClientRect().width),
       pageX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
       contrast: {
@@ -168,24 +193,45 @@ for (const w of WIDTHS) {
   const bandWrong = w >= BAND_FROM && (m.chars < BAND[0] || m.chars > BAND[1]);
   // GATE below the threshold: never above the band ceiling.
   const overCeil = w < BAND_FROM && m.chars > BAND[1];
-  gates += 4;
-  if (baseWrong || !fills || bandWrong || overCeil || m.pageX) bad += 1;
+  // GATE (ruling 3, revised): once the rail is in the FLOW it is taking width
+  // from the text column, so the column must still hold MEASURE_FLOOR
+  // characters. Not asserted while the rail is a drawer — it costs the column
+  // nothing there, and the width is simply too small: 320px gives 25 characters
+  // and 50 would need ~7px type. Same arithmetic-impossibility as the band.
+  //   Fails on: lowering the jb-w-narrow breakpoint back toward 560, which lets
+  //   the rail enter the flow before there is room for it. Verified: that
+  //   mutation puts 561-800 under the floor and this gate reports UNDER 50.
+  const underFloor = m.railFlow && m.chars < MEASURE_FLOOR;
+  gates += 5;
+  if (baseWrong || !fills || bandWrong || overCeil || underFloor || m.pageX) bad += 1;
   console.log('  ' + String(w).padEnd(8) + (m.base + 'px').padEnd(8) + (wantBase + 'px').padEnd(8) +
     (m.rootW + 'px').padEnd(9) + (fills ? 'yes' : 'NO').padEnd(8) + (m.textW + 'px').padEnd(11) +
     String(m.chars).padStart(5) + '   ' +
-    (baseWrong ? 'BASE' : bandWrong ? 'BAND' : overCeil ? 'OVER' : m.pageX ? 'OVERFLOW' : 'ok'));
+    (baseWrong ? 'BASE' : bandWrong ? 'BAND' : overCeil ? 'OVER' : underFloor ? 'UNDER ' + MEASURE_FLOOR
+      : m.pageX ? 'OVERFLOW' : 'ok'));
 }
 
-// GATE: below the threshold the measure must be monotonic non-decreasing.
-//   Fails on: any cap that clamps narrow widths instead of letting them fill.
-const below = seen.filter((x) => x.w < BAND_FROM);
-let mono = true;
-for (let i = 1; i < below.length; i += 1) if (below[i].chars < below[i - 1].chars) mono = false;
-gates += 1;
-if (!mono) bad += 1;
+// GATE: monotonic non-decreasing WITHIN each layout tier. Not across tiers —
+// the rail entering the flow removes 11.5 base units in one step, so a drop at
+// that boundary is the layout working, not a defect. The floor gate above is
+// what bounds that drop.
+//   Fails on: a cap that clamps within a tier instead of letting width through.
 console.log('');
-console.log('  below ' + BAND_FROM + 'px: measure monotonic non-decreasing — ' +
-  (mono ? 'yes (' + below.map((x) => x.chars).join(' -> ') + ')' : 'NO'));
+console.log('  MONOTONIC WITHIN EACH TIER (the cross-tier drop is bounded by the floor)');
+const byTier = new Map();
+for (const x of seen) {
+  if (!byTier.has(x.m.tiers)) byTier.set(x.m.tiers, []);
+  byTier.get(x.m.tiers).push(x);
+}
+for (const [tier, xs] of byTier) {
+  let mono = true;
+  for (let i = 1; i < xs.length; i += 1) if (xs[i].chars < xs[i - 1].chars) mono = false;
+  gates += 1;
+  if (!mono) bad += 1;
+  const span = xs[0].w + '-' + xs[xs.length - 1].w;
+  console.log('    ' + (tier || 'full').padEnd(20) + span.padEnd(12) + xs.length + ' samples   ' +
+    (mono ? 'monotonic' : 'NOT MONOTONIC (' + xs.map((x) => x.chars).join(' ') + ')'));
+}
 
 // ---- 2. the partial-migration catcher -----------------------------------
 console.log('');
@@ -207,14 +253,16 @@ console.log('');
 console.log('COMPONENTS SCALE WITH THE TYPE  (three non-font dimensions, two widths)');
 console.log('  Fails on: reverting any migrated dimension to a hardcoded px value.');
 console.log('');
-const lo = await open(1440, null);
-const hi = await open(3400, null);
+// The clamp endpoints: base 16 is the floor, base 22 the ceiling. Sampling
+// two arbitrary interior widths would not exercise the range.
+const lo = await open(1440, 16);
+const hi = await open(1440, 22);
 const dims = [
   ['bubble padding-x', lo.bubblePadX, hi.bubblePadX],
   ['list row gap', lo.listGap, hi.listGap],
   ['rail width', lo.railW, hi.railW],
 ];
-console.log('  dimension            @1440    @3400   grew');
+console.log('  dimension            @base16  @base22 grew');
 console.log('  ' + '-'.repeat(46));
 for (const [k, a, b] of dims) {
   const grew = b > a + 0.5;
@@ -231,7 +279,12 @@ for (const [k, a, b] of dims) {
 //   Fails on: removing the floor from EITHER .jb-send or a .jb-w-* override.
 console.log('');
 console.log('  send button never below the ' + TOUCH_MIN + 'px touch minimum');
-for (const [w, b, which] of [[375, 16, '.jb-w-tight override'], [768, 16.5, 'base .jb-send rule']]) {
+// Every width where a DIFFERENT .jb-send rule applies, because the rule that
+// wins changes at each tier boundary and only one of them was checked before.
+for (const [w, b, which] of [
+  [375, 16, '.jb-w-tight override'], [401, 16, '.jb-w-mid+narrow'],
+  [801, 16.5, '.jb-w-mid override'], [901, 17, 'base .jb-send rule'],
+]) {
   const px = (await open(w, b)).sendW;
   gates += 1;
   if (px < TOUCH_MIN) bad += 1;
@@ -253,6 +306,11 @@ for (const [k, v] of Object.entries(c)) {
 
 await browser.close();
 console.log('');
+console.log('SAMPLING DENSITY: ' + WIDTHS.length + ' widths — every tier boundary and');
+console.log('  clamp endpoint at +/-1px (' + BOUNDARIES.join(', ') + '), and no coarser');
+console.log('  The measure floor is scoped by the MEASURED rail position, not by a');
+console.log('  width constant, so moving a breakpoint cannot move the gate out of its way.');
+console.log('  than ' + STEP + 'px through 320-1040 where the layout changes.');
 console.log('INFORMATIONAL (not gated): text col width and rootW are printed to make');
 console.log('  the character counts auditable; the assertions are on chars, not px.');
 console.log('gates evaluated: ' + gates);

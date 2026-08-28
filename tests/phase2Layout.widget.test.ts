@@ -136,13 +136,17 @@ describe('S4.1 — width classes from the CONTAINER, not the viewport', () => {
     );
   });
 
-  it('threshold sweep: 800 none, 700 mid, 560 mid+narrow, 400 all', () => {
+  // FINDING-064 moved the thresholds: narrow 560 -> 800, mid 700 -> 900. The
+  // rail leaving the drawer costs the text column 11.5 base units in one step,
+  // and at 560 that landed the measure at 40 characters. The tiers are now set
+  // by what the measure can afford, and these are the new edges.
+  it('threshold sweep: 1000 none, 900 mid, 800 mid+narrow, 400 all', () => {
     boot();
-    setWidth(800);
+    setWidth(1000);
     expect(widthClasses()).toEqual([]);
-    setWidth(700);
+    setWidth(900);
     expect(widthClasses()).toEqual(['jb-w-mid']);
-    setWidth(560);
+    setWidth(800);
     expect(widthClasses()).toEqual(['jb-w-mid', 'jb-w-narrow']);
     setWidth(400);
     expect(widthClasses()).toEqual(['jb-w-mid', 'jb-w-narrow', 'jb-w-tight']);
@@ -150,9 +154,9 @@ describe('S4.1 — width classes from the CONTAINER, not the viewport', () => {
 
   it('boundaries are inclusive at the tier and exclusive one pixel above', () => {
     boot();
-    setWidth(701);
+    setWidth(901);
     expect(widthClasses()).toEqual([]);
-    setWidth(561);
+    setWidth(801);
     expect(widthClasses()).toEqual(['jb-w-mid']);
     setWidth(401);
     expect(widthClasses()).toEqual(['jb-w-mid', 'jb-w-narrow']);
@@ -162,7 +166,7 @@ describe('S4.1 — width classes from the CONTAINER, not the viewport', () => {
     boot();
     setWidth(400);
     expect(widthClasses()).toHaveLength(3);
-    setWidth(800);
+    setWidth(1000);
     expect(widthClasses(), 'the widget stayed narrow after the column widened').toEqual([]);
   });
 
@@ -390,7 +394,7 @@ describe('T-P2.5 — the overlay rail dismisses on scrim tap, outside click, and
     toggle().click();
     expect(drawerOpen(), 'precondition').toBe(true);
 
-    setWidth(800);
+    setWidth(1000);
     expect(drawerOpen(), 'the drawer class survived into the wide layout').toBe(false);
 
     setWidth(500);

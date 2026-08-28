@@ -300,3 +300,62 @@ printed — this is now a construction rule rather than something a sweep catche
 3. **A gate is not finished until the gate itself can fail.** FINDING-060 sat
    inside the block written to fix FINDING-059 — the fix for "a value that does
    not gate" was itself a value that did not gate.
+
+---
+
+## FINDING-064 — the rail entered the flow before there was room for it
+
+The drawer→flow breakpoint was 560px. Crossing it removed 11.5 base units from
+the text column in one step, and the measure fell to **40 characters** — below
+anything readable — and stayed there until ~700px.
+
+The breakpoint is now set by what the column can afford, not by a round number.
+With `chars ≈ [0.86W − 15.03b] / 0.5b`, requiring ≥50 gives `W ≥ 46.5b`, which
+against the curve (b = 16.5 in that region) is `W ≥ 769`. **800** is the first
+sensible stop above it. `jb-w-mid` moved 700 → 900 alongside so the tiers still
+nest — leaving mid at 700 would have put a 750px widget in narrow-but-not-mid,
+a combination no rule anticipates.
+
+Measured across the transition: **73 characters at 800, 65 at 801.** The
+predicted 57 was pessimistic; the mid rail is 11.5 units, not 13.5.
+
+## FINDING-065 — range claims sampled at two points
+
+Gates asserting a property across a range were sampling their endpoints and
+missing every discontinuity between them. The measure gate sampled 375 and 768
+and straddled the dip in FINDING-064 — the defect was inside the gate's stated
+range the whole time and the table read `ok`. The viewport sweep straddled all
+three tier boundaries and the `FRAME_MIN_H` clamp endpoint.
+
+Both instruments now sample every tier boundary and clamp endpoint at ±1px, and
+no coarser than 40px through the sub-1024 range, and each **states its sampling
+density in its own output**.
+
+**A gate scoped by a constant that the mutation also moves is not scoped at
+all.** The first version of the measure floor read `w >= 801`. Reverting the
+breakpoint to 560 put the rail in the flow at 561 — outside a scope pinned to
+801 — so the gate could not catch its own named mutation, and printed `ok` over
+a 19-character dip. The floor is now scoped by the **measured** rail position.
+Verified: with the breakpoint reverted, four rows report `UNDER 50`.
+
+## FINDING-066 — touch targets below the accessibility minimum
+
+An audit of all 20 interactive controls at base 16 found **13** below 44×44,
+not the two originally named. Two techniques, chosen per control:
+
+- `min-height:44px` where a 44px box is simply an ordinary button (nine
+  controls, plus `.jb-btn-link` which needed `inline-flex` to centre against).
+- an `::after` hit overlay for `.jb-side-toggle`, whose visual box must stay
+  small in the header. The overlay extends the hit area only: no layout shift.
+
+`.jb-chat-act` is **deliberately** at 26×26 and needs a ruling. Its two
+instances sit 2px apart, so 44px overlays centred 24px apart would overlap by
+20px — and one of the two is DELETE. A hit area that can swallow a click aimed
+at its destructive neighbour is worse than a small one. 26×26 clears WCAG
+2.5.8's 24×24 minimum; going further needs the buttons separated first.
+
+Two instrument defects surfaced during this audit and are worth carrying: the
+probe under-reported by 2px because `elementFromPoint` is exclusive at the
+exact boundary, and it measured `.jb-calc`'s children **mid-animation** —
+`jb-card-in` starts at a sub-1 scale, so a 44px box read as 43.1px. Entry
+animations are now finished deterministically before anything is measured.

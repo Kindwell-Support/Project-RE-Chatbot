@@ -271,7 +271,7 @@
     /* Visually-hidden text so the icon-only button still reads "Send". */
     '.jb-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}',
 
-    '.jb-retry{margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
+    '.jb-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
     'border-radius:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.7222);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
 
@@ -290,17 +290,17 @@
     '.jb-control:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
     '.jb-control[aria-invalid="true"]{border-color:var(--jb-danger);box-shadow:0 0 0 3px rgba(255,107,90,0.18);}',
     '.jb-adv{margin:calc(var(--jb-font-base) * 0.2222) 0 calc(var(--jb-font-base) * 0.7778);}',
-    '.jb-adv-toggle{background:transparent;border:none;color:var(--jb-accent);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;padding:calc(var(--jb-font-base) * 0.2778) 0;}',
+    '.jb-adv-toggle{min-height:44px;background:transparent;border:none;color:var(--jb-accent);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;padding:calc(var(--jb-font-base) * 0.2778) 0;}',
     '.jb-adv-toggle:hover{color:var(--jb-accent-hover);}',
     '.jb-adv-body{margin-top:calc(var(--jb-font-base) * 0.6667);padding-top:calc(var(--jb-font-base) * 0.6667);border-top:1px solid var(--jb-glass-border);}',
     '.jb-calc-actions{display:flex;gap:calc(var(--jb-font-base) * 0.5556);align-items:center;margin-top:calc(var(--jb-font-base) * 0.2222);}',
-    '.jb-btn{border:none;border-radius:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1.1111);background:var(--jb-accent);color:var(--jb-on-accent);',
+    '.jb-btn{min-height:44px;border:none;border-radius:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1.1111);background:var(--jb-accent);color:var(--jb-on-accent);',
     'font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);',
     'display:inline-flex;align-items:center;justify-content:center;gap:calc(var(--jb-font-base) * 0.4444);min-width:calc(var(--jb-font-base) * 6.5556);}',
     '.jb-btn:hover{background:var(--jb-accent-hover);}',
     '.jb-btn:active{transform:scale(0.97);background:var(--jb-accent-pressed);}',
     '.jb-btn:focus-visible,.jb-calc-cancel:focus-visible,.jb-adv-toggle:focus-visible,.jb-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
-    '.jb-calc-cancel{background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--jb-text-secondary);',
+    '.jb-calc-cancel{min-height:44px;background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--jb-text-secondary);',
     'border-radius:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.8889);font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-calc-cancel:hover{border-color:var(--jb-text-secondary);color:var(--jb-text-primary);}',
     '.jb-calc-error{color:var(--jb-danger);font-size:var(--jb-font-sm);margin-top:calc(var(--jb-font-base) * 0.5556);}',
@@ -312,7 +312,7 @@
     '.jb-btnrow{margin:calc(var(--jb-font-base) * 0.3333) 0 calc(var(--jb-font-base) * 0.2222);}',
     // Text rides --jb-on-accent (near-black), the widget's own token for
     // text on the amber accent — white was wrong against #F7B211.
-    '.jb-btn-link{display:inline-block;padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.7778);border-radius:calc(var(--jb-font-base) * 0.4444);background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:var(--jb-font-sm);font-weight:600;line-height:var(--jb-line-tight);}',
+    '.jb-btn-link{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.7778);border-radius:calc(var(--jb-font-base) * 0.4444);background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:var(--jb-font-sm);font-weight:600;line-height:var(--jb-line-tight);}',
     '.jb-btn-link:hover{opacity:0.88;}',
     /* Disabled controls during a run: readable, obviously inert, not greyed to
        the point the member thinks the card broke. */
@@ -424,7 +424,7 @@
        controls leave the tab order with it. */
     '.jb-side-collapsed{width:0;flex-basis:0;border-right:none;}',
     '.jb-side-top{padding:10px var(--jb-rail-inset);flex:0 0 auto;}',
-    '.jb-new{width:100%;box-sizing:border-box;padding:8px var(--jb-rail-inset);border-radius:calc(var(--jb-font-base) * 0.5);cursor:pointer;',
+    '.jb-new{min-height:44px;width:100%;box-sizing:border-box;padding:8px var(--jb-rail-inset);border-radius:calc(var(--jb-font-base) * 0.5);cursor:pointer;',
     'font:inherit;font-size:var(--jb-font-xs);font-weight:650;color:var(--jb-on-accent);background:var(--jb-accent);',
     'border:none;transition:background 140ms var(--jb-ease);}',
     '.jb-new:hover{background:var(--jb-accent-hover);}',
@@ -454,7 +454,7 @@
        timestamp (it has no last_message_at — nothing has happened in it). */
     '.jb-chat-pending .jb-chat-title{font-style:italic;color:var(--jb-text-tertiary);}',
     '.jb-chat-active .jb-chat-open{color:var(--jb-text-primary);font-weight:600;}',
-    '.jb-chat-act{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px var(--jb-rail-inset-sm);border-radius:calc(var(--jb-font-base) * 0.3333);',
+    '.jb-chat-act{min-width:26px;min-height:26px;flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px var(--jb-rail-inset-sm);border-radius:calc(var(--jb-font-base) * 0.3333);',
     'color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-xs);line-height:1;opacity:0;',
     'transition:opacity 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
     /* Row actions appear on hover or keyboard focus — focus-within is what
@@ -481,7 +481,7 @@
     '.jb-chat-confirm{display:flex;align-items:center;flex-wrap:wrap;gap:calc(var(--jb-font-base) * 0.4444);width:100%;min-width:0;padding:calc(var(--jb-font-base) * 0.1667) calc(var(--jb-font-base) * 0.2222) calc(var(--jb-font-base) * 0.1667) calc(var(--jb-font-base) * 0.3333);}',
     '.jb-chat-confirm-q{flex:1 1 100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
     'font-size:var(--jb-font-xs);color:var(--jb-text-secondary);}',
-    '.jb-chat-confirm-yes,.jb-chat-confirm-no{flex:0 0 auto;font:inherit;font-size:var(--jb-font-xs);font-weight:700;',
+    '.jb-chat-confirm-yes,.jb-chat-confirm-no{min-height:44px;flex:0 0 auto;font:inherit;font-size:var(--jb-font-xs);font-weight:700;',
     'border-radius:calc(var(--jb-font-base) * 0.3333);padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6667);cursor:pointer;border:1px solid transparent;}',
     '.jb-chat-confirm-yes{background:var(--jb-danger-solid);color:#FFFFFF;border-color:var(--jb-danger-solid);}',
     '.jb-chat-confirm-no{background:transparent;color:var(--jb-text-secondary);border-color:var(--jb-glass-border);}',
@@ -489,10 +489,18 @@
     '.jb-chat-confirm-yes:focus-visible,.jb-chat-confirm-no:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:1px;}',
     /* A destructive control needs a real tap target where there is no cursor. */
     '@media (hover: none),(pointer: coarse){.jb-chat-confirm-yes,.jb-chat-confirm-no{padding:calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.5556);}}',
-    '.jb-chat-rename-input{flex:1 1 auto;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;',
+    '.jb-chat-rename-input{min-height:44px;flex:1 1 auto;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;',
     'font-size:var(--jb-font-xs);padding:6px var(--jb-rail-inset-sm);',
     'border-radius:calc(var(--jb-font-base) * 0.3333);border:1px solid var(--jb-glass-edge);background:var(--jb-bg-sunken);',
     'color:var(--jb-text-primary);}',
+    /* TOUCH TARGET (WCAG 2.5.8 / FINDING-066). The visual box stays small —
+       a 44px chip in the header would look wrong — and the HIT AREA is
+       extended by a centred overlay instead. No layout shift, no visible
+       change. Its neighbours in the header are text, not controls, so the
+       overlay cannot steal a click from anything. */
+    '.jb-side-toggle{position:relative;}',
+    '.jb-side-toggle::after{content:\'\';position:absolute;left:50%;top:50%;',
+    'width:100%;height:100%;min-width:44px;min-height:44px;transform:translate(-50%,-50%);}',
     '.jb-side-toggle{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:calc(var(--jb-font-base) * 0.2222) calc(var(--jb-font-base) * 0.3333);margin-right:2px;',
     'border-radius:calc(var(--jb-font-base) * 0.3333);color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-sm);line-height:1;}',
     '.jb-side-toggle:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
@@ -541,11 +549,11 @@
        three, and only could-not-check gets a retry control. */
     '.jb-gate-status{margin:calc(var(--jb-font-base) * 0.6667) 0 0;font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-danger);min-height:1em;}',
     '.jb-gate-status[data-kind="lookup_failed"]{color:var(--jb-text-secondary);}',
-    '.jb-gate-retry{margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
+    '.jb-gate-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
     'border-radius:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722);',
     'font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;}',
     '.jb-gate-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
-    '.jb-side-retry{margin-top:calc(var(--jb-font-base) * 0.4444);background:transparent;border:1px solid var(--jb-accent);',
+    '.jb-side-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.4444);background:transparent;border:1px solid var(--jb-accent);',
     'color:var(--jb-accent);border-radius:calc(var(--jb-font-base) * 0.3889);padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6111);font-size:var(--jb-font-xs);font-weight:700;',
     'font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
     '.jb-side-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
@@ -1229,8 +1237,19 @@
         if (typeof document === 'undefined') return;
         var w = root.clientWidth;
         if (!w) return; // display:none or not yet laid out — keep last classes
-        root.classList.toggle('jb-w-mid', w <= 700);
-        root.classList.toggle('jb-w-narrow', w <= 560);
+        // FINDING-064 — THE BREAKPOINTS ARE SET BY THE MEASURE, not by round
+        // numbers. The rail entering the flow removes 13.5 base units in one
+        // step, so it must not enter until there is room for it afterwards.
+        //
+        //   chars ~= [0.86W - 15.03b] / 0.5b   (b = base at width W)
+        //   chars >= 50  =>  W >= 46.5b  =>  W >= 769 once b is 16.5
+        //
+        // 800 is the first sensible stop above that, leaving margin for the
+        // approximation. mid moves to 900 so the tier ORDER still nests
+        // (mid ⊃ narrow ⊃ tight); leaving mid at 700 would have put a widget at
+        // 750 in narrow-but-not-mid, which no rule anticipates.
+        root.classList.toggle('jb-w-mid', w <= 900);
+        root.classList.toggle('jb-w-narrow', w <= 800);
         root.classList.toggle('jb-w-tight', w <= 400);
         // Crossing a tier re-derives the drawer. Leaving narrow CLEARS the
         // flag, not just the class: a flag that survived the wide layout
