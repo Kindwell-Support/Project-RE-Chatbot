@@ -1315,21 +1315,26 @@
         // quantisation. That is asserted behaviourally against a frozen copy of
         // the pre-change curve in tools/qa/fluid_scale_chrome_check.mjs.
         //
-        // Above 1920 the old ceiling of 22px was chosen for the 1440-1800 range
-        // and does not hold: after the Custom CSS v3 release the widget is ~2347
-        // wide at 2K and ~3520 at 4K, where 22px is far below proportional
-        // parity with 1080p (18.7px at 1758 — a ratio of 0.010637). The segment
-        // above the join tracks width directly at 0.009925 and stops at 40px,
-        // which it reaches at ~4030 — enough for 4K, short of an ultrawide
-        // becoming absurd.
+        // Above 1920 the segment is AFFINE FROM THE JOIN, not a ray through the
+        // origin. That shape is forced by the two constraints together: the join
+        // must not step, and large screens must get bigger than proportional.
+        // A ray (base = w * m) has its slope pinned by continuity — m must be
+        // 19/1920 = 0.0099 to meet the lower segment — so no ray can be steeper
+        // without opening a visible jump at 1920. Anchoring at the join value
+        // and growing from there lifts the far end while leaving the join exact.
         //
-        // Continuity: 1920 * 0.009925 = 19.056, and the segment below returns
-        // 19.0 there because it quantises to 0.5px. The join therefore steps by
-        // 0.06px — smaller than the 0.5px steps the lower segment already takes
-        // within itself, and far below anything visible. Removing the lower
-        // quantisation would make the join exactly continuous but would move
-        // 1080p, which is the one thing this change must not do.
-        if (w > 1920) return Math.min(40, Math.round(w * 0.009925 * 100) / 100);
+        // A consequence worth knowing: the bubble-to-widget ratio now RISES with
+        // width instead of holding constant, which is the intent — 4K should not
+        // merely match 1080p's proportions, it should exceed them. 1080p 37.9%,
+        // 2K 38.3%, 4K 42.3%.
+        //
+        // The 48px ceiling engages at 3992, past a full-bleed 4K panel, and
+        // stops an ultrawide from running away.
+        //
+        // Continuity: both segments give exactly 19.00 at 1920, so the join
+        // steps by 0.01px — the 2dp quantisation of this segment, and far below
+        // the 0.5px steps the lower segment already takes within itself.
+        if (w > 1920) return Math.min(48, Math.round((19 + (w - 1920) * 0.014) * 100) / 100);
         var v = 18 + (w - 1440) * 0.0022;
         return Math.min(22, Math.max(16, Math.round(v * 2) / 2));
       }

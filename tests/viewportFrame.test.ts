@@ -221,15 +221,16 @@ describe('viewport fill — the mount is sized by the widget', () => {
       // lower segment. An off-by-one here is exactly the mutation that moves
       // 1080p at its top edge.
       expect(WIDGET_SRC).toMatch(
-        /if \(w > 1920\) return Math\.min\(40, Math\.round\(w \* 0\.009925 \* 100\) \/ 100\);/,
+        /if \(w > 1920\) return Math\.min\(48, Math\.round\(\(19 \+ \(w - 1920\) \* 0\.014\) \* 100\) \/ 100\);/,
       );
     });
 
     it('SOURCE: the 36-unit measure is what carries the bubble ratio', () => {
-      // Above the join base is w * 0.009925 and the bubble is capped at 36 base
-      // units, so bubble/widget is a constant 35.73% at every width. That
-      // constancy is the proportional parity the change exists to deliver —
-      // the font size is only the lever.
+      // The bubble is capped at 36 base units, so the ratio follows the base
+      // directly. The upper segment is affine from the join, so that ratio
+      // RISES with width — 1080p 37.9%, 2K 38.3%, 4K 42.3% — which is the point:
+      // large screens should exceed 1080p's proportions, not merely match them.
+      // The font size is only the lever; the ratio is the deliverable.
       expect(WIDGET_SRC).toMatch(/--jb-measure:calc\(var\(--jb-font-base\) \* 36\)/);
       expect(WIDGET_SRC).toMatch(/max-width:min\(86%, ?var\(--jb-measure\)\)/);
     });

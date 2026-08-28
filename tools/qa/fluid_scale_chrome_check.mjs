@@ -86,15 +86,15 @@ const AA_BODY = 4.5;
  */
 const PRE_CURVE = (w) => Math.min(22, Math.max(16, Math.round((18 + (w - 1440) * 0.0022) * 2) / 2));
 const JOIN = 1920;
+const UPPER_QUANT = 0.01; // the upper segment's own 2dp quantisation
 const curve = (w) => (w > JOIN
-  ? Math.min(40, Math.round(w * 0.009925 * 100) / 100)
+  ? Math.min(48, Math.round((19 + (w - JOIN) * 0.014) * 100) / 100)
   : PRE_CURVE(w));
 
-/** The brief's acceptance values above the join, asserted exactly. */
-const ACCEPTANCE = [
-  [2100, 20.84], [2347, 23.29], [2800, 27.79],
-  [3200, 31.76], [3520, 34.94], [3840, 38.11],
-];
+/** Widths swept explicitly above the join. Values are COMPUTED from the curve
+ *  above, never listed — a literal table would have to be re-typed on every
+ *  slope change and would be wrong in exactly the way FINDING-067 describes. */
+const ACCEPTANCE = [[2100], [2347], [2560], [2800], [3200], [3520], [3840]];
 /** The curve's clamp endpoints, SCANNED from the approved curve rather than
  *  written down, so retuning the curve moves the samples with it. */
 const clampEnds = () => {
@@ -129,6 +129,7 @@ const WIDTHS = (() => {
   // below 1024 rather than spot-checked at three widths.
   for (let w = 1920; w <= 4200; w += 120) set.add(w);
   for (const [aw] of ACCEPTANCE) set.add(aw);
+  set.add(3992); set.add(3991); set.add(3993); // the 48px ceiling engagement
   for (let w = 320; w <= 1040; w += STEP) set.add(w);
   for (const b of BOUNDARIES) { set.add(b - 1); set.add(b); set.add(b + 1); }
   return [...set].filter((w) => w >= 320).sort((a, b) => a - b);
@@ -415,18 +416,23 @@ console.log('LARGE-SCREEN ACCEPTANCE — base, bubble, and the ratio that matter
 console.log('  GATE: the bubble is exactly min(86% of the column, 36 base units).');
 console.log('  Fails on: changing the 36-unit measure, or reverting the bubble cap to a');
 console.log('  bare percentage — either breaks the ratio while leaving the font size right.');
-console.log('  GATE: above the join the ratio is CONSTANT. base is w * 0.009925 and the');
-console.log('  measure is 36 units, so bubble/widget is 36 * 0.009925 = 35.73% at every');
-console.log('  width above 1920 — that constancy IS proportional parity.');
-console.log('  Fails on: reintroducing any ceiling below 40px, which would flatten the');
-console.log('  base and send the ratio back down as the screen grows.');
+console.log('  GATE: the ratio RISES with width above the join and never goes backwards,');
+console.log('  and at 4K it EXCEEDS the 1080p reference. The segment is affine from the');
+console.log('  join because a ray through the origin has its slope pinned by continuity');
+console.log('  (19/1920), so no ray can be steeper without stepping at 1920.');
+console.log('  Fails on: reverting to a ray, or any ceiling low enough to flatten the');
+console.log('  base before 4K — either sends the ratio back down as the screen grows.');
 console.log('');
 console.log('  widget   base     bubble   bubble/widget   want ratio   rail     rail%   chars');
 console.log('  ' + '-'.repeat(78));
 
-const RATIO_ABOVE_JOIN = 36 * 0.009925;
-let ratioRef = null;
-for (const w of [1758, 2347, 3520, 3840]) {
+// The ratio is no longer constant above the join — the segment is affine, so it
+// RISES with width. Two things are gated instead of constancy:
+//   1. it never goes backwards as the screen grows, and
+//   2. at 4K it EXCEEDS 1080p, which is the whole point of the change.
+let ratioAt1080p = null;
+let prevRatio = 0;
+for (const w of [1758, 2347, 2560, 3520, 3840]) {
   const m = await open(w, null);
   // What the CSS says the bubble must be: min(86% of the column's content box,
   // 36 base units). COMPUTED from the measured column and base, never a literal.
@@ -437,19 +443,30 @@ for (const w of [1758, 2347, 3520, 3840]) {
   // Above the join every width must land on the SAME ratio. Below it the ratio
   // is whatever the fixed 18-ish base gives, so it is reported, not gated.
   const aboveJoin = w > JOIN;
-  let ratioOk = true;
-  if (aboveJoin) {
-    if (ratioRef === null) ratioRef = ratio;
-    ratioOk = Math.abs(ratio - RATIO_ABOVE_JOIN) < 0.01 && Math.abs(ratio - ratioRef) < 0.005;
-  }
-  gates += 2;
-  if (!bubbleOk || !ratioOk) bad += 1;
+  if (!aboveJoin) ratioAt1080p = ratio;
+  // GATE: monotonic in width. The tolerance is DERIVED from the segment's own
+  // 2dp quantisation rather than written down — without it, rounding alone can
+  // dip the ratio by a hair between adjacent widths and read as a regression.
+  //   Fails on: any ceiling low enough to flatten the base before 4K, which
+  //   sends the ratio back down as the screen grows.
+  const monoOk = !aboveJoin || ratio >= prevRatio - (36 * UPPER_QUANT) / w;
+  // GATE: 4K is proportionally LARGER than 1080p, not merely equal to it.
+  //   Fails on: reverting the slope to a ray through the origin, which pins it
+  //   at 0.0099 by continuity and lands 4K below 1080p's ratio.
+  const beatsBaseline = w < 3000 || (ratioAt1080p !== null && ratio > ratioAt1080p);
+  prevRatio = ratio;
+  gates += 4;
+  if (!bubbleOk || !monoOk || !beatsBaseline) bad += 1;
   console.log('  ' + String(w).padEnd(9) + (m.base + 'px').padEnd(9) +
     (m.bubbleW + 'px').padEnd(9) + (ratio * 100).toFixed(1).padStart(9) + '%' + '      ' +
-    (aboveJoin ? (RATIO_ABOVE_JOIN * 100).toFixed(2) + '%' : '(below join)').padEnd(13) +
+    (aboveJoin ? 'rising' : '1080p ref').padEnd(13) +
     (m.railW + 'px').padEnd(9) + (m.railW / m.rootW * 100).toFixed(1) + '%   ' +
     String(m.chars).padEnd(6) +
-    (bubbleOk ? (ratioOk ? '' : 'RATIO OFF') : 'BUBBLE ' + Math.round(wantBubble)));
+    (bubbleOk
+      ? (!monoOk ? 'RATIO WENT BACKWARDS'
+        : !beatsBaseline ? 'NOT BIGGER THAN 1080p'
+          : '')
+      : 'BUBBLE ' + Math.round(wantBubble)));
 }
 
 // ---------------------------------------------------------------------------
