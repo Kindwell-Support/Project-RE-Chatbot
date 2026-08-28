@@ -185,3 +185,118 @@ it. Collected-but-unread data reads as coverage that does not exist.
 **Standing note for future frame-level work.** A claim that no frame carried
 cross-member content is only as good as the sampling rate. State the sampling
 mechanism alongside the claim, not just the result.
+
+## (d) Lesson-page width chain — CLOSED, no CSS change (2026-08-28)
+
+**Question:** does the GHL grid column cap the widget's width on lesson pages?
+**Answer: no.** `.content-fix-width` measures `max-width: 1800px` on a real
+lesson page (operator, DevTools). Our own `--jb-max-w` is
+`calc(var(--jb-font-base) * 58)` = **1044px at base 18**, so the container is
+756px wider than anything we would use. It never constrains us, and the space
+beside the widget on a wide screen is our own centring, by design.
+
+**Custom CSS v2 already does its part.** With
+`html.ajm-lesson .content-fix-width > .col-span-8 { grid-column: span 12 / span 12 }`
+and the siblings hidden, the column takes the container's full content width —
+measured, not assumed. What remained in the sweep was only the container's own
+cap, which at 1800px is inert for us.
+
+**Measured sweep** (Chrome, `.membership-preview-remote.ajm-lesson` wrapper,
+Custom CSS v2 rules applied, mount inside `.col-span-8`):
+
+| `.content-fix-width` | mount @1920 | mount @2560 | widget root |
+| --- | --- | --- | --- |
+| no cap | 1920 | 2560 | 1044 |
+| max-width 1280 | 1280 | 1280 | 1044 |
+| max-width 1280 + pad 24 | 1280 | 1280 | 1044 |
+| padding 48 only | 1824 | 2464 | 1044 |
+| max-width 1024 + pad 32 | 1024 | 1024 | **1024** |
+
+The widget renders at its own 1044px measure in every shape EXCEPT one whose
+cap is narrower than 1044. That is the only case where a container override
+would buy anything.
+
+**The gap decomposes into two things needing different rules**, if a future
+template ever does cap below 1044:
+- **max-width** — produces the bulk, and lands as AUTO MARGIN, so it scales
+  with the viewport (a 1280 cap gives 640px at 1920 and 1280px at 2560).
+- **padding** — a FIXED amount on top, constant at any viewport (48px → 96px).
+
+**The override, kept here and NOT pasted into Custom CSS.** Verified to close
+every shape above to a zero gap at 1920 and 2560 with no horizontal scrollbar.
+Positive-marker scope only — no `:not()`, because a negated scope matches by
+default once GHL rewrites `html` to its app wrapper:
+
+```css
+html.ajm-lesson .content-fix-width {
+  max-width: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+```
+
+**Caveat if it is ever applied:** removing the cap widens EVERYTHING in
+`.col-span-8`, not only our mount — any remaining lesson copy or video goes
+full-bleed with it. The v2 rules hide the title, comments and Mark As Complete,
+but not necessarily everything else in that column.
+
+**Not reachable from this repo, for the next person who tries:**
+`.content-fix-width` appears 0 times in `clientportal-core-*.css`, 0 times in
+`index-*.css`, 0 times in the portal HTML and 0 times in the 3.3MB
+`app-*.js` bundle. It ships in a member-only route chunk, and the lesson DOM is
+behind member auth — so its computed style can only come from a real member
+session. That is why the sweep above is parameterised rather than measured
+directly.
+
+## FINDING-062 — spaceBelow has two stable fixed points (filed, NOT fixed)
+
+Raised by INSPECTOR against the viewport-fill slice. **Deliberately not fixed:**
+picking the semantics for out-of-flow siblings is a design decision and the
+operator ruled it should be made on its own, not under merge pressure.
+
+**The incoherence.** `applyFrame()` derives the widget's height from the
+viewport, but `spaceBelow()` measures sibling rects — and those rects move when
+the widget resizes. With an OUT-OF-FLOW sibling the loop settles at a fixed
+point determined by the mount's STARTING inline height rather than by the
+viewport. INSPECTOR's reproducing numbers:
+
+| GHL snippet `height:` | settles at |
+| --- | --- |
+| `700px` | 784px |
+| `900px` | 984px |
+
+Both land at start + 84. A function whose output depends on its own initial
+condition is not deriving anything — it is remembering.
+
+**Why it does not bite today.** It requires an out-of-flow sibling below the
+mount, and (d) established that `.content-fix-width` is IN FLOW on the current
+lesson page (`max-width: 1800px`, ordinary grid container). The current chain
+has no absolutely-positioned sibling under the widget, so the loop converges on
+the viewport-derived value as intended.
+
+**THE TRAP, stated plainly:** changing the GHL snippet's `height:700px` to some
+other value would SILENTLY MOVE THE OUTCOME if an out-of-flow sibling is ever
+introduced. The snippet is hand-edited and not in this repo, so that edit could
+happen without anything here changing. Whoever revisits this should decide what
+an out-of-flow sibling MEANS — does it compete for vertical space or not — and
+make `spaceBelow` say so explicitly, rather than inheriting an answer from
+whatever height the snippet happens to carry.
+
+## Instrument construction rule (adopted 2026-08-28)
+
+After five instances in one week of the same defect — the frame watch sampling
+past the transient, the 520px row that never reached the floor, the gated rail
+probe, railPos/railOnScreen feeding nothing, and the hamburger gate that only
+printed — this is now a construction rule rather than something a sweep catches:
+
+1. **Every value read must either FEED THE VERDICT or be printed under an
+   explicit INFORMATIONAL label.** There is no third category. A value that is
+   measured, printed, and unconnected to the outcome reads as coverage and is
+   not.
+2. **For each gate, name the mutation that makes it fail.** If you cannot name
+   one, the gate is not real yet. Put the mutation in the comment beside it.
+3. **A gate is not finished until the gate itself can fail.** FINDING-060 sat
+   inside the block written to fix FINDING-059 — the fix for "a value that does
+   not gate" was itself a value that did not gate.

@@ -103,6 +103,12 @@
        characters. 13.5/11.5 give exactly today's 216/184 at base 16. */
     '--jb-rail-w:calc(var(--jb-font-base) * 13.5);',
     '--jb-rail-w-mid:calc(var(--jb-font-base) * 11.5);',
+    /* MAX CONTENT WIDTH. Full-bleed on an ultrawide gives chat lines a
+       metre long, which is worse than the dead space this slice removes.
+       58 base units = 1044px at base 18, derived: ~70 characters of body
+       text (630px) + bubble padding (34) / the 86% bubble cap (772) + list
+       padding (36) = an 808px transcript, plus the 13.5-base rail. */
+    '--jb-max-w:calc(var(--jb-font-base) * 58);',
     /* CONTROL PADDING on the knob. Same defect the rail had: the type
        scaled ~20% and the padding framing it did not, so "Continue" sat
        hard against the button edges. 0.6875/1.125 are exactly 11/18 at
@@ -127,6 +133,10 @@
        horizontally instead. Stated consequence, not an accident: a scrollable
        300px widget beats 280px of wrapped nonsense. */
     'position:relative;display:flex;flex-direction:column;height:100%;min-height:420px;min-width:300px;overflow:hidden;',
+    /* Centred once the container is wider than the comfortable measure.
+       margin auto rather than a transform: it must not create a new
+       containing block for the drawer's position:absolute rail. */
+    'max-width:var(--jb-max-w);margin-left:auto;margin-right:auto;',
     /* V-2: the 1px light border is GONE (operator call). It is free here, and
        that was checked rather than assumed: the portal sets
        body{background-color:var(--gray-50)} = #f9fafb, so a #0A0A0B widget on
@@ -1214,12 +1224,80 @@
         }
         applyDrawer();
       }
-      if (typeof window.ResizeObserver === 'function') {
-        new window.ResizeObserver(applyWidthClasses).observe(root);
-      } else {
-        window.addEventListener('resize', applyWidthClasses);
+      /**
+       * VIEWPORT FILL — the widget owns its own box, including the mount's
+       * inline height and width.
+       *
+       * DELIBERATE EXPANSION OF WHAT WE TOUCH ON THE HOST PAGE, recorded as a
+       * choice: we write style.height and style.width on #james-bot. The mount
+       * exists only for us, and this is what makes a fixed height left in the
+       * GHL snippet a harmless initial value rather than a ceiling — no GHL
+       * edit is needed now or for a future membership product.
+       *
+       * NOT 100vh: mobile browsers report it against the pre-collapse address
+       * bar, so a filled widget is taller than the screen and the PAGE gains a
+       * scrollbar. window.innerHeight is measured live and is correct in both
+       * states.
+       */
+      var FRAME_GUTTER = 16; // breathing room under the widget
+      var FRAME_MIN_H = 420; // matches .jb-root's min-height floor
+
+      /**
+       * Height of whatever follows the mount in document order. The widget must
+       * fill to the viewport only when it is the LAST thing on the page;
+       * anything below it is content a member is meant to read, and covering it
+       * would be worse than the dead space. Counts only siblings that actually
+       * sit BELOW the mount — an absolutely positioned or overlapping node is
+       * not competing for this space.
+       */
+      function spaceBelow(el) {
+        if (typeof document === 'undefined') return 0;
+        var bottom = el.getBoundingClientRect().bottom;
+        var total = 0;
+        var node = el;
+        while (node && node.parentElement && node !== document.body) {
+          var sib = node.nextElementSibling;
+          while (sib) {
+            var r = sib.getBoundingClientRect();
+            if (r.height > 0 && r.top >= bottom - 1) total += r.height;
+            sib = sib.nextElementSibling;
+          }
+          node = node.parentElement;
+        }
+        return total;
       }
-      applyWidthClasses();
+
+      function applyFrame() {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        var vh = window.innerHeight || 0;
+        // Nothing measurable (jsdom before layout, a hidden tab): keep the last
+        // good box rather than collapsing to the floor.
+        if (vh && target && target.getBoundingClientRect) {
+          var top = target.getBoundingClientRect().top;
+          var avail = vh - top - FRAME_GUTTER - spaceBelow(target);
+          var h = Math.max(FRAME_MIN_H, Math.round(avail));
+          // Idempotent: the ResizeObserver below fires on our own write, and
+          // an unconditional write would spin.
+          if (target.style.height !== h + 'px') target.style.height = h + 'px';
+          // Width is OWNED but never forced past the container: 100% fills
+          // whatever the ancestor allows, and .jb-root's max-width caps the
+          // measure and centres it. Going wider — or escaping ancestor padding
+          // with negative margins — is what produces a horizontal scrollbar.
+          if (target.style.width !== '100%') target.style.width = '100%';
+        }
+        applyWidthClasses();
+      }
+
+      if (typeof window.ResizeObserver === 'function') {
+        new window.ResizeObserver(applyFrame).observe(root);
+      }
+      // ALWAYS, not just as a ResizeObserver fallback: the observer watches the
+      // ROOT, and a viewport change that does not change the root's own box —
+      // the window growing while the mount stays at a stale fixed height — is
+      // exactly the case this slice exists to fix.
+      window.addEventListener('resize', applyFrame);
+      window.addEventListener('orientationchange', applyFrame);
+      applyFrame();
 
       function isNarrow() {
         return root.classList.contains('jb-w-narrow');
