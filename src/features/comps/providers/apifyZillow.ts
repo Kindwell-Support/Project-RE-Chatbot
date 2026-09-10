@@ -122,9 +122,23 @@ function asFiniteNumber(value: unknown): number | null {
 
 /**
  * A price string that is a COMPLETE digit group — "$540,000", "425000".
- * Deliberately does NOT match Zillow's abbreviated form ("$1.27M").
  */
 const EXACT_PRICE_RE = /^\$?(?:\d{1,3}(?:,\d{3})+|\d+)$/;
+
+/**
+ * Zillow's abbreviated millions form, and NOTHING wider (§6.2 rule 4: reject,
+ * never guess). Anchored, at most three integer digits and at most two
+ * decimals, the `M` suffix mandatory and immediate:
+ *
+ *   MATCHES  "$1.2M" "$1.27M" "$3.55M" "$9.13M" "$11.0M" "$26.8M"
+ *   REJECTS  "$1.234M" (more precision than Zillow emits), "$1.2K", "$1.2B",
+ *            "$1.2 M" (space), "$1.2MM", "about $1.2M", "$M", "$-1.2M"
+ *
+ * This is deliberately NOT a general currency parser. Every form outside this
+ * shape returns null and the comp is rejected PRICE_MISSING, exactly as an
+ * absent price would be.
+ */
+const ABBREVIATED_MILLIONS_RE = /^\$?(\d{1,3}(?:\.\d{1,2})?)M$/i;
 
 /**
  * §6.2 money: v2 wraps prices as `{ amount, currency, formatted }` where v1
@@ -143,20 +157,39 @@ const EXACT_PRICE_RE = /^\$?(?:\d{1,3}(?:,\d{3})+|\d+)$/;
  * thin" about a dense suburb with 50 sold homes inside 3 miles. A dead
  * feature is not the conservative option.
  *
- * What gets parsed is bounded to what is LOSSLESS: a complete digit group is
- * the same number written differently ("$540,000" IS 540000). Zillow
- * abbreviates at and above a million, and "$1.27M" is any value in
- * [1,265,000, 1,274,999] — parsing that would invent precision (§14.5), so it
- * still returns null and the comp is still rejected PRICE_MISSING. Measured
- * live: 35 of 44 exact, 9 abbreviated, keeping 9 comps at the 3mi/3mo rung —
- * three times the minimum, on a TIGHTER recency rung than the
- * abbreviated-inclusive variant needed.
+ * TWO formatted shapes are read, in this order:
  *
- * The cost of that strictness is real and is not hidden: in a market whose
- * sales are mostly seven figures (Newport Beach), most comps still arrive
- * priceless and the lookup still fails. KNOWN LIMITATION, recorded in
- * CONTRACT §6.2 — lifting it means accepting ±0.4% comp prices, which is a
- * client ruling, not a mapper decision.
+ *  1. A COMPLETE DIGIT GROUP — lossless. "$540,000" IS 540000, the same
+ *     number written differently.
+ *  2. ZILLOW'S ABBREVIATED MILLIONS — "$3.55M" -> 3550000. This is Zillow's
+ *     DISPLAYED value carried across verbatim, not a reconstruction of the
+ *     deed: Zillow rounds to three significant figures, so the underlying
+ *     sale sits within ~0.4% of it. Admitted by client ruling 2026-09-11
+ *     after the Newport Beach diagnostic, and it is the ONLY reason that
+ *     address can return comps at all.
+ *
+ * WHY (2) WAS ADDED, measured live at production scale on 1040 Westwind Way,
+ * Newport Beach, CA 92660 — 499 candidates, 457 mapped:
+ *
+ *   listingPrice.amount numeric      :   0 / 457   (never populated, any market)
+ *   exact formatted "$1,250,000"     :  49 / 457   (10.7%)
+ *   abbreviated "$3.55M"             : 408 / 457   (89.3%)
+ *
+ *   kept, exact-only                 :   0  -> "the market there is too thin"
+ *   kept, abbreviated admitted       :   6  at the TIGHTEST 1mi/3mo rung
+ *
+ * Every comp that reached the price gate carried an abbreviated price, so
+ * rule (1) alone changed nothing: PRICE_MISSING stayed at 32 with and
+ * without it. Rejecting these is not caution, it is a dead feature in every
+ * seven-figure market — and it also skewed the sets that DID render, because
+ * a market straddling $1M lost only its expensive half.
+ *
+ * NO PRECISION IS INVENTED. The parser emits exactly the figure Zillow
+ * displayed (3 s.f.) and never more; anything outside the two shapes above is
+ * refused rather than guessed at. What it must not do is claim to be a
+ * to-the-dollar transaction record, which is why §6.2 documents it as
+ * Zillow's displayed value and the rendered block keeps its "automated
+ * estimate from public sold data, not a formal appraisal" disclaimer.
  */
 function mapMoney(value: unknown): number | null {
   const money = asObject(value);
@@ -164,9 +197,19 @@ function mapMoney(value: unknown): number | null {
   const amount = asFiniteNumber(money.amount);
   if (amount !== null) return amount;
   const formatted = typeof money.formatted === 'string' ? money.formatted.trim() : '';
-  if (!EXACT_PRICE_RE.test(formatted)) return null;
-  const digits = Number(formatted.replace(/[^0-9]/g, ''));
-  return Number.isFinite(digits) && digits > 0 ? digits : null;
+  if (!formatted) return null;
+  if (EXACT_PRICE_RE.test(formatted)) {
+    const digits = Number(formatted.replace(/[^0-9]/g, ''));
+    return Number.isFinite(digits) && digits > 0 ? digits : null;
+  }
+  const millions = ABBREVIATED_MILLIONS_RE.exec(formatted);
+  if (millions) {
+    // Math.round, not a bare multiply: 3.55 * 1e6 is 3550000.0000000005 in
+    // IEEE-754, and a fractional dollar would render as one.
+    const dollars = Math.round(Number(millions[1]) * 1_000_000);
+    return Number.isFinite(dollars) && dollars > 0 ? dollars : null;
+  }
+  return null;
 }
 
 /** §14.14.3 rule 2 helper: a count is only a claim when it is > 0. */

@@ -358,6 +358,9 @@ describe(`the aggregate payload unioned into the comps pool${sliceNote(...MODS)}
       // deliberate edit with a reason attached. It has moved once:
       //
       //   4  §14.17 — the 40-cap generation: raw truncated to ~11 days.
+      //   11 §6.2   — abbreviated millions: rows cached at 10 read only EXACT
+      //              formatted prices, so every seven-figure market still
+      //              mapped its comps priceless and cached the failure.
       //   10 §6.2   — the v2 sold-price generation: rows written between the
       //              actor's 2026-09-01 payload change and the price fix hold
       //              comps ALREADY MAPPED with soldPrice: null, because the
@@ -374,7 +377,7 @@ describe(`the aggregate payload unioned into the comps pool${sliceNote(...MODS)}
         RAW_REFETCH_BELOW_VERSION,
         'the floor moved without a poisoned generation to justify it. Sound ' +
           'raw must not re-bill on every future algorithm change.',
-      ).toBe(10);
+      ).toBe(11);
       expect(ALGO_VERSION, 'the version went BELOW the floor — every row refetches forever')
         .toBeGreaterThanOrEqual(RAW_REFETCH_BELOW_VERSION);
     });

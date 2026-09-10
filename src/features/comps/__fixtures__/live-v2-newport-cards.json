@@ -1,0 +1,207 @@
+[
+ {
+  "zpid": "25136611",
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$11.0M"
+  },
+  "listingAddress": {
+   "state": "CA",
+   "country": "USA",
+   "full": "2601 Bayshore Dr, Newport Beach, CA 92663"
+  },
+  "coordinates": {
+   "latitude": 33.613564,
+   "longitude": -117.90993
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/2601-Bayshore-Dr-Newport-Beach-CA-92663/25136611_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 4,
+  "bathrooms": 5,
+  "livingArea": 3672,
+  "livingAreaUnit": "sqft",
+  "lotArea": {
+   "value": 4000,
+   "unit": "sqft",
+   "formatted": "4000 Sqft"
+  },
+  "daysOnZillow": -1,
+  "dateSold": "2026-09-08T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "zpid": "25136869",
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$7.40M"
+  },
+  "listingAddress": {
+   "state": "CA",
+   "country": "USA",
+   "full": "701 Kings Rd, Newport Beach, CA 92663"
+  },
+  "coordinates": {
+   "latitude": 33.61673,
+   "longitude": -117.91117
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/701-Kings-Rd-Newport-Beach-CA-92663/25136869_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 3,
+  "bathrooms": 3,
+  "livingArea": 4264,
+  "livingAreaUnit": "sqft",
+  "lotArea": {
+   "value": 10220,
+   "unit": "sqft",
+   "formatted": "10220 Sqft"
+  },
+  "daysOnZillow": -1,
+  "dateSold": "2026-07-31T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "zpid": "25214067",
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$5.70M"
+  },
+  "listingAddress": {
+   "state": "CA",
+   "country": "USA",
+   "full": "1026 Santiago Dr, Corona Del Mar, CA 92660"
+  },
+  "coordinates": {
+   "latitude": 33.622833,
+   "longitude": -117.89878
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/1026-Santiago-Dr-Corona-Del-Mar-CA-92660/25214067_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 4,
+  "bathrooms": 4,
+  "livingArea": 3519,
+  "livingAreaUnit": "sqft",
+  "daysOnZillow": -1,
+  "dateSold": "2026-07-31T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "zpid": "25138447",
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$7.60M"
+  },
+  "listingAddress": {
+   "state": "CA",
+   "country": "USA",
+   "full": "712 K Thanga Dr, Corona Del Mar, CA 92625"
+  },
+  "coordinates": {
+   "latitude": 33.611652,
+   "longitude": -117.88824
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/712-K-Thanga-Dr-Corona-Del-Mar-CA-92625/25138447_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 4,
+  "bathrooms": 5,
+  "livingArea": 3788,
+  "livingAreaUnit": "sqft",
+  "lotArea": {
+   "value": 7475,
+   "unit": "sqft",
+   "formatted": "7475 Sqft"
+  },
+  "daysOnZillow": -1,
+  "dateSold": "2026-07-24T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "zpid": "25214440",
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$5.40M"
+  },
+  "listingAddress": {
+   "state": "CA",
+   "country": "USA",
+   "full": "10 Cape Andover, Newport Beach, CA 92660"
+  },
+  "coordinates": {
+   "latitude": 33.62148,
+   "longitude": -117.90453
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/10-Cape-Andover-Newport-Beach-CA-92660/25214440_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 5,
+  "bathrooms": 4,
+  "livingArea": 4060,
+  "livingAreaUnit": "sqft",
+  "lotArea": {
+   "value": 6902,
+   "unit": "sqft",
+   "formatted": "6902 Sqft"
+  },
+  "daysOnZillow": -1,
+  "dateSold": "2026-07-24T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "zpid": "25136788",
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$5.00M"
+  },
+  "listingAddress": {
+   "state": "CA",
+   "country": "USA",
+   "full": "101 Kings Pl, Newport Beach, CA 92663"
+  },
+  "coordinates": {
+   "latitude": 33.617336,
+   "longitude": -117.90817
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/101-Kings-Pl-Newport-Beach-CA-92663/25136788_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 4,
+  "bathrooms": 4,
+  "livingArea": 3479,
+  "livingAreaUnit": "sqft",
+  "lotArea": {
+   "value": 9800,
+   "unit": "sqft",
+   "formatted": "9800 Sqft"
+  },
+  "daysOnZillow": -1,
+  "dateSold": "2026-07-07T07:00:00.000Z",
+  "isValid": true
+ }
+]

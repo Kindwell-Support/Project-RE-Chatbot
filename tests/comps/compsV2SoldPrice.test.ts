@@ -39,15 +39,20 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mapCompItems } from '../../src/features/comps/providers/apifyZillow.js';
 import { selectTiers } from '../../src/features/comps/filter.js';
-import { ALGO_VERSION, RAW_REFETCH_BELOW_VERSION } from '../../src/features/comps/config.js';
+import { ALGO_VERSION, MIN_COMPS_TO_COMPUTE, RAW_REFETCH_BELOW_VERSION } from '../../src/features/comps/config.js';
 import type { RawComp, SubjectProperty } from '../../src/features/comps/types.js';
 
-const LIVE_CARDS = JSON.parse(
-  readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'features', 'comps', '__fixtures__', 'live-v2-sold-cards.json'),
-    'utf8',
-  ),
-) as Array<Record<string, unknown>>;
+const fixture = (name: string) =>
+  JSON.parse(
+    readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'features', 'comps', '__fixtures__', name),
+      'utf8',
+    ),
+  ) as Array<Record<string, unknown>>;
+
+const LIVE_CARDS = fixture('live-v2-sold-cards.json');
+/** Six real Newport Beach sold cards, in-band on every rule except price. */
+const NEWPORT_CARDS = fixture('live-v2-newport-cards.json');
 
 /** The real subject the live run resolved, as the detail actor returned it. */
 const SUBJECT: SubjectProperty = {
@@ -66,13 +71,14 @@ const SUBJECT: SubjectProperty = {
 };
 
 describe('CONTRACT §6.2 — v2 sold price', () => {
-  it('prices the live v2 cards that carry an exact formatted price', () => {
-    // Before the fix every one of these was null -> PRICE_MISSING.
+  it('prices every live v2 card — exact and abbreviated alike', () => {
+    // Before the v2 price work every one of these was null -> PRICE_MISSING.
+    // 1,270,000 is the "$1.27M" card, admitted by the 2026-09-11 ruling.
     const comps = mapCompItems(LIVE_CARDS);
     const priced = comps.filter((c) => (c.soldPrice ?? 0) > 0);
     expect(comps.length, 'the zpid-less noise card must still be skipped').toBe(LIVE_CARDS.length - 1);
     expect(priced.map((c) => c.soldPrice).sort((a, b) => (a as number) - (b as number)))
-      .toEqual([540_000, 560_000, 610_000]);
+      .toEqual([540_000, 560_000, 610_000, 1_270_000]);
   });
 
   it('maps every other fact on a real sold card alongside the price', () => {
@@ -90,12 +96,49 @@ describe('CONTRACT §6.2 — v2 sold price', () => {
     expect(card.address).toContain('Everett');
   });
 
-  it('REFUSES an abbreviated price rather than inventing precision', () => {
-    // "$1.27M" is any value in [1,265,000, 1,274,999]. A comp with no price is
-    // rejected by the hard filters, which is the honest outcome — §14.5.
+  /** One live-shaped card carrying whatever `formatted` string is under test. */
+  const pricedBy = (formatted: string) =>
+    mapCompItems([{
+      zpid: '1', coordinates: { latitude: 47.9, longitude: -122.2 }, listingStatus: 'sold',
+      homeType: 'SINGLE_FAMILY', livingArea: 1500, dateSold: '2026-06-30T07:00:00.000Z',
+      listingAddress: { full: '1 A St, Everett, WA' }, isValid: true,
+      listingPrice: { currency: 'USD', formatted },
+    }])[0]?.soldPrice;
+
+  it("reads Zillow's abbreviated millions form", () => {
+    // Admitted by client ruling 2026-09-11 (§6.2). Previously null, which made
+    // every seven-figure market unservable — see the Newport case below.
     const abbreviated = mapCompItems(LIVE_CARDS).find((c) => c.zpid === '38606592');
-    expect(abbreviated, 'the $1.27M card should still map').toBeDefined();
-    expect(abbreviated?.soldPrice, 'an abbreviated price was parsed into a fake exact number').toBeNull();
+    expect(abbreviated?.soldPrice, 'the $1.27M card is still priceless').toBe(1_270_000);
+  });
+
+  it('parses the abbreviated forms Zillow actually emits, exactly', () => {
+    expect(pricedBy('$1.2M')).toBe(1_200_000);
+    expect(pricedBy('$1.27M')).toBe(1_270_000);
+    expect(pricedBy('$3.55M')).toBe(3_550_000);
+    expect(pricedBy('$9.13M')).toBe(9_130_000);
+    expect(pricedBy('$11.0M')).toBe(11_000_000);
+    expect(pricedBy('$26.8M')).toBe(26_800_000);
+    // The float hazard this rounds away: 3.55 * 1e6 is 3550000.0000000005 in
+    // IEEE-754, and a fractional dollar would reach the renderer.
+    for (const s of ['$1.2M', '$3.55M', '$9.13M', '$26.8M']) {
+      expect(Number.isInteger(pricedBy(s)), `${s} produced a fractional dollar`).toBe(true);
+    }
+  });
+
+  it('REJECTS anything outside the two supported shapes — never guesses', () => {
+    // §6.2 rule 4: this is NOT a general currency parser. Malformed, ambiguous
+    // or unsupported input is refused and the comp is rejected PRICE_MISSING,
+    // exactly as an absent price would be.
+    for (const bad of [
+      '$1.234M',                    // finer than Zillow emits — would invent a digit
+      '$1.2K', '$1.2B', '$1.2T',    // unsupported magnitudes
+      '$1.2 M', '$1.2MM', '$1.2 million', 'about $1.2M', '~$1.2M',
+      '$M', 'M', '$.2M', '$-1.2M', '$0M', '$0', '$1,2M',
+      '$1.2M+', 'from $1.2M', '$1.2M-$1.4M', 'Sold', '', '   ',
+    ]) {
+      expect(pricedBy(bad), `"${bad}" was parsed instead of refused`).toBeNull();
+    }
   });
 
   it('a numeric amount still wins wherever the actor provides one', () => {
@@ -129,20 +172,62 @@ describe('CONTRACT §6.2 — v2 sold price', () => {
     expect(comp.soldDate).toBe('2026-07-31');
   });
 
-  it('END TO END: the live pool now survives the UNCHANGED hard filters', () => {
+  it('END TO END: the live pool survives the UNCHANGED hard filters', () => {
     // The business rules are untouched — same 3mi/12mo ladder, same ±20% sqft
-    // band, same 3-comp minimum. Only the price now arrives.
+    // band, same beds/baths/type/distance rules, same 3-comp minimum. Only the
+    // price now arrives.
     const now = new Date('2026-09-11T12:00:00.000Z');
     const comps = mapCompItems(LIVE_CARDS);
     const tier = selectTiers(SUBJECT, comps, now);
-    const priceMissing = tier.rejected.filter((r) => r.reason === 'PRICE_MISSING');
 
-    // Only the abbreviated card may still die on price.
-    expect(priceMissing.every((r) => r.comp.zpid === '38606592')).toBe(true);
-    // And at least one real comp now survives every gate, where before the fix
-    // the whole pool was rejected PRICE_MISSING.
+    // NOTHING dies on price any more: every card in this fixture carries a
+    // price Zillow displayed, in one form or the other.
+    expect(tier.rejected.filter((r) => r.reason === 'PRICE_MISSING')).toEqual([]);
     expect(tier.kept.length, 'the priced comps were still all rejected').toBeGreaterThan(0);
     for (const kept of tier.kept) expect(kept.soldPrice).toBeGreaterThan(0);
+  });
+
+  // =========================================================================
+  // NEWPORT BEACH — the regression this change exists for.
+  //
+  // Recorded live at production scale (499 candidates, 457 mapped) for
+  // 1040 Westwind Way, Newport Beach, CA 92660. In that market 408 of 457
+  // prices are abbreviated, and EVERY candidate that reached the price gate
+  // carried one — so the exact-only rule kept 0 and the member was told the
+  // market was too thin. These six cards each pass every OTHER rule already:
+  // same type, inside the ±20% sqft band, beds/baths within 1, under a mile.
+  // The price gate was the only thing standing between them and the member.
+  // =========================================================================
+  describe('Newport Beach: seven-figure comps survive the price gate', () => {
+    const NEWPORT_SUBJECT: SubjectProperty = {
+      zpid: '2094418839',
+      address: '1040 Westwind Way, Newport Beach, CA, 92660',
+      beds: 4, baths: 4, livingArea: 4314, lotSize: 10_000, yearBuilt: 1975,
+      propertyType: 'SFR', lastSoldPrice: 6_000_000, lastSoldDate: null,
+      lat: 33.622692, lng: -117.89785,
+    };
+
+    it('prices all six, none by inventing a digit', () => {
+      const comps = mapCompItems(NEWPORT_CARDS);
+      expect(comps.length).toBe(NEWPORT_CARDS.length);
+      for (const c of comps) {
+        expect(c.soldPrice, `${c.zpid} priceless`).toBeGreaterThan(1_000_000);
+        // Zillow displays 3 significant figures; the parsed value carries
+        // exactly that and no more, so it is a whole number of $10k or better.
+        expect((c.soldPrice as number) % 10_000, `${c.zpid} carries invented precision`).toBe(0);
+      }
+    });
+
+    it('and they reach the member through the unchanged filter ladder', () => {
+      const now = new Date('2026-09-11T12:00:00.000Z');
+      const tier = selectTiers(NEWPORT_SUBJECT, mapCompItems(NEWPORT_CARDS), now);
+      expect(tier.rejected.filter((r) => r.reason === 'PRICE_MISSING')).toEqual([]);
+      expect(
+        tier.kept.length,
+        'Newport-style comps are still being dropped — this is the exact case ' +
+          'that produced "the market there is too thin" for a dense market',
+      ).toBeGreaterThanOrEqual(MIN_COMPS_TO_COMPUTE);
+    });
   });
 
   it('the cache floor forces a refetch of rows whose stored comps lost their price', () => {

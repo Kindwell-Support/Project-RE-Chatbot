@@ -633,7 +633,10 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       // refetches once (the "whole corpus refetches once" case above prices
       // that). The window reopens at the NEXT bump, which should leave this
       // floor at 10 — v10 rows carry real prices and must recompute free.
-      expect(RAW_REFETCH_BELOW_VERSION).toBe(10);
+      // 11 (§6.2 abbreviated millions): rows cached at 10 read only EXACT
+      // formatted prices, so a seven-figure market still mapped every comp
+      // priceless and cached the failure. Same unrecoverable shape.
+      expect(RAW_REFETCH_BELOW_VERSION).toBe(11);
       expect(
         RAW_REFETCH_BELOW_VERSION,
         'the floor drifted above the current algo version — every cached row ' +
