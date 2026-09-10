@@ -1818,29 +1818,72 @@ Two consequences that are rulings, not observations:
    about a dense suburb with 50 sold homes inside 3 miles. A dead feature is
    not the conservative option.
 
-   `mapMoney` now reads `amount` first, then falls back to `formatted` **only
-   for a complete digit group** — `"$540,000"` IS `540000`, the same number
-   written differently. Zillow abbreviates at and above a million, and
-   `"$1.27M"` is any of 1,265,000–1,274,999, so abbreviated values still map
-   to null and the comp is still rejected `PRICE_MISSING`. Measured live: 35
-   exact, 9 abbreviated, keeping **9 comps at the 3mi/3mo rung** — 3× the
-   minimum, on a tighter recency rung than parsing the abbreviated values
-   would have needed. No business rule moved to achieve that.
+   `mapMoney` reads `amount` first — a numeric amount always wins and is never
+   displaced by a string — then falls back to **exactly two** `formatted`
+   shapes and refuses everything else:
 
-   **KNOWN LIMITATION, not an oversight:** in a market whose sales are mostly
-   seven figures (Newport Beach — the second reported address), most comps
-   still arrive priceless and the lookup still fails. Lifting it means
-   accepting ±0.4% comp prices, which is a client ruling, not a mapper
-   decision.
+   | shape | example | → | note |
+   | --- | --- | --- | --- |
+   | complete digit group | `"$540,000"` | `540000` | lossless: the same number written differently |
+   | abbreviated millions | `"$3.55M"` | `3550000` | Zillow's DISPLAYED value, 3 significant figures |
 
-2a. **The cache cannot carry this fix backwards.** `comps_cache.raw_comps`
-   stores the ALREADY-MAPPED comp, not the wire item, so rows written between
-   the actor's 2026-09-01 change and this fix hold `soldPrice: null` and no
-   recompute at any version can recover the price. `ALGO_VERSION` moves to 10
-   **and `RAW_REFETCH_BELOW_VERSION` moves with it**, forcing those rows to
-   REFETCH rather than recompute. Without the second move the fix is invisible
-   for the remainder of the 14-day TTL and looks like it failed. Cost: one
-   lookup per cached address, once.
+   **The abbreviated form was admitted by client ruling 2026-09-11**, after a
+   production-scale live run on `1040 Westwind Way, Newport Beach, CA 92660`
+   showed the exact-only rule could not serve a seven-figure market at all:
+
+   | measure | value |
+   | --- | --- |
+   | candidates returned / mapped | 499 / 457 |
+   | `listingPrice.amount` numeric | **0 / 457** |
+   | exact formatted `"$1,250,000"` | 49 / 457 (10.7%) |
+   | abbreviated `"$3.55M"` | **408 / 457 (89.3%)** |
+   | comps kept, exact-only | **0** → *"the market there is too thin"* |
+   | comps kept, abbreviated admitted | **6**, at the tightest 1mi/3mo rung |
+
+   Every candidate that reached the price gate carried an abbreviated price —
+   `PRICE_MISSING` was 32 with and without the exact-only rule — so refusing
+   them was not caution, it was a dead feature in every expensive market. It
+   also skewed the sets that *did* render: a market straddling $1M lost only
+   its expensive half.
+
+   **WHAT THE PARSED NUMBER MEANS.** It is **Zillow's displayed value**, not a
+   transaction record. Zillow rounds to three significant figures, so `"$3.55M"`
+   is displayed for any sale in 3,545,000–3,554,999 — within ~0.4%. The parser
+   carries that figure across verbatim and **never emits more precision than
+   Zillow displayed**; it does not reconstruct the deed. Downstream copy must
+   not describe comp prices as exact sale amounts, and the rendered block keeps
+   its standing disclaimer — *"Automated estimate from public sold data, not a
+   formal appraisal. Verify these comps with your agent before you act."*
+
+   **NOT a general currency parser** (and a test pins this): `"$1.234M"`,
+   `"$1.2K"`, `"$1.2B"`, `"$1.2 M"`, `"$1.2MM"`, `"about $1.2M"`, `"$1.2M+"`,
+   `"$0M"` and anything else outside the two shapes above are REFUSED, and the
+   comp is rejected `PRICE_MISSING` exactly as an absent price would be.
+
+   No business rule moved for any of this: the 1mi/3mo → 3mi/12mo ladder, the
+   ±20% sqft band, the beds/baths/type/distance gates and the 3-comp minimum
+   are all unchanged.
+
+2a. **The cache cannot carry a price fix backwards, and this has now happened
+   twice.** `comps_cache.raw_comps` stores the ALREADY-MAPPED comp, not the
+   wire item, so a price the mapper declined to read is simply GONE from the
+   row and no recompute at any version can recover it:
+
+   | rows cached at | hold | fixed by |
+   | --- | --- | --- |
+   | 9 | every price null (numeric field never populated) | `ALGO_VERSION` 10 + floor 10 |
+   | 10 | every **abbreviated** price null — i.e. all of an expensive market | `ALGO_VERSION` 11 + floor 11 |
+
+   Both times `ALGO_VERSION` moves **and `RAW_REFETCH_BELOW_VERSION` moves with
+   it**, forcing those rows to REFETCH rather than recompute. Without the
+   second move the fix is invisible for the remainder of the 14-day TTL and
+   looks like it failed — the Newport Beach retest would have kept returning
+   its cached *"market is too thin"*. Cost: one lookup per cached address,
+   once.
+
+   The general rule this establishes: **any change to what `mapMoney` (or any
+   mapper) will read REQUIRES the refetch floor to move with the version.**
+   A compute-only change does not.
 3. **`resoFacts.propertyCondition` has no v2 home** and maps to null. Neither
    condition nor style is rendered (§14.14 operator directive), so nothing
    member-facing changes.

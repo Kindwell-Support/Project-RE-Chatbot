@@ -249,8 +249,15 @@ describe('CONTRACT §6.2 — the v2 Apify payload maps as well as v1', () => {
       // No sold price on the card: the headline price is the sale.
       expect(mapCompItems([card({ listingPrice: { amount: 655000, currency: 'USD', formatted: '$655,000' } })])[0]
         .soldPrice).toBe(655000);
-      // Abbreviated only, no amount anywhere -> null, never a rounded guess.
-      expect(mapCompItems([card({ listingPrice: { amount: null, formatted: '$1.01M' } })])[0].soldPrice).toBeNull();
+      // Abbreviated only, no amount anywhere -> Zillow's DISPLAYED value.
+      // This case previously expected null. The 2026-09-11 client ruling
+      // admitted the abbreviated form after the Newport Beach diagnostic
+      // showed exact-only could not serve a seven-figure market at all
+      // (§6.2; compsV2SoldPrice.test.ts owns the full parser contract).
+      expect(mapCompItems([card({ listingPrice: { amount: null, formatted: '$1.01M' } })])[0].soldPrice)
+        .toBe(1_010_000);
+      // Still not a general parser: unsupported shapes remain refused.
+      expect(mapCompItems([card({ listingPrice: { amount: null, formatted: '$1.234M' } })])[0].soldPrice).toBeNull();
     });
 
     it('maps a v2 sold card to status SOLD, which is what the hard filters require', () => {

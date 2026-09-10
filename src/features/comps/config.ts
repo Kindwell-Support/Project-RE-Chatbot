@@ -19,14 +19,17 @@
  * shape. 9 = the price-outlier disclosure (§14.23): two more REQUIRED
  * fields (nearInBandMedianPpsf / nearInBandPpsfCount). v4+ rows RECOMPUTE
  * free — raw payloads sound (RAW_REFETCH_BELOW_VERSION stayed 4).
- * 10 = the v2 sold-price fallback (§6.2). UNLIKE EVERY BUMP BEFORE IT, this
- * one cannot be served by a recompute: rows cached under 9 hold comps whose
- * price was LOST AT MAP TIME (the v2 payload never populates the numeric
- * field, and `rawComps` stores the ALREADY-MAPPED comp, not the wire item),
- * so recomputing over them reproduces the same priceless pool and the same
- * TOO_FEW_COMPS. RAW_REFETCH_BELOW_VERSION moves with it to force a refetch.
+ * 10 = the v2 sold-price fallback (§6.2): exact formatted prices read.
+ * 11 = abbreviated millions admitted (§6.2, client ruling 2026-09-11).
+ *
+ * 10 AND 11 ARE UNLIKE EVERY BUMP BEFORE THEM: neither can be served by a
+ * recompute. `rawComps` stores the ALREADY-MAPPED comp, not the wire item, so
+ * a price the mapper declined to read is GONE from the row — v9 rows dropped
+ * every price, v10 rows dropped every seven-figure one. Recomputing over
+ * either reproduces the same priceless pool and the same TOO_FEW_COMPS.
+ * RAW_REFETCH_BELOW_VERSION moves with both to force a refetch instead.
  */
-export const ALGO_VERSION = 10;
+export const ALGO_VERSION = 11;
 
 // --- Price-outlier disclosure (CONTRACT §14.23) -----------------------------
 
@@ -77,6 +80,13 @@ export const DETAIL_RETRY_BACKOFF_MS = 2_000;
  * 40-item/uncapped-window search were ~11 days deep in dense markets, and a
  * recompute would label that truncated pool a 12-month window.
  *
+ * 11 (§6.2, abbreviated millions): rows cached at 10 read only EXACT
+ * formatted prices, so in a seven-figure market every comp was still mapped
+ * with `soldPrice: null` and the row cached a TOO_FEW_COMPS. Measured at
+ * Newport Beach: 408 of 457 candidates carried an abbreviated price, and all
+ * 32 that reached the price gate did. Same unrecoverable shape as 10 — the
+ * price is not in the row — so the floor moves again.
+ *
  * 10 (§6.2, the v2 sold-price fallback): rows written between the actor's
  * 2026-09-01 payload change and this fix hold comps mapped with
  * `soldPrice: null`, because the price arrived only as a formatted string
@@ -85,7 +95,7 @@ export const DETAIL_RETRY_BACKOFF_MS = 2_000;
  * rows must be refetched or they serve their cached TOO_FEW_COMPS for the
  * remainder of the 14-day TTL.
  */
-export const RAW_REFETCH_BELOW_VERSION = 10;
+export const RAW_REFETCH_BELOW_VERSION = 11;
 
 // --- Hard filters (CONTRACT §5.3) -------------------------------------------
 
