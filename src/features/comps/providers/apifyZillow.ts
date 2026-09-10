@@ -46,6 +46,39 @@ export const SEARCH_RESULTS_LIMIT = 500;
 const SQFT_PER_ACRE = 43_560;
 const MILES_PER_DEG_LAT = 69;
 
+/**
+ * BOTH ACTOR WIRE FORMATS (CONTRACT §6.2) — the reason every mapper below
+ * reads two paths for one fact.
+ *
+ * On 2026-09-01 both actors shipped the same change: "the output now has only
+ * the mapped fields; Zillow raw fields that the mapping does not use are
+ * removed" (their published changelog). The raw fields this module was written
+ * against are exactly what was removed:
+ *
+ *   detail actor  streetAddress / address.*    -> listingAddress.{street,city,state,zipCode}
+ *                 latitude / longitude         -> coordinates.{latitude,longitude}
+ *                 lotSize, lotAreaValue+Units  -> lotArea.{value,unit}
+ *                 resoFacts.architecturalStyle -> propertyFeatures.architecturalStyle
+ *                 hasBadGeocode                -> GONE (no replacement)
+ *   search actor  hdpData.homeInfo.*           -> the same fields, TOP-LEVEL
+ *                 homeInfo.price               -> listingSoldPrice / listingPrice {amount}
+ *                 homeInfo.homeStatus          -> listingStatus ("sold", which mapStatus
+ *                                                 already lands on SOLD unchanged)
+ *                 detailUrl                    -> propertyUrl
+ *
+ * Reading only the old paths made the subject resolve to a street-less item on
+ * EVERY address (-> NO_STREET -> ADDRESS_NOT_FOUND, "I couldn't find that
+ * address on Zillow" for valid addresses) and made every search card
+ * unmappable. Both formats are accepted rather than swapped: the recorded
+ * fixtures and any cached raw payload are the old shape, and a scraper that
+ * reshaped its output once can do it again.
+ */
+
+/** A nested payload object, or undefined — the v2 fields all arrive nested. */
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
+}
+
 /** Observed homeType values -> the closed contract enum. Unknown -> OTHER, which rule 7 rejects. */
 function mapHomeType(raw: unknown): PropertyType {
   switch (String(raw ?? '').toUpperCase()) {
@@ -69,7 +102,15 @@ function mapHomeType(raw: unknown): PropertyType {
   }
 }
 
-/** RECENTLY_SOLD is Zillow's word for what the contract calls SOLD. */
+/**
+ * RECENTLY_SOLD is Zillow's word for what the contract calls SOLD.
+ *
+ * §6.2 needs nothing here: v1 wrote `homeStatus: "RECENTLY_SOLD"`, v2 writes
+ * `listingStatus: "sold"` (recorded), and the uppercase pass-through already
+ * lands the second one on `SOLD` — which is what rule 1 tests for
+ * case-insensitively (filter.ts, aggregates.ts, service.ts). Pinned by
+ * apifyPayloadV2.test.ts rather than guarded by extra code here.
+ */
 function mapStatus(raw: unknown): string {
   const s = String(raw ?? '').toUpperCase();
   return s === 'RECENTLY_SOLD' ? 'SOLD' : s;
@@ -77,6 +118,23 @@ function mapStatus(raw: unknown): string {
 
 function asFiniteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * §6.2 money: v2 wraps prices as `{ amount, currency, formatted }` where v1
+ * carried a bare number. `amount` is the ONLY field read.
+ *
+ * `formatted` is deliberately NOT a fallback, though the recorded v2-era
+ * payload (spike-comps.json, 2026-08-05, when the actor still emitted both
+ * formats) carried `amount: null` with the figure only in `formatted`.
+ * Zillow abbreviates above a million — "$1.01M" is any of 1,005,000-1,014,999
+ * — so parsing that string invents precision (§14.5), and parsing only the
+ * exact forms ("$425,000") would silently drop every million-plus comp and
+ * hand back a comp set biased low, which is worse than none. A comp with no
+ * price is rejected by the hard filters: the honest outcome.
+ */
+function mapMoney(value: unknown): number | null {
+  return asFiniteNumber(asObject(value)?.amount);
 }
 
 /** §14.14.3 rule 2 helper: a count is only a claim when it is > 0. */
@@ -148,11 +206,19 @@ export function mapSubjectItemWithReason(
   // The provider's own miss signal (INSPECTOR 0009): the fuzzy wrong-property
   // match carried hasBadGeocode: true, the genuine subject false. First-line
   // check ALONGSIDE the street-prefix guard below, not instead of it.
+  //
+  // §6.2: v2 dropped this field, so on a v2 payload this check is a no-op and
+  // the street-prefix guard below is the only wrong-property defence left. It
+  // catches BOTH recorded cases on its own (asked "123 E Coronado Rd", got
+  // "319 E Coronado Rd #1234"; asked "#429", got "#318") — verified in
+  // tests/comps/apifyPayloadV2.test.ts, which is why nothing else was added
+  // to replace the flag.
   if (item.hasBadGeocode === true) return { miss: 'BAD_GEOCODE' };
 
-  const streetAddress = String(
-    item.streetAddress ?? (item.address as Record<string, unknown> | undefined)?.streetAddress ?? '',
-  );
+  // v1 address sources first, then v2's listingAddress (§6.2).
+  const v1Address = asObject(item.address);
+  const v2Address = asObject(item.listingAddress);
+  const streetAddress = String(item.streetAddress ?? v1Address?.streetAddress ?? v2Address?.street ?? '');
   if (!streetAddress) return { miss: 'NO_STREET' };
 
   const normalizedInput = normalizeAddress(requestedAddress);
@@ -161,23 +227,33 @@ export function mapSubjectItemWithReason(
     return { miss: 'STREET_MISMATCH' };
   }
 
-  const lat = asFiniteNumber(item.latitude);
-  const lng = asFiniteNumber(item.longitude);
+  const coordinates = asObject(item.coordinates);
+  const lat = asFiniteNumber(item.latitude ?? coordinates?.latitude);
+  const lng = asFiniteNumber(item.longitude ?? coordinates?.longitude);
   if (lat === null || lng === null) return { miss: 'NO_COORDS' }; // no coordinates -> no comps search possible
 
-  const addr = (item.address ?? {}) as Record<string, unknown>;
+  const lotArea = asObject(item.lotArea);
   return { subject: {
     zpid: String(item.zpid ?? ''),
-    address: [streetAddress, addr.city, addr.state, addr.zipcode].filter(Boolean).join(', '),
+    address: [
+      streetAddress,
+      v1Address?.city ?? v2Address?.city,
+      v1Address?.state ?? v2Address?.state,
+      v1Address?.zipcode ?? v2Address?.zipCode,
+    ]
+      .filter(Boolean)
+      .join(', '),
     beds: asFiniteNumber(item.bedrooms),
     baths: asFiniteNumber(item.bathrooms),
     livingArea: asFiniteNumber(item.livingArea),
     // Detail payload carries lotSize already in sqft when known; fall back
-    // to value+units. Rounded either way (BUG-018).
+    // to value+units — v1's lotAreaValue/lotAreaUnits, else v2's lotArea
+    // (whose unit reads "Square Feet"/"Acres"; mapLotSize is case-insensitive
+    // on the acre prefix). Rounded either way (BUG-018).
     lotSize:
       asFiniteNumber(item.lotSize) !== null
         ? Math.round(asFiniteNumber(item.lotSize) as number)
-        : mapLotSize(item.lotAreaValue, item.lotAreaUnits),
+        : mapLotSize(item.lotAreaValue ?? lotArea?.value, item.lotAreaUnits ?? lotArea?.unit),
     yearBuilt: asFiniteNumber(item.yearBuilt),
     propertyType: mapHomeType(item.homeType),
     lastSoldPrice: asFiniteNumber(item.lastSoldPrice),
@@ -188,47 +264,66 @@ export function mapSubjectItemWithReason(
 }
 
 /**
- * Map search-scraper items to RawComps. Skips the recorded noise shapes:
- * building/rental cards with no hdpData.homeInfo or a null zpid (3/40 in the
- * recorded run). Everything else is passed through — REJECTION IS THE
+ * Map search-scraper items to RawComps, in either wire format (§6.2). Skips
+ * the recorded noise shapes: building/rental cards, which carry a null zpid in
+ * BOTH formats and additionally `isBuilding` in v1 (3/40 in the recorded run).
+ * Everything else is passed through — REJECTION IS THE
  * FILTERS' JOB, and a skipped-vs-rejected comp is invisible in the "why not
  * this one?" report, so the skip list here stays as small as possible.
  */
 export function mapCompItems(items: Array<Record<string, unknown>>): RawComp[] {
   const comps: RawComp[] = [];
   for (const item of items) {
-    const homeInfo = (item.hdpData as Record<string, unknown> | undefined)?.homeInfo as
-      | Record<string, unknown>
-      | undefined;
-    if (!homeInfo || homeInfo.zpid == null || item.isBuilding === true) continue;
-    const lat = asFiniteNumber(homeInfo.latitude);
-    const lng = asFiniteNumber(homeInfo.longitude);
+    // §6.2: ONE card, two wire formats — v1 nests every fact under
+    // hdpData.homeInfo, v2 removed that container and mapped the same facts
+    // to the top level. A card is read entirely in ONE format, never a blend:
+    // the recorded transitional payload carries both, and letting a v1 null
+    // be back-filled from v2 would change numbers the golden fixtures pin.
+    const homeInfo = asObject(asObject(item.hdpData)?.homeInfo);
+    const v2Address = homeInfo ? undefined : asObject(item.listingAddress);
+    const v2Lot = homeInfo ? undefined : asObject(item.lotArea);
+    const zpid = homeInfo ? homeInfo.zpid : item.zpid;
+    // v1 skipped building/rental noise by `isBuilding` and a null zpid; v2
+    // marks those cards with a null zpid too (recorded: all 3 of them) and
+    // adds its own per-item `isValid` flag.
+    if (zpid == null || item.isBuilding === true || item.isValid === false) continue;
+    const lat = asFiniteNumber(homeInfo ? homeInfo.latitude : asObject(item.coordinates)?.latitude);
+    const lng = asFiniteNumber(homeInfo ? homeInfo.longitude : asObject(item.coordinates)?.longitude);
     if (lat === null || lng === null) continue; // unmappable: no distance, no filter decision
 
     comps.push({
-      zpid: String(homeInfo.zpid),
+      zpid: String(zpid),
       address: String(
         item.address ??
-          [homeInfo.streetAddress, homeInfo.city, homeInfo.state].filter(Boolean).join(', '),
+          (homeInfo
+            ? [homeInfo.streetAddress, homeInfo.city, homeInfo.state].filter(Boolean).join(', ')
+            : (v2Address?.full ??
+              [v2Address?.street, v2Address?.city, v2Address?.state].filter(Boolean).join(', '))),
       ),
-      status: mapStatus(homeInfo.homeStatus),
-      soldPrice: asFiniteNumber(homeInfo.price),
-      soldDate: mapSoldDate(homeInfo.dateSold),
-      beds: asFiniteNumber(homeInfo.bedrooms),
-      baths: asFiniteNumber(homeInfo.bathrooms),
-      livingArea: asFiniteNumber(homeInfo.livingArea),
-      lotSize: mapLotSize(homeInfo.lotAreaValue, homeInfo.lotAreaUnit),
-      propertyType: mapHomeType(homeInfo.homeType),
+      status: mapStatus(homeInfo ? homeInfo.homeStatus : item.listingStatus),
+      // v2 splits the figure across listingSoldPrice (the sale) and
+      // listingPrice (the card's headline); a sold card is the sale.
+      soldPrice: homeInfo
+        ? asFiniteNumber(homeInfo.price)
+        : (mapMoney(item.listingSoldPrice) ?? mapMoney(item.listingPrice)),
+      soldDate: mapSoldDate(homeInfo ? homeInfo.dateSold : item.dateSold),
+      beds: asFiniteNumber(homeInfo ? homeInfo.bedrooms : item.bedrooms),
+      baths: asFiniteNumber(homeInfo ? homeInfo.bathrooms : item.bathrooms),
+      livingArea: asFiniteNumber(homeInfo ? homeInfo.livingArea : item.livingArea),
+      lotSize: homeInfo
+        ? mapLotSize(homeInfo.lotAreaValue, homeInfo.lotAreaUnit)
+        : mapLotSize(v2Lot?.value, v2Lot?.unit),
+      propertyType: mapHomeType(homeInfo ? homeInfo.homeType : item.homeType),
       lat,
       lng,
-      // Load-bearing per CONTRACT §14.9 — prefer the card's own URL, fall back
-      // to the canonical zpid form; null only when neither exists.
+      // Load-bearing per CONTRACT §14.9 — prefer the card's own URL (v1
+      // detailUrl, v2 propertyUrl), fall back to the canonical zpid form.
       detailUrl:
         typeof item.detailUrl === 'string' && item.detailUrl
           ? item.detailUrl
-          : homeInfo.zpid != null
-            ? `https://www.zillow.com/homedetails/${String(homeInfo.zpid)}_zpid/`
-            : null,
+          : typeof item.propertyUrl === 'string' && item.propertyUrl
+            ? item.propertyUrl
+            : `https://www.zillow.com/homedetails/${String(zpid)}_zpid/`,
     });
   }
   return comps;
@@ -273,7 +368,12 @@ export function mapDetailBatchItems(items: Array<Record<string, unknown>>): Deta
       mapped.push({ addressOrUrlFromInput: key, ok: false, zpid: null, detail: null });
       continue;
     }
+    // §6.2: v2 removed resoFacts and moved the style to propertyFeatures.
+    // parking.totalSpaces survived, which is why the parking count still
+    // lands. propertyCondition has NO v2 home — it maps to null there, and
+    // neither field is rendered (operator directive below).
     const resoFacts = (item.resoFacts ?? {}) as Record<string, unknown>;
+    const propertyFeatures = (item.propertyFeatures ?? {}) as Record<string, unknown>;
     const parking = (item.parking ?? {}) as Record<string, unknown>;
     const detail: CompDetail = {
       daysOnMarket: mapDaysOnMarket(item.daysOnZillow),
@@ -284,7 +384,8 @@ export function mapDetailBatchItems(items: Array<Record<string, unknown>>): Deta
       // must map to null (em-dash), never to a rendered "0 parking spaces".
       parkingSpaces: positiveCount(asFiniteNumber(resoFacts.parkingCapacity) ?? asFiniteNumber(parking.totalSpaces)),
       yearBuilt: asFiniteNumber(item.yearBuilt),
-      architecturalStyle: nonEmptyString(resoFacts.architecturalStyle),
+      architecturalStyle:
+        nonEmptyString(resoFacts.architecturalStyle) ?? nonEmptyString(propertyFeatures.architecturalStyle),
       propertyCondition: nonEmptyString(resoFacts.propertyCondition),
     };
     mapped.push({

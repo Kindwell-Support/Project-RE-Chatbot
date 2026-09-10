@@ -1768,6 +1768,49 @@ Comps list hygiene: skip items with no `hdpData.homeInfo`, or `zpid` null, or
    recorded pair); mismatch ⇒ `ADDRESS_NOT_FOUND`. Never run comps against a
    property the member didn't name.
 
+### 6.2 The SECOND wire format (actor change 2026-09-01) — both are supported
+
+Everything in §6.1 above describes the payload as recorded on 2026-08-05
+(**v1**). On **2026-09-01** both actors published the same change: *"the output
+now has only the mapped fields. Zillow raw fields that the mapping does not use
+are removed."* The removed set is exactly what the §6.1 mapping read, so the
+mappers saw a street-less, coordinate-less item on every address and every
+member was told **"I couldn't find that address on Zillow"** — the reported
+production outage. `providers/apifyZillow.ts` now reads BOTH formats, v1 first;
+neither is dropped, because the cached raw payloads and every recorded fixture
+are v1 and a scraper that reshaped once can reshape again.
+
+| Fact | v1 path (≤ 2026-08-31) | **v2 path (current)** |
+| --- | --- | --- |
+| subject street / city / state / ZIP | `streetAddress`, `address.{city,state,zipcode}` | `listingAddress.{street,city,state,zipCode}` |
+| subject + comp coordinates | `latitude` / `longitude` (comps: under `hdpData.homeInfo`) | `coordinates.{latitude,longitude}` |
+| comp container | `hdpData.homeInfo.*` | the same facts **top-level** |
+| comp sold price | `homeInfo.price` (number) | `listingSoldPrice.amount` → `listingPrice.amount` |
+| comp status | `homeInfo.homeStatus` `"RECENTLY_SOLD"` | `listingStatus` `"sold"` (already maps to `SOLD`) |
+| comp link | `detailUrl` | `propertyUrl` |
+| lot size | `lotSize` / `lotAreaValue`+`lotAreaUnits` | `lotArea.{value,unit}` (`"Square Feet"` / `"Acres"`) |
+| detail style | `resoFacts.architecturalStyle` | `propertyFeatures.architecturalStyle` |
+| building/rental noise | `isBuilding: true` | null `zpid` on the same cards (recorded), plus per-item `isValid` |
+| **`hasBadGeocode`** | present | **GONE — no replacement** |
+| `addressOrUrlFromInput`, `zpid`, `isValid`, `beds`/`baths`/`livingArea`/`yearBuilt`/`lastSoldPrice`/`dateSold`/`homeType`, `parking.totalSpaces`, `daysOnZillow` | — | **unchanged** |
+
+Two consequences that are rulings, not observations:
+
+1. **The wrong-property guard now stands alone.** With `hasBadGeocode` gone,
+   the street-prefix check is the only defence — and it catches both recorded
+   cases by itself (asked `"123 E Coronado Rd"`, got `"319 E Coronado Rd
+   #1234"`; asked `#429`, got `#318`), pinned in `apifyPayloadV2.test.ts`.
+   Nothing was invented to replace the flag.
+2. **`formatted` is never parsed.** v2 money is `{amount, currency,
+   formatted}`; only `amount` is read. Zillow abbreviates above a million
+   (`"$1.01M"` is any of 1,005,000–1,014,999), so parsing it invents precision
+   (§14.5) — and parsing only the exact forms would silently drop every
+   million-plus comp and return a comp set biased low. No price ⇒ the hard
+   filters reject the comp, which is the honest outcome.
+3. **`resoFacts.propertyCondition` has no v2 home** and maps to null. Neither
+   condition nor style is rendered (§14.14 operator directive), so nothing
+   member-facing changes.
+
 ## 7. Caching — table `comps_cache`
 
 ```sql
