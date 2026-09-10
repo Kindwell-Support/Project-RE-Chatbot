@@ -1,0 +1,150 @@
+[
+ {
+  "zpid": "38449474",
+  "listingAddress": {
+   "state": "WA",
+   "country": "USA",
+   "full": "804 94th Street SE, Everett, WA 98208"
+  },
+  "coordinates": {
+   "latitude": 47.912624,
+   "longitude": -122.22213
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/804-94th-St-SE-Everett-WA-98208/38449474_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$540,000"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 4,
+  "bathrooms": 2,
+  "livingArea": 1536,
+  "livingAreaUnit": "sqft",
+  "lotArea": {
+   "value": 0.29,
+   "unit": "acres",
+   "formatted": "0.29 Acres"
+  },
+  "daysOnZillow": -1,
+  "dateSold": "2026-09-08T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "zpid": "2068270792",
+  "listingAddress": {
+   "state": "WA",
+   "country": "USA",
+   "full": "2009 98th Street SE, Everett, WA 98208"
+  },
+  "coordinates": {
+   "latitude": 47.90942,
+   "longitude": -122.20516
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/2009-98th-St-SE-Everett-WA-98208/2068270792_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$610,000"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 3,
+  "bathrooms": 3,
+  "livingArea": 2143,
+  "livingAreaUnit": "sqft",
+  "daysOnZillow": -1,
+  "dateSold": "2026-09-08T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "zpid": "38489756",
+  "listingAddress": {
+   "state": "WA",
+   "country": "USA",
+   "full": "9207 Meadow Way, Everett, WA 98208"
+  },
+  "coordinates": {
+   "latitude": 47.91434,
+   "longitude": -122.203545
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/9207-Meadow-Way-Everett-WA-98208/38489756_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$560,000"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 3,
+  "bathrooms": 2,
+  "livingArea": 1456,
+  "livingAreaUnit": "sqft",
+  "lotArea": {
+   "value": 0.27,
+   "unit": "acres",
+   "formatted": "0.27 Acres"
+  },
+  "daysOnZillow": -1,
+  "dateSold": "2026-09-04T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "zpid": "38606592",
+  "listingAddress": {
+   "state": "WA",
+   "country": "USA",
+   "full": "15406 72nd Drive SE, Snohomish, WA 98296"
+  },
+  "coordinates": {
+   "latitude": 47.857677,
+   "longitude": -122.13793
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/homedetails/15406-72nd-Dr-SE-Snohomish-WA-98296/38606592_zpid/",
+  "listingSoldPrice": {
+   "currency": "USD"
+  },
+  "listingPrice": {
+   "currency": "USD",
+   "formatted": "$1.27M"
+  },
+  "cardType": "home",
+  "homeType": "SINGLE_FAMILY",
+  "bedrooms": 3,
+  "bathrooms": 3,
+  "livingArea": 2805,
+  "livingAreaUnit": "sqft",
+  "lotArea": {
+   "value": 10018.8,
+   "unit": "sqft",
+   "formatted": "10018.8 Sqft"
+  },
+  "daysOnZillow": -1,
+  "dateSold": "2026-09-08T07:00:00.000Z",
+  "isValid": true
+ },
+ {
+  "listingAddress": {
+   "state": "WA",
+   "full": "1415 84th St SE, Everett, WA"
+  },
+  "coordinates": {
+   "latitude": 47.918926,
+   "longitude": -122.21422
+  },
+  "listingStatus": "sold",
+  "propertyUrl": "https://www.zillow.com/b/1415-84th-st-se-everett-wa-5jDs8x/",
+  "isValid": true
+ }
+]

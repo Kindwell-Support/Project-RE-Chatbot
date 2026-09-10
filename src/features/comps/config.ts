@@ -18,9 +18,15 @@
  * nearInBandSameTypeSales field, so cached rows recompute into the new
  * shape. 9 = the price-outlier disclosure (§14.23): two more REQUIRED
  * fields (nearInBandMedianPpsf / nearInBandPpsfCount). v4+ rows RECOMPUTE
- * free — raw payloads sound (RAW_REFETCH_BELOW_VERSION stays 4).
+ * free — raw payloads sound (RAW_REFETCH_BELOW_VERSION stayed 4).
+ * 10 = the v2 sold-price fallback (§6.2). UNLIKE EVERY BUMP BEFORE IT, this
+ * one cannot be served by a recompute: rows cached under 9 hold comps whose
+ * price was LOST AT MAP TIME (the v2 payload never populates the numeric
+ * field, and `rawComps` stores the ALREADY-MAPPED comp, not the wire item),
+ * so recomputing over them reproduces the same priceless pool and the same
+ * TOO_FEW_COMPS. RAW_REFETCH_BELOW_VERSION moves with it to force a refetch.
  */
-export const ALGO_VERSION = 9;
+export const ALGO_VERSION = 10;
 
 // --- Price-outlier disclosure (CONTRACT §14.23) -----------------------------
 
@@ -62,14 +68,24 @@ export const DETAIL_BATCH_MAX_RETRIES = 1;
 export const DETAIL_RETRY_BACKOFF_MS = 2_000;
 
 /**
- * Rows whose raw payload predates this version were fetched under the old
- * 40-item/uncapped-window regime and MUST REFETCH rather than
- * recompute-from-raw (operator ruling, §14.17): a recompute would rebuild a
- * result over a pool that was truncated to ~11 days in dense markets and
- * label it with a 12-month window. One-time cost: each old row re-bills one
+ * Rows whose raw payload predates this version were fetched under a regime
+ * whose stored raw CANNOT produce a correct result, so they MUST REFETCH
+ * rather than recompute-from-raw. One-time cost: each old row re-bills one
  * lookup on its next touch.
+ *
+ * 4 (operator ruling, §14.17): payloads fetched under the old
+ * 40-item/uncapped-window search were ~11 days deep in dense markets, and a
+ * recompute would label that truncated pool a 12-month window.
+ *
+ * 10 (§6.2, the v2 sold-price fallback): rows written between the actor's
+ * 2026-09-01 payload change and this fix hold comps mapped with
+ * `soldPrice: null`, because the price arrived only as a formatted string
+ * the mapper then refused. `rawComps` holds the MAPPED comp, so the price is
+ * not recoverable from the row at any version — the wire item is gone. Those
+ * rows must be refetched or they serve their cached TOO_FEW_COMPS for the
+ * remainder of the 14-day TTL.
  */
-export const RAW_REFETCH_BELOW_VERSION = 4;
+export const RAW_REFETCH_BELOW_VERSION = 10;
 
 // --- Hard filters (CONTRACT §5.3) -------------------------------------------
 

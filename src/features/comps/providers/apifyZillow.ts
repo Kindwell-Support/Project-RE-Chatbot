@@ -121,20 +121,52 @@ function asFiniteNumber(value: unknown): number | null {
 }
 
 /**
+ * A price string that is a COMPLETE digit group — "$540,000", "425000".
+ * Deliberately does NOT match Zillow's abbreviated form ("$1.27M").
+ */
+const EXACT_PRICE_RE = /^\$?(?:\d{1,3}(?:,\d{3})+|\d+)$/;
+
+/**
  * §6.2 money: v2 wraps prices as `{ amount, currency, formatted }` where v1
- * carried a bare number. `amount` is the ONLY field read.
+ * carried a bare number. `amount` is read first and wins whenever present.
  *
- * `formatted` is deliberately NOT a fallback, though the recorded v2-era
- * payload (spike-comps.json, 2026-08-05, when the actor still emitted both
- * formats) carried `amount: null` with the figure only in `formatted`.
- * Zillow abbreviates above a million — "$1.01M" is any of 1,005,000-1,014,999
- * — so parsing that string invents precision (§14.5), and parsing only the
- * exact forms ("$425,000") would silently drop every million-plus comp and
- * hand back a comp set biased low, which is worse than none. A comp with no
- * price is rejected by the hard filters: the honest outcome.
+ * THE `formatted` FALLBACK IS EVIDENCE-DECIDED (live run 2026-09-11 against
+ * the Everett subject that produced this bug). The v2 search payload does not
+ * populate the numeric field AT ALL:
+ *
+ *   listingSoldPrice.amount numeric : 0 / 44   (the object is {currency:'USD'})
+ *   listingPrice.amount numeric     : 0 / 44
+ *   listingPrice.formatted string   : 44 / 44  ("$540,000", "$1.27M")
+ *
+ * Reading only `amount` therefore priced ZERO comps, all of them were
+ * rejected PRICE_MISSING, and the member was told "the market there is too
+ * thin" about a dense suburb with 50 sold homes inside 3 miles. A dead
+ * feature is not the conservative option.
+ *
+ * What gets parsed is bounded to what is LOSSLESS: a complete digit group is
+ * the same number written differently ("$540,000" IS 540000). Zillow
+ * abbreviates at and above a million, and "$1.27M" is any value in
+ * [1,265,000, 1,274,999] — parsing that would invent precision (§14.5), so it
+ * still returns null and the comp is still rejected PRICE_MISSING. Measured
+ * live: 35 of 44 exact, 9 abbreviated, keeping 9 comps at the 3mi/3mo rung —
+ * three times the minimum, on a TIGHTER recency rung than the
+ * abbreviated-inclusive variant needed.
+ *
+ * The cost of that strictness is real and is not hidden: in a market whose
+ * sales are mostly seven figures (Newport Beach), most comps still arrive
+ * priceless and the lookup still fails. KNOWN LIMITATION, recorded in
+ * CONTRACT §6.2 — lifting it means accepting ±0.4% comp prices, which is a
+ * client ruling, not a mapper decision.
  */
 function mapMoney(value: unknown): number | null {
-  return asFiniteNumber(asObject(value)?.amount);
+  const money = asObject(value);
+  if (!money) return null;
+  const amount = asFiniteNumber(money.amount);
+  if (amount !== null) return amount;
+  const formatted = typeof money.formatted === 'string' ? money.formatted.trim() : '';
+  if (!EXACT_PRICE_RE.test(formatted)) return null;
+  const digits = Number(formatted.replace(/[^0-9]/g, ''));
+  return Number.isFinite(digits) && digits > 0 ? digits : null;
 }
 
 /** §14.14.3 rule 2 helper: a count is only a claim when it is > 0. */

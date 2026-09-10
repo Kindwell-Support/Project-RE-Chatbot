@@ -348,17 +348,33 @@ describe(`the aggregate payload unioned into the comps pool${sliceNote(...MODS)}
   // 5. THE VERSION — recompute, and the floor must NOT move.
   // =========================================================================
   describe('the union bump RECOMPUTES; the refetch floor stays put', () => {
-    it('the refetch floor must NOT move with the bump', () => {
+    it('the refetch floor moves ONLY for a genuinely poisoned generation', () => {
       // THE TRAP, and it is assertable today. If the floor tracks
-      // ALGO_VERSION automatically, this bump silently re-bills every cached
-      // row — the exact one-time cost §14.17 accepted for POISONED raw,
-      // charged again for raw that is perfectly sound. The 40-cap generation
-      // is the only poisoned one.
+      // ALGO_VERSION automatically, every bump silently re-bills the whole
+      // cached corpus — the one-time cost §14.17 accepted for POISONED raw,
+      // charged again for raw that is perfectly sound.
+      //
+      // The floor stays pinned to a LITERAL so that moving it is always a
+      // deliberate edit with a reason attached. It has moved once:
+      //
+      //   4  §14.17 — the 40-cap generation: raw truncated to ~11 days.
+      //   10 §6.2   — the v2 sold-price generation: rows written between the
+      //              actor's 2026-09-01 payload change and the price fix hold
+      //              comps ALREADY MAPPED with soldPrice: null, because the
+      //              price arrived only as a formatted string the mapper then
+      //              refused. raw_comps stores the MAPPED comp, not the wire
+      //              item, so no recompute at any version recovers the price.
+      //              Those rows must refetch or they serve their cached
+      //              TOO_FEW_COMPS for the rest of the 14-day TTL.
+      //
+      // THIS SUITE'S OWN CLAIM IS UNCHANGED: the union bump was a compute
+      // change over sound raw and did not move the floor. The exception is a
+      // data LOSS in the stored raw, which is what §6.2 hit.
       expect(
         RAW_REFETCH_BELOW_VERSION,
-        'the floor moved with the version bump. Raw fetched under §14.17 is ' +
-          'sound and must not re-bill on every future algorithm change.',
-      ).toBe(4);
+        'the floor moved without a poisoned generation to justify it. Sound ' +
+          'raw must not re-bill on every future algorithm change.',
+      ).toBe(10);
       expect(ALGO_VERSION, 'the version went BELOW the floor — every row refetches forever')
         .toBeGreaterThanOrEqual(RAW_REFETCH_BELOW_VERSION);
     });
