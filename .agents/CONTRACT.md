@@ -1801,12 +1801,46 @@ Two consequences that are rulings, not observations:
    cases by itself (asked `"123 E Coronado Rd"`, got `"319 E Coronado Rd
    #1234"`; asked `#429`, got `#318`), pinned in `apifyPayloadV2.test.ts`.
    Nothing was invented to replace the flag.
-2. **`formatted` is never parsed.** v2 money is `{amount, currency,
-   formatted}`; only `amount` is read. Zillow abbreviates above a million
-   (`"$1.01M"` is any of 1,005,000–1,014,999), so parsing it invents precision
-   (§14.5) — and parsing only the exact forms would silently drop every
-   million-plus comp and return a comp set biased low. No price ⇒ the hard
-   filters reject the comp, which is the honest outcome.
+2. **`formatted` is parsed, but only where it is LOSSLESS.**
+   ~~`formatted` is never parsed; only `amount` is read.~~ **REVERSED
+   2026-09-11 on live evidence.** The original ruling assumed `amount` would
+   be populated in production. It never is. A provider-level live run against
+   the reported Everett subject (no Supabase touched):
+
+   | field | populated |
+   | --- | --- |
+   | `listingSoldPrice.amount` numeric | **0 / 44** (the object is `{currency:'USD'}`) |
+   | `listingPrice.amount` numeric | **0 / 44** |
+   | `listingPrice.formatted` string | **44 / 44** (`"$540,000"`, `"$1.27M"`) |
+
+   Reading only `amount` priced ZERO comps, so all 44 were rejected
+   `PRICE_MISSING` and the member was told *"the market there is too thin"*
+   about a dense suburb with 50 sold homes inside 3 miles. A dead feature is
+   not the conservative option.
+
+   `mapMoney` now reads `amount` first, then falls back to `formatted` **only
+   for a complete digit group** — `"$540,000"` IS `540000`, the same number
+   written differently. Zillow abbreviates at and above a million, and
+   `"$1.27M"` is any of 1,265,000–1,274,999, so abbreviated values still map
+   to null and the comp is still rejected `PRICE_MISSING`. Measured live: 35
+   exact, 9 abbreviated, keeping **9 comps at the 3mi/3mo rung** — 3× the
+   minimum, on a tighter recency rung than parsing the abbreviated values
+   would have needed. No business rule moved to achieve that.
+
+   **KNOWN LIMITATION, not an oversight:** in a market whose sales are mostly
+   seven figures (Newport Beach — the second reported address), most comps
+   still arrive priceless and the lookup still fails. Lifting it means
+   accepting ±0.4% comp prices, which is a client ruling, not a mapper
+   decision.
+
+2a. **The cache cannot carry this fix backwards.** `comps_cache.raw_comps`
+   stores the ALREADY-MAPPED comp, not the wire item, so rows written between
+   the actor's 2026-09-01 change and this fix hold `soldPrice: null` and no
+   recompute at any version can recover the price. `ALGO_VERSION` moves to 10
+   **and `RAW_REFETCH_BELOW_VERSION` moves with it**, forcing those rows to
+   REFETCH rather than recompute. Without the second move the fix is invisible
+   for the remainder of the 14-day TTL and looks like it failed. Cost: one
+   lookup per cached address, once.
 3. **`resoFacts.propertyCondition` has no v2 home** and maps to null. Neither
    condition nor style is rendered (§14.14 operator directive), so nothing
    member-facing changes.

@@ -613,12 +613,27 @@ describe(`cache and spend, by provider call count${sliceNote(...MODS)}`, () => {
       expect(spy.subjectCalls, 'the subject was re-billed too').toBe(0);
     });
 
-    it('the floor is the version the fetch regime changed at', () => {
-      // Pins the relationship rather than the number: the floor must be the
-      // CURRENT algo version, because §14.17 is what changed the regime. If a
-      // later bump moves ALGO_VERSION without moving the floor, rows fetched
-      // under the good regime start refetching for no reason.
-      expect(RAW_REFETCH_BELOW_VERSION).toBe(4);
+    it('the floor is the version the raw payload last became unusable at', () => {
+      // Pins the relationship rather than the number: the floor must sit at
+      // the version where the STORED RAW stopped being able to produce a
+      // correct result. If a later bump moves ALGO_VERSION without moving the
+      // floor, rows whose raw is sound start refetching for no reason.
+      //
+      // MOVED 4 -> 10 (§6.2, the v2 sold-price fallback). The first regime
+      // change was §14.17's fetch truncation; the second is this one, and it
+      // is worse: rows written between the actor's 2026-09-01 payload change
+      // and the fix hold comps already MAPPED with `soldPrice: null`, because
+      // the price arrived only as a formatted string the mapper refused.
+      // `rawComps` stores the mapped comp, not the wire item, so no recompute
+      // at any version can recover the price — those rows must refetch or
+      // they serve their cached TOO_FEW_COMPS for the rest of the 14-day TTL.
+      //
+      // CONSEQUENCE, deliberately accepted: floor == ALGO_VERSION means the
+      // recompute window [floor, ALGO_VERSION) is EMPTY, so the whole corpus
+      // refetches once (the "whole corpus refetches once" case above prices
+      // that). The window reopens at the NEXT bump, which should leave this
+      // floor at 10 — v10 rows carry real prices and must recompute free.
+      expect(RAW_REFETCH_BELOW_VERSION).toBe(10);
       expect(
         RAW_REFETCH_BELOW_VERSION,
         'the floor drifted above the current algo version — every cached row ' +
