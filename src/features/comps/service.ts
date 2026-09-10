@@ -386,7 +386,20 @@ export async function runComps(rawAddress: string, deps: RunCompsDeps): Promise<
   let comps: RawComp[];
   try {
     const looked = await withRetry(() => deps.provider.lookupSubject(rawAddress));
-    if (looked === null) return failure('ADDRESS_NOT_FOUND', { resolution: 'not_found' });
+    if (looked === null) {
+      // This branch had NO log line, and that is how a provider-side payload
+      // reshape (§6.2: the 2026-09-01 actor change removed the address and
+      // coordinate fields this pipeline read) spent days telling members
+      // "I couldn't find that address on Zillow" about addresses that exist.
+      // "Not found" and "found but unmappable" reach the member as the same
+      // sentence by operator ruling; they must not reach the OPERATOR as the
+      // same silence. cacheKey, never the raw address (CONTRACT §3).
+      logger?.info?.(
+        { cacheKey: key, provider: deps.provider.name },
+        'comps subject lookup produced no usable property — genuine miss, or a payload this mapper could not read',
+      );
+      return failure('ADDRESS_NOT_FOUND', { resolution: 'not_found' });
+    }
     if ('miss' in looked) {
       // Operator ruling: same code, branched copy — and COUNTED. If this
       // fires often in production, SUBJECT_RESOLUTION_MISMATCH earns its own
