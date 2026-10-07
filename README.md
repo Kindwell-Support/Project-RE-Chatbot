@@ -120,13 +120,19 @@ timing is undocumented, and we are not guessing at it.
   s.onload = function () {
     window.createJamesBot({
       apiUrl: API_URL,
-      target: '#james-bot'
+      target: '#james-bot',
+      theme: 'light'
     });
   };
   document.head.appendChild(s);
 })();
 </script>
 ```
+
+`theme: 'light'` pins the widget's light palette for every member. The lesson
+pages are near-white, so a dark widget would sit on them as a dark block.
+Without the option the widget follows each visitor's device setting
+(light or dark); `theme: 'dark'` pins dark.
 
 No `memberEmail`: since Phase 3 the widget collects and VERIFIES the member's
 email itself (GHL Course Access gate + signed session token), so the old
