@@ -673,6 +673,17 @@
     'line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-gate-btn{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
     '.jb-root .jb-gate-retry{padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722) !important;}',
+    /* PADDING on the remaining text buttons, same (0,2,0) !important tier.
+       Observed live: the portal's button reset zeroed the rail's "Try again"
+       padding, so the label ran edge to edge inside its pill. The square
+       buttons of the old look hid the loss; pill shapes make it plain. Every
+       button whose label sits inside a visible edge is pinned here. */
+    '.jb-root .jb-btn{padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1.2222) !important;}',
+    '.jb-root .jb-calc-cancel{padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1) !important;}',
+    '.jb-root .jb-retry{padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 1) !important;}',
+    '.jb-root .jb-side-retry{padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.7778) !important;}',
+    '.jb-root .jb-side-toggle{padding:calc(var(--jb-font-base) * 0.3889) !important;}',
+    '.jb-root .jb-adv-toggle{padding:calc(var(--jb-font-base) * 0.2778) 0 !important;}',
     '.jb-root .jb-calc-cancel{font-size:var(--jb-font-sm) !important;line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-adv-toggle{font-size:var(--jb-font-sm) !important;font-weight:600 !important;',
     'line-height:var(--jb-line-tight) !important;}',
