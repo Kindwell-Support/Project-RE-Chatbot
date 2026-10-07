@@ -216,7 +216,8 @@ describe('lookup against a loaded table', () => {
       }
 
       const material = await toolErrorFor('lookup_material_budget', { item: '' });
-      const calculator = await toolErrorFor('flip_calculator', {});
+      // property_name is supplied so the rejection is for a NUMERIC field.
+      const calculator = await toolErrorFor('flip_calculator', { property_name: 'Test property' });
 
       for (const [label, payload] of [
         ['material lookup', material], ['calculator', calculator],

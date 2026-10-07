@@ -259,6 +259,7 @@ describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () 
         form_submission: {
           calculator: 'flip',
           values: {
+            property_name: 'Test property',
             purchase_price: 300000, rehab_budget: 60000,
             after_repair_value: 520000, holding_months: 4,
           },
@@ -283,6 +284,7 @@ describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () 
         form_submission: {
           calculator: 'flip',
           values: {
+            property_name: 'Test property',
             purchase_price: 300000, rehab_budget: 60000,
             after_repair_value: 403000, holding_months: 4,
           },
@@ -318,6 +320,7 @@ describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () 
         form_submission: {
           calculator: 'flip',
           values: {
+            property_name: 'Test property',
             purchase_price: 300000, rehab_budget: 60000,
             after_repair_value: 450000, holding_months: 4,
           },
@@ -486,6 +489,7 @@ describe(`the calculator form as a second entry point${sliceNote(...MODS)}`, () 
         form_submission: {
           calculator: 'flip',
           values: {
+            property_name: 'Test property',
             purchase_price: 300000, rehab_budget: 60000,
             after_repair_value: 375000, holding_months: 4, // edited away from 403,000
           },

@@ -56,7 +56,10 @@ const manualArv = (arv: number): FakeCompletion => ({
 const runFlip = (args: Record<string, unknown> = {}): FakeCompletion => ({
   toolCalls: [{
     id: 'f1', name: 'flip_calculator',
-    args: { purchase_price: 300000, rehab_budget: 60000, holding_months: 4, ...args },
+    args: {
+      property_name: 'Test property',
+      purchase_price: 300000, rehab_budget: 60000, holding_months: 4, ...args,
+    },
   }],
 });
 

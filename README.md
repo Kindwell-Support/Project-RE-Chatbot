@@ -70,6 +70,9 @@ table (see also `.env.example`), the post-deploy verification curls (health + th
 preflight that broke the old build), and the GHL wiring. Two SQL artifacts must exist in
 the Supabase project: `sql/setup.sql` (chat_messages — applied) and
 `sql/add_match_documents_distinct.sql` (deduped retrieval RPC — applied 2026-07-15).
+The calculation library needs `sql/calculations.sql` — **run it before deploying the
+library**. Without it the calculators still work, but nothing is saved (members see
+"couldn't be saved" under each result) and boot logs `calculations NOT VERIFIED`.
 
 The server serves its own widget bundle at `GET /widget.js`, so no separate CDN is required. Set `ALLOWED_ORIGINS` (comma-separated) — CORS is allow-listed, never `*`.
 
@@ -154,6 +157,7 @@ widget/            widget source → esbuild → public/widget.js
 tests/             golden regression tests (sheet cached values), CORS preflight test
 spec/              the three source spreadsheets (read-only specification)
 sql/setup.sql      chat_messages table for conversation memory
+sql/calculations.sql  the calculation library (one row per completed calculator run)
 tools/dump.mjs     dev utility: dumps formulas + cached values from the xlsx files
 ```
 
@@ -162,6 +166,7 @@ tools/dump.mjs     dev utility: dumps formulas + cached values from the xlsx fil
 - Every output in `tests/*.test.ts` reproduces the sheets' own cached values at their default inputs (±1 for rounding).
 - Land calculator: `C9` (interest reserve months), `C11` (purchase closing costs), and `C12` (utilities/insurance) are **computed formulas**, exactly as in the sheet — the old build hardcoded them and produced wrong numbers. Explicit overrides exist but are opt-in.
 - Every unspecified optional input falls back to the sheet default, and each tool result reports `defaults_applied` so the agent can disclose them.
+- Every calculator requires a **property name** (the first field on each form; the agent asks for it when a member types numbers without one). Each completed run is saved to the member's calculation library under that name — typed and form runs alike, one new entry per run — and is listed, searched, re-run, renamed and deleted from the widget's **Calculations** view (`GET/PATCH/DELETE /calculations`).
 
 ## Known gaps
 

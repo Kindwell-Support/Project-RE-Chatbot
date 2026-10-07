@@ -33,8 +33,8 @@ export type FieldUnit = 'usd' | 'decimal' | 'months' | 'sf';
 export interface FormField {
   name: string;
   label: string;
-  /** 'enum' renders as a select; 'number' as a numeric input. */
-  type: 'number' | 'enum';
+  /** 'enum' renders as a select; 'number' as a numeric input; 'text' as free text. */
+  type: 'number' | 'enum' | 'text';
   required: boolean;
   description: string;
   unit?: FieldUnit;
@@ -95,6 +95,7 @@ export const CALCULATOR_KEYS = Object.keys(CALCULATORS) as CalculatorKey[];
  * renders correctly — just with a title-cased label instead of an acronym.
  */
 const LABEL_OVERRIDES: Record<string, string> = {
+  property_name: 'Property name',
   after_repair_value: 'After-repair value (ARV)',
   refinance_ltarv: 'Refinance LTARV',
   min_dscr: 'Minimum DSCR',
@@ -159,12 +160,19 @@ function buildField(
   defaults: Record<string, unknown>,
 ): FormField {
   const description = property.description ?? '';
+  // The schema description for property_name is written for the MODEL ("ASK
+  // for it; never invent one"), and the widget shows descriptions as the
+  // control's tooltip. Members get their own wording.
+  const memberDescription =
+    name === 'property_name' ? 'Saved to your calculation library under this name' : description;
   const field: FormField = {
     name,
     label: deriveLabel(name),
-    type: property.enum ? 'enum' : 'number',
+    // A non-enum string is free text (the property name); every other
+    // non-enum field is numeric, as it always was.
+    type: property.enum ? 'enum' : property.type === 'string' ? 'text' : 'number',
     required,
-    description,
+    description: memberDescription,
   };
   const unit = deriveUnit(name, description);
   if (unit) field.unit = unit;

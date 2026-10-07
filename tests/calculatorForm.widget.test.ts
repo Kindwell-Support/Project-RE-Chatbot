@@ -93,6 +93,15 @@ function control(name: string): HTMLInputElement | HTMLSelectElement | null {
   return document.querySelector(`#james-bot .jb-calc [name="${name}"]`);
 }
 
+/** Fill every required flip field: the property name plus the four numbers. */
+function fillFlipRequired(): void {
+  (control('property_name') as HTMLInputElement).value = 'Tacoma duplex';
+  (control('purchase_price') as HTMLInputElement).value = '350000';
+  (control('rehab_budget') as HTMLInputElement).value = '75000';
+  (control('after_repair_value') as HTMLInputElement).value = '600000';
+  (control('holding_months') as HTMLInputElement).value = '4';
+}
+
 function clickText(text: string): void {
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('#james-bot button'));
   const target = buttons.find((b) => b.textContent?.includes(text));
@@ -173,18 +182,16 @@ describe('5.1 the form renders from the server descriptor', () => {
 describe('5.2 submitting the form', () => {
   it('posts form_submission and omits untouched defaults', async () => {
     const chat = await openChat(FLIP_REPLY);
-    chat.setNextReply({ body: { output: 'Net profit is about $101,916.', user_message: 'Run the Fix & Flip calculator: purchase price $350,000.' } });
+    chat.setNextReply({ body: { output: 'Net profit is about $101,916.', user_message: 'Run the Fix & Flip calculator for Tacoma duplex: purchase price $350,000.' } });
 
-    (control('purchase_price') as HTMLInputElement).value = '350000';
-    (control('rehab_budget') as HTMLInputElement).value = '75000';
-    (control('after_repair_value') as HTMLInputElement).value = '600000';
-    (control('holding_months') as HTMLInputElement).value = '4';
+    fillFlipRequired();
     clickText('Calculate');
     await new Promise((r) => setTimeout(r, 10));
 
     const submission = chat.posts[1];
     expect(submission.form_submission.calculator).toBe('flip');
     expect(submission.form_submission.values).toEqual({
+      property_name: 'Tacoma duplex',
       purchase_price: '350000',
       rehab_budget: '75000',
       after_repair_value: '600000',
@@ -199,10 +206,7 @@ describe('5.2 submitting the form', () => {
 
   it('includes an optional field once it is actually changed', async () => {
     const chat = await openChat(FLIP_REPLY);
-    (control('purchase_price') as HTMLInputElement).value = '350000';
-    (control('rehab_budget') as HTMLInputElement).value = '75000';
-    (control('after_repair_value') as HTMLInputElement).value = '600000';
-    (control('holding_months') as HTMLInputElement).value = '4';
+    fillFlipRequired();
     clickText('Show advanced options');
     (control('interest_rate') as HTMLInputElement).value = '0.15';
     (control('interest_reserve') as HTMLSelectElement).value = 'Yes';
@@ -216,12 +220,9 @@ describe('5.2 submitting the form', () => {
   it('replaces the form with the answer on success', async () => {
     const chat = await openChat(FLIP_REPLY);
     chat.setNextReply({
-      body: { output: 'Net profit is about $101,916.', user_message: 'Run the Fix & Flip calculator: purchase price $350,000.' },
+      body: { output: 'Net profit is about $101,916.', user_message: 'Run the Fix & Flip calculator for Tacoma duplex: purchase price $350,000.' },
     });
-    (control('purchase_price') as HTMLInputElement).value = '350000';
-    (control('rehab_budget') as HTMLInputElement).value = '75000';
-    (control('after_repair_value') as HTMLInputElement).value = '600000';
-    (control('holding_months') as HTMLInputElement).value = '4';
+    fillFlipRequired();
     clickText('Calculate');
     await new Promise((r) => setTimeout(r, 10));
 
@@ -236,6 +237,7 @@ describe('5.2 submitting the form', () => {
 describe('5.3 validation and dismissal', () => {
   it('blocks a blank required field locally and never posts', async () => {
     const chat = await openChat(FLIP_REPLY);
+    (control('property_name') as HTMLInputElement).value = 'Tacoma duplex';
     (control('purchase_price') as HTMLInputElement).value = '350000';
     // ARV deliberately left blank.
     (control('rehab_budget') as HTMLInputElement).value = '75000';
@@ -251,6 +253,18 @@ describe('5.3 validation and dismissal', () => {
     expect(card(), 'form was dismissed on a validation error').not.toBeNull();
   });
 
+  it('blocks a blank property name locally too, and never posts', async () => {
+    const chat = await openChat(FLIP_REPLY);
+    fillFlipRequired();
+    (control('property_name') as HTMLInputElement).value = '   ';
+    clickText('Calculate');
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(chat.posts.length, 'a form with no property name was submitted').toBe(1);
+    expect(card()!.querySelector('.jb-calc-error')!.textContent).toContain('Property name');
+    expect(control('property_name')!.getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('shows a server 400 on the form and keeps it open to fix', async () => {
     const chat = await openChat(FLIP_REPLY);
     chat.setNextReply({
@@ -259,10 +273,7 @@ describe('5.3 validation and dismissal', () => {
       body: { error: 'Please fill in: After-repair value (ARV).' },
     });
     // Pass local validation so the request actually reaches the server.
-    (control('purchase_price') as HTMLInputElement).value = '350000';
-    (control('rehab_budget') as HTMLInputElement).value = '75000';
-    (control('after_repair_value') as HTMLInputElement).value = '600000';
-    (control('holding_months') as HTMLInputElement).value = '4';
+    fillFlipRequired();
     clickText('Calculate');
     await new Promise((r) => setTimeout(r, 10));
 

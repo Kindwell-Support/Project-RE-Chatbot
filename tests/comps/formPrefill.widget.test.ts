@@ -229,6 +229,7 @@ describe('the pre-fill label as the member sees it', () => {
     control.dispatchEvent(new window.Event('input', { bubbles: true }));
 
     for (const [name, value] of [
+      ['property_name', 'Test property'],
       ['purchase_price', '300000'],
       ['rehab_budget', '60000'],
       ['holding_months', '4'],

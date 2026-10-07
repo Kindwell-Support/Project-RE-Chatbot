@@ -42,6 +42,16 @@ function toNumber(raw: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** Longest property name the library stores — enough for a full street address. */
+export const MAX_PROPERTY_NAME_LENGTH = 120;
+
+/** Trim and collapse whitespace; null when nothing is left. */
+export function normalizePropertyName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const cleaned = raw.trim().replace(/\s+/g, ' ');
+  return cleaned ? cleaned.slice(0, MAX_PROPERTY_NAME_LENGTH) : null;
+}
+
 export interface BuiltSubmission {
   tool: string;
   args: Record<string, unknown>;
@@ -72,6 +82,12 @@ export function buildFormSubmission(
     const raw = values[field.name];
     if (isBlank(raw)) {
       missing.push(field.label);
+      continue;
+    }
+    if (field.type === 'text') {
+      const text = normalizePropertyName(raw);
+      if (text === null) missing.push(field.label);
+      else args[field.name] = text;
       continue;
     }
     const num = toNumber(raw);
@@ -143,9 +159,15 @@ function formatValue(value: unknown, unit: string | undefined): string {
  */
 export function describeSubmission(form: CalculatorForm, args: Record<string, unknown>): string {
   const byName = new Map([...form.required, ...form.optional].map((f) => [f.name, f]));
-  const parts = Object.entries(args).map(([name, value]) => {
-    const field = byName.get(name);
-    return `${field ? field.label.toLowerCase() : name} ${formatValue(value, field?.unit)}`;
-  });
-  return `Run the ${form.title} calculator: ${parts.join(', ')}.`;
+  const parts = Object.entries(args)
+    .filter(([name]) => name !== 'property_name')
+    .map(([name, value]) => {
+      const field = byName.get(name);
+      return `${field ? field.label.toLowerCase() : name} ${formatValue(value, field?.unit)}`;
+    });
+  // The property leads the line, the way a member would say it — and it keeps
+  // the name in the replayed history, so "re-run it with 5 months" next turn
+  // still knows which property "it" is.
+  const property = typeof args.property_name === 'string' ? ` for ${args.property_name}` : '';
+  return `Run the ${form.title} calculator${property}: ${parts.join(', ')}.`;
 }

@@ -113,7 +113,10 @@ const runFlip = (args: Record<string, unknown> = {}): FakeCompletion => ({
   toolCalls: [{
     id: 'flip-1',
     name: 'flip_calculator',
-    args: { purchase_price: 300000, rehab_budget: 60000, holding_months: 4, ...args },
+    args: {
+      property_name: 'Test property',
+      purchase_price: 300000, rehab_budget: 60000, holding_months: 4, ...args,
+    },
   }],
 });
 const say = (content: string): FakeCompletion => ({ content });
@@ -647,6 +650,9 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
             toolCalls: [{
               id: 'flip-1', name: 'flip_calculator',
               args: {
+                // Named so the call reaches the ARV guard this test is
+                // about — a nameless call is refused before it.
+                property_name: 'Test property',
                 purchase_price: 400000, rehab_budget: 50000, holding_months: 4,
                 after_repair_value: 400000,
               },
@@ -692,6 +698,9 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
             toolCalls: [{
               id: 'brrrr-1', name: 'brrrr_calculator',
               args: {
+                // Named so the call reaches the ARV guard this test is
+                // about — a nameless call is refused before it.
+                property_name: 'Test property',
                 purchase_price: 250000, rehab_budget: 60000, monthly_rent: 3000,
                 after_repair_value: 403000,
               },
@@ -743,7 +752,10 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
           {
             toolCalls: [{
               id: 'brrrr-1', name: 'brrrr_calculator',
-              args: { purchase_price: 250000, rehab_budget: 60000, monthly_rent: 3000 },
+              args: {
+                property_name: 'Test property',
+                purchase_price: 250000, rehab_budget: 60000, monthly_rent: 3000,
+              },
             }],
           },
           say('Here is the BRRRR.'),
@@ -775,6 +787,7 @@ describe(`session_state and calculator pre-fill${sliceNote(...MODS)}`, () => {
             toolCalls: [{
               id: 'brrrr-2', name: 'brrrr_calculator',
               args: {
+                property_name: 'Test property',
                 purchase_price: 250000, rehab_budget: 60000, monthly_rent: 3000,
                 after_repair_value: 520000,
               },

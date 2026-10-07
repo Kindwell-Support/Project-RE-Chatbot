@@ -78,6 +78,13 @@ export async function ensureCompsTables(supabase: SupabaseClient): Promise<boole
         'the sidebar is unavailable (GET /chats answers 503) and members fall back to a single ' +
         'local chat — conversations still work and nothing is lost, but multi-chat is dark',
     },
+    {
+      table: 'calculations',
+      sqlFile: 'sql/calculations.sql',
+      degradation:
+        'calculator results are NOT saved to the library (members see "not saved" under each ' +
+        'result) and the Calculations view answers 503 — the calculators themselves still work',
+    },
   ];
   for (const { table, column, sqlFile, degradation } of checks) {
     const target = column ? `${table}.${column}` : table;

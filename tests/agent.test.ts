@@ -90,8 +90,17 @@ describe('3.1 tool schemas are explicitly typed (frozen-number regression)', () 
       for (const [key, schema] of Object.entries(params.properties as Record<string, any>)) {
         expect(['number', 'string'], `${name}.${key} is not scalar`).toContain(schema.type);
         if (schema.type === 'string') {
-          // Any string param must be a closed enum, never free text.
-          expect(schema.enum, `${name}.${key} is free-form string`).toBeDefined();
+          // Any string param must be a closed enum, never free text — with one
+          // deliberate exception: property_name, the calculation-library key.
+          // It carries no deal numbers, and it is REQUIRED, so it can never be
+          // the place a model parks a deal instead of the typed fields.
+          if (key === 'property_name') {
+            expect(params.required, `${name}.property_name is not required`).toContain(
+              'property_name',
+            );
+          } else {
+            expect(schema.enum, `${name}.${key} is free-form string`).toBeDefined();
+          }
         }
       }
       expect(params.additionalProperties).toBe(false);
@@ -162,6 +171,7 @@ describe('3.2 tool arguments survive the handoff into the calculator', () => {
               id: 'call_1',
               name: 'flip_calculator',
               args: {
+                property_name: 'F2 flip',
                 purchase_price: 350000,
                 rehab_budget: 75000,
                 after_repair_value: 600000,
@@ -196,6 +206,7 @@ describe('3.2 tool arguments survive the handoff into the calculator', () => {
               id: 'c1',
               name: 'flip_calculator',
               args: {
+                property_name: 'F3 flip',
                 purchase_price: 300000,
                 rehab_budget: 50000,
                 after_repair_value: 550000,
@@ -210,6 +221,7 @@ describe('3.2 tool arguments survive the handoff into the calculator', () => {
               id: 'c2',
               name: 'brrrr_calculator',
               args: {
+                property_name: 'B2 rental',
                 purchase_price: 250000,
                 rehab_budget: 60000,
                 after_repair_value: 450000,
@@ -238,23 +250,64 @@ describe('3.2 tool arguments survive the handoff into the calculator', () => {
   it('ANTI-REGRESSION: a missing required field errors — never a silent default', () => {
     // This is the original bug's shape. Substituting 700000 here is what made
     // every deal report the same profit.
+    // property_name is supplied so each check below exercises a NUMERIC field.
+    const property_name = 'Test property';
     expect(() => runFlipTool({})).toThrow(MissingRequiredInputError);
-    expect(() => runFlipTool({ purchase_price: 350000 })).toThrow(/rehab_budget/);
+    expect(() => runFlipTool({ property_name, purchase_price: 350000 })).toThrow(/rehab_budget/);
     expect(() =>
-      runFlipTool({ purchase_price: 350000, rehab_budget: 75000, after_repair_value: 600000 }),
+      runFlipTool({
+        property_name,
+        purchase_price: 350000,
+        rehab_budget: 75000,
+        after_repair_value: 600000,
+      }),
     ).toThrow(/holding_months/);
 
     expect(() => runBrrrrTool({})).toThrow(MissingRequiredInputError);
     expect(() =>
-      runBrrrrTool({ purchase_price: 250000, rehab_budget: 60000, after_repair_value: 450000 }),
+      runBrrrrTool({
+        property_name,
+        purchase_price: 250000,
+        rehab_budget: 60000,
+        after_repair_value: 450000,
+      }),
     ).toThrow(/monthly_rent/);
 
     expect(() => runLandTool({})).toThrow(MissingRequiredInputError);
-    expect(() => runLandTool({ construction_sf: 3000 })).toThrow(/price_per_sf/);
+    expect(() => runLandTool({ property_name, construction_sf: 3000 })).toThrow(/price_per_sf/);
+  });
+
+  it('a missing or blank property name errors too — a result is never filed unnamed', () => {
+    const flip = {
+      purchase_price: 350000,
+      rehab_budget: 75000,
+      after_repair_value: 600000,
+      holding_months: 4,
+    };
+    expect(() => runFlipTool(flip)).toThrow(MissingRequiredInputError);
+    expect(() => runFlipTool(flip)).toThrow(/property_name/);
+    expect(() => runFlipTool({ ...flip, property_name: '   ' })).toThrow(/property_name/);
+    expect(() =>
+      runBrrrrTool({
+        purchase_price: 250000,
+        rehab_budget: 60000,
+        after_repair_value: 450000,
+        monthly_rent: 3000,
+      }),
+    ).toThrow(/property_name/);
+    expect(() =>
+      runLandTool({
+        construction_sf: 3000,
+        price_per_sf: 300,
+        new_construction_value: 3000000,
+        project_duration_months: 18,
+      }),
+    ).toThrow(/property_name/);
   });
 
   it('ANTI-REGRESSION: NaN/garbage required values are rejected, not computed with', () => {
     const base = {
+      property_name: 'Test property',
       purchase_price: 350000,
       rehab_budget: 75000,
       after_repair_value: 600000,
@@ -275,7 +328,12 @@ describe('3.2 tool arguments survive the handoff into the calculator', () => {
             {
               id: 'c1',
               name: 'flip_calculator',
-              args: { purchase_price: 350000, rehab_budget: 75000, after_repair_value: 600000 },
+              args: {
+                property_name: 'Test property',
+                purchase_price: 350000,
+                rehab_budget: 75000,
+                after_repair_value: 600000,
+              },
             },
           ],
         },
@@ -424,8 +482,9 @@ describe('3.3 A13: qa_logs carries real token_usage', () => {
 // ---------------------------------------------------------------------------
 
 describe('3.4 A15: applied defaults are disclosed machine-readably', () => {
-  it('flip with only the four required fields reports every applied default', () => {
+  it('flip with only the required fields (name + four numbers) reports every applied default', () => {
     const result = runFlipTool({
+      property_name: 'Test property',
       purchase_price: 350000,
       rehab_budget: 75000,
       after_repair_value: 600000,
@@ -444,11 +503,13 @@ describe('3.4 A15: applied defaults are disclosed machine-readably', () => {
     );
     // Nothing the caller supplied is reported as a default.
     expect(result.defaults_applied).not.toHaveProperty('purchase_price');
+    expect(result.defaults_applied).not.toHaveProperty('property_name');
     expect(result.defaults_applied).not.toHaveProperty('holding_months');
   });
 
   it('a supplied value is not listed as an applied default', () => {
     const result = runFlipTool({
+      property_name: 'Test property',
       purchase_price: 350000,
       rehab_budget: 75000,
       after_repair_value: 600000,
@@ -461,6 +522,7 @@ describe('3.4 A15: applied defaults are disclosed machine-readably', () => {
 
   it('brrrr and land disclose their defaults too', () => {
     const brrrr = runBrrrrTool({
+      property_name: 'Test property',
       purchase_price: 250000,
       rehab_budget: 60000,
       after_repair_value: 450000,
@@ -471,6 +533,7 @@ describe('3.4 A15: applied defaults are disclosed machine-readably', () => {
     );
 
     const land = runLandTool({
+      property_name: 'Test property',
       construction_sf: 3000,
       price_per_sf: 300,
       new_construction_value: 3000000,
@@ -483,6 +546,7 @@ describe('3.4 A15: applied defaults are disclosed machine-readably', () => {
 
   it('every tool result carries the estimate disclaimer', () => {
     const result = runFlipTool({
+      property_name: 'Test property',
       purchase_price: 350000,
       rehab_budget: 75000,
       after_repair_value: 600000,
@@ -494,6 +558,7 @@ describe('3.4 A15: applied defaults are disclosed machine-readably', () => {
 
   it('land exposes the computed formula cells (C9/C11/C12) for disclosure', () => {
     const land = runLandTool({
+      property_name: 'Test property',
       construction_sf: 4000,
       price_per_sf: 350,
       new_construction_value: 3500000,

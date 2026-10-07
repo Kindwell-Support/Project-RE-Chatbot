@@ -11,6 +11,18 @@ const yesNo = (description: string) => ({
   description,
 });
 
+/**
+ * The library key for a saved calculation. FIRST in every calculator's
+ * properties so the derived form renders it at the top, and REQUIRED so a
+ * calculation never lands in the library unnamed — when the member has not
+ * named the property, the model must ask rather than invent one.
+ */
+const propertyName = {
+  type: 'string' as const,
+  description:
+    'Name or address of the property this deal is for, exactly as the member gave it (e.g. "123 Main St, Tacoma" or "Tacoma duplex"). Required — the result is saved to the member\'s calculation library under this name. If the member has not named the property, ASK for it; never invent one.',
+};
+
 export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
@@ -21,6 +33,7 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
+          property_name: propertyName,
           purchase_price: num('Total acquisition price in dollars'),
           rehab_budget: num('Estimated rehab budget in dollars'),
           after_repair_value: num('Estimated after-repair value (ARV) in dollars'),
@@ -36,7 +49,7 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           annual_taxes: num('Annual property taxes in dollars. Default 3000'),
           annual_insurance: num('Annual insurance in dollars. Default 1200'),
         },
-        required: ['purchase_price', 'rehab_budget', 'after_repair_value', 'holding_months'],
+        required: ['property_name', 'purchase_price', 'rehab_budget', 'after_repair_value', 'holding_months'],
         additionalProperties: false,
       },
     },
@@ -50,6 +63,7 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
+          property_name: propertyName,
           purchase_price: num('Total acquisition price in dollars'),
           rehab_budget: num('Estimated rehab budget in dollars'),
           after_repair_value: num('Estimated after-repair value (ARV) in dollars'),
@@ -71,7 +85,7 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           property_mgmt_pct: num('Property management fee as a decimal of rent. Default 0.08'),
           vacancy_pct: num('Vacancy rate as a decimal. Default 0.05'),
         },
-        required: ['purchase_price', 'rehab_budget', 'after_repair_value', 'monthly_rent'],
+        required: ['property_name', 'purchase_price', 'rehab_budget', 'after_repair_value', 'monthly_rent'],
         additionalProperties: false,
       },
     },
@@ -85,6 +99,7 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
+          property_name: propertyName,
           construction_sf: num('New construction square footage'),
           price_per_sf: num('Construction cost per square foot in dollars'),
           new_construction_value: num('Estimated finished (new construction) value in dollars'),
@@ -97,6 +112,7 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           selling_costs_pct: num('Selling costs as a decimal of sale price. Default 0.1'),
         },
         required: [
+          'property_name',
           'construction_sf',
           'price_per_sf',
           'new_construction_value',
