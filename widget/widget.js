@@ -2,7 +2,9 @@
  * Ask James — chat widget.
  * Vanilla JS, no framework. Built with esbuild into public/widget.js.
  *
- * window.createJamesBot({ apiUrl, target, memberEmail })
+ * window.createJamesBot({ apiUrl, target, memberEmail, theme })
+ *   theme: 'light' | 'dark' — optional; omitted, the widget follows the
+ *   visitor's device (prefers-color-scheme).
  *
  * Design constraints (learned from the old build):
  *  - The input box renders IMMEDIATELY and stays usable — never gated on a
@@ -14,12 +16,14 @@
  *  - Model output is markdown. It is escaped first, then a small fixed set of
  *    tags is introduced — never innerHTML of raw model text.
  *
- * Visual direction — "dark room, warm light":
+ * Visual direction — a familiar, neutral chat surface:
  *  - All color/type/motion derive from CSS custom properties (--jb-*) defined
  *    once on .jb-root, so a retheme is a token edit, not a component rewrite.
- *  - Structural chrome (header, composer, calculator + result cards) is liquid
- *    glass over a contained amber ambient layer that gives the glass something
- *    to refract. Message bubbles stay flat — glass is capped for performance.
+ *    Light is the default palette; a dark palette swaps in by device setting
+ *    or the `theme` option.
+ *  - Near-monochrome: no brand accent. The conversation is one centred column;
+ *    James's answers sit directly on the page, the member's turns in soft gray
+ *    pills, and the composer is a floating pill with an inverse send button.
  *  - Everything is scoped under .jb-root with a jb- class prefix so host-page
  *    (GHL) styles can't bleed in and ours can't leak out. See report §scoping.
  */
@@ -58,6 +62,30 @@
   // ---------------------------------------------------------------------------
   // Styles. One token block on .jb-root; everything else derives from it.
   // ---------------------------------------------------------------------------
+
+  // Dark palette. Declared once, emitted twice below: under
+  // prefers-color-scheme (the default, so the widget follows the visitor's
+  // device) and under an explicit data-jb-theme="dark" (the `theme` option).
+  // The light palette is the .jb-root default. Only colour tokens live here —
+  // type, spacing and motion are theme-independent.
+  var DARK_TOKENS = [
+    '--jb-bg-base:#212121;--jb-bg-raised:#2A2A2A;--jb-bg-side:#171717;',
+    '--jb-text-primary:#ECECEC;--jb-text-secondary:#B4B4B4;--jb-text-tertiary:#9B9B9B;',
+    '--jb-border:rgba(255,255,255,0.10);--jb-border-strong:rgba(255,255,255,0.18);--jb-border-subtle:rgba(255,255,255,0.07);',
+    '--jb-hover:rgba(255,255,255,0.06);--jb-active:rgba(255,255,255,0.10);',
+    '--jb-inverse-bg:#FFFFFF;--jb-inverse-hover:#E3E3E3;--jb-inverse-pressed:#CDCDCD;--jb-inverse-text:#0D0D0D;',
+    '--jb-user-bg:#303030;--jb-user-text:#ECECEC;',
+    '--jb-composer-bg:#303030;',
+    '--jb-composer-shadow:0 0 0 1px rgba(255,255,255,0.06),0 8px 24px rgba(0,0,0,0.28);',
+    '--jb-composer-shadow-focus:0 0 0 1px rgba(255,255,255,0.20),0 8px 24px rgba(0,0,0,0.28);',
+    '--jb-code-bg:#424242;--jb-skel:rgba(255,255,255,0.08);--jb-skel-sheen:rgba(255,255,255,0.10);',
+    '--jb-scrim:rgba(0,0,0,0.55);--jb-drawer-shadow:0 8px 32px rgba(0,0,0,0.5);',
+    '--jb-focus:#ECECEC;--jb-selection:rgba(255,255,255,0.22);--jb-frame:rgba(255,255,255,0.06);',
+    '--jb-scroll-thumb:rgba(255,255,255,0.16);--jb-scroll-thumb-hover:rgba(255,255,255,0.30);',
+    '--jb-danger:#FF8583;--jb-danger-solid:#C42B1C;--jb-danger-ring:rgba(255,133,131,0.22);',
+    'color-scheme:dark;',
+  ].join('');
+
   var CSS = [
     /* Tokens — the single source of color / type / motion. Prefixed --jb-* so
        they can never collide with a host page's own custom properties. */
@@ -72,11 +100,25 @@
        from the host are the other reach-in class — see the .jb-bubble p
        !important note below. */
     '.jb-root{',
-    '--jb-bg-base:#0A0A0B;--jb-bg-raised:#141416;--jb-bg-sunken:#060607;',
-    '--jb-text-primary:#F5F5F7;--jb-text-secondary:rgba(245,245,247,0.62);--jb-text-tertiary:rgba(245,245,247,0.5);',
-    '--jb-accent:#F7B211;--jb-accent-hover:#FFC53D;--jb-accent-pressed:#D99A0A;--jb-on-accent:#0A0A0B;',
-    '--jb-glass-fill:rgba(255,255,255,0.055);--jb-glass-border:rgba(255,255,255,0.10);--jb-glass-edge:rgba(255,255,255,0.22);',
-    '--jb-danger:#FF6B5A;--jb-danger-solid:#D93025;',
+    /* Light palette (default). A neutral, near-monochrome system: no brand
+       accent, the inverse (black on light / white on dark) is the only
+       "primary" fill. Tertiary text is #6E6E6E rather than a lighter gray so
+       placeholders and timestamps hold 4.5:1 on both white and the rail. */
+    '--jb-bg-base:#FFFFFF;--jb-bg-raised:#FFFFFF;--jb-bg-side:#F9F9F9;',
+    '--jb-text-primary:#0D0D0D;--jb-text-secondary:#5D5D5D;--jb-text-tertiary:#6E6E6E;',
+    '--jb-border:rgba(13,13,13,0.10);--jb-border-strong:rgba(13,13,13,0.18);--jb-border-subtle:rgba(13,13,13,0.06);',
+    '--jb-hover:rgba(13,13,13,0.05);--jb-active:rgba(13,13,13,0.08);',
+    '--jb-inverse-bg:#0D0D0D;--jb-inverse-hover:#2E2E2E;--jb-inverse-pressed:#454545;--jb-inverse-text:#FFFFFF;',
+    '--jb-user-bg:#F4F4F4;--jb-user-text:#0D0D0D;',
+    '--jb-composer-bg:#FFFFFF;',
+    '--jb-composer-shadow:0 0 1px rgba(0,0,0,0.62),0 4px 4px rgba(0,0,0,0.04),0 8px 24px rgba(0,0,0,0.04);',
+    '--jb-composer-shadow-focus:0 0 0 1px rgba(13,13,13,0.32),0 4px 4px rgba(0,0,0,0.04),0 8px 24px rgba(0,0,0,0.06);',
+    '--jb-code-bg:#ECECEC;--jb-skel:rgba(13,13,13,0.07);--jb-skel-sheen:rgba(255,255,255,0.75);',
+    '--jb-scrim:rgba(0,0,0,0.28);--jb-drawer-shadow:0 8px 32px rgba(0,0,0,0.12);',
+    '--jb-focus:#0D0D0D;--jb-selection:rgba(13,13,13,0.14);--jb-frame:rgba(13,13,13,0.08);',
+    '--jb-scroll-thumb:rgba(13,13,13,0.16);--jb-scroll-thumb-hover:rgba(13,13,13,0.30);',
+    '--jb-danger:#C42B1C;--jb-danger-solid:#C42B1C;--jb-danger-ring:rgba(196,43,28,0.18);',
+    'color-scheme:light;',
     /* TYPE SCALE -- ONE KNOB. Change --jb-font-base and the whole sheet
        moves: every font-size below is a token, never a literal. px only,
        because rem would resolve against the HOST page's <html>, which GHL
@@ -88,7 +130,10 @@
     '--jb-font-md:var(--jb-font-base);',
     '--jb-font-lg:calc(var(--jb-font-base) * 1.125);',
     '--jb-font-xl:calc(var(--jb-font-base) * 1.25);',
-    '--jb-line-tight:1.35;--jb-line-body:1.55;',
+    /* --jb-line-prose is the assistant's reading leading: answers run long
+       (comps, step-by-step deal math) and sit on the page without a bubble,
+       so they get more air than UI copy does. */
+    '--jb-line-tight:1.35;--jb-line-body:1.55;--jb-line-prose:1.7;',
     /* RAIL INSET — padding on the knob, not beside it. The type scaled and
        these did not, so the frame shrank against its text at every step.
        ONE value for both insets: the pill sits --jb-rail-inset from the
@@ -132,11 +177,7 @@
        control tracks the scale normally. Applies to the text-entry
        controls only -- buttons do not trigger the zoom. */
     '--jb-font-control:max(16px, var(--jb-font-md));',
-    /* §11 token swap: user bubbles are amber, James stays neutral glass. To put
-       amber on ALL bubbles, point --jb-bot-* at the accent here — one place. */
-    '--jb-user-bg:var(--jb-accent);--jb-user-text:var(--jb-on-accent);',
-    '--jb-bot-bg:rgba(255,255,255,0.04);--jb-bot-text:var(--jb-text-primary);--jb-bot-border:var(--jb-glass-border);',
-    '--jb-ease:cubic-bezier(0.22,1,0.36,1);--jb-blur:24px;--jb-radius:18px;',
+    '--jb-ease:cubic-bezier(0.22,1,0.36,1);--jb-radius:18px;--jb-radius-bubble:calc(var(--jb-font-base) * 1.25);',
     /* S4.1 — the floor. Supported down to a 320px container; at 300px the
        widget stops adapting (min-width) and the HOST page scrolls
        horizontally instead. Stated consequence, not an accident: a scrollable
@@ -145,80 +186,53 @@
     /* No max-width: the widget goes FULL BLEED and the measure is held on
        the text column instead. The auto margins stay harmless at 100%. */
     'margin-left:auto;margin-right:auto;',
-    /* V-2: the 1px light border is GONE (operator call). It is free here, and
-       that was checked rather than assumed: the portal sets
-       body{background-color:var(--gray-50)} = #f9fafb, so a #0A0A0B widget on
-       a near-white page is bounded by ~20:1 contrast — the border was only
-       ever a faint inner edge ON the dark side, never the thing separating
-       widget from page. Radius kept. */
-    'background:var(--jb-bg-base);border-radius:var(--jb-radius);',
-    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;',
-    'font-size:var(--jb-font-md);line-height:var(--jb-line-body);letter-spacing:normal;color:var(--jb-text-primary);',
+    /* The frame is a 1px RING drawn with box-shadow, not a border: a white
+       widget on the portal's #f9fafb page has almost no edge of its own, and
+       a border would add 2px to a box whose height the frame code measures.
+       A shadow takes no layout space, so nothing measured moves. */
+    'background:var(--jb-bg-base);border-radius:var(--jb-radius);box-shadow:0 0 0 1px var(--jb-frame);',
+    'font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;',
+    'font-size:var(--jb-font-md);line-height:var(--jb-line-body);letter-spacing:normal;color:var(--jb-text-primary);caret-color:var(--jb-text-primary);',
     'font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;',
     '}',
+    /* Theme switch. The media query is a COLOR-SCHEME query, not a width
+       query — the S4.1 "no width @media" rule is untouched. */
+    '@media (prefers-color-scheme:dark){.jb-root:not([data-jb-theme="light"]){' + DARK_TOKENS + '}}',
+    '.jb-root[data-jb-theme="dark"]{' + DARK_TOKENS + '}',
     /* Reset inherited box model so host CSS can't distort our layout. */
     '.jb-root *,.jb-root *::before,.jb-root *::after{box-sizing:border-box;}',
+    '.jb-root ::selection{background:var(--jb-selection);}',
 
-    /* --- Ambient light layer -------------------------------------------------
-       Contained to the widget (position:absolute, not fixed) so the amber never
-       bleeds onto the host lesson page. Sized in px (not vw) for the same
-       reason — a viewport unit would balloon inside a small embed. The orbs are
-       barely visible alone; their job is to give the glass something to
-       refract. */
-    '.jb-orbs{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0;}',
-    '.jb-orb{position:absolute;border-radius:50%;filter:blur(60px);opacity:0.9;will-change:transform;transition:opacity 700ms ease,filter 700ms ease;}',
-    '.jb-orb-a{width:460px;height:460px;top:-26%;left:-18%;background:radial-gradient(circle at center,rgba(247,178,17,0.10),transparent 68%);animation:jb-drift-a 52s ease-in-out infinite;}',
-    '.jb-orb-b{width:520px;height:520px;bottom:-30%;right:-20%;background:radial-gradient(circle at center,rgba(184,116,0,0.07),transparent 66%);animation:jb-drift-b 61s ease-in-out infinite;}',
-    '.jb-orb-c{width:400px;height:400px;top:28%;right:-24%;background:radial-gradient(circle at center,rgba(42,53,80,0.05),transparent 70%);animation:jb-drift-c 47s ease-in-out infinite;}',
-    '@keyframes jb-drift-a{0%{transform:translate(0,0) scale(1);}50%{transform:translate(40px,30px) scale(1.08);}100%{transform:translate(0,0) scale(1);}}',
-    '@keyframes jb-drift-b{0%{transform:translate(0,0) scale(1);}50%{transform:translate(-46px,-28px) scale(1.06);}100%{transform:translate(0,0) scale(1);}}',
-    '@keyframes jb-drift-c{0%{transform:translate(0,0) scale(1);}50%{transform:translate(-30px,36px) scale(1.1);}100%{transform:translate(0,0) scale(1);}}',
-    /* The whole room responds while James thinks: orbs warm and quicken, then
-       settle when the answer lands. This is the signature paying off. */
-    '.jb-root.jb-busy .jb-orb{opacity:1;filter:blur(54px) saturate(1.2);}',
-    '.jb-root.jb-busy .jb-orb-a{animation-duration:22s;}',
-    '.jb-root.jb-busy .jb-orb-b{animation-duration:26s;}',
-    '.jb-root.jb-busy .jb-orb-c{animation-duration:19s;}',
+    /* --- Surface utility -----------------------------------------------------
+       The class name is historical (call sites and tests key on it); it is
+       now a plain raised surface with a hairline edge — no blur, no sheen. */
+    '.jb-glass{position:relative;background:var(--jb-bg-raised);border:1px solid var(--jb-border);}',
+    '.jb-ico{display:block;flex:0 0 auto;width:calc(var(--jb-font-base) * 1.1111);height:calc(var(--jb-font-base) * 1.1111);}',
 
-    /* --- Glass utility ------------------------------------------------------- */
-    '.jb-glass{position:relative;background:var(--jb-glass-fill);',
-    'backdrop-filter:blur(var(--jb-blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--jb-blur)) saturate(180%);',
-    'border:1px solid var(--jb-glass-border);',
-    'box-shadow:inset 0 1px 0 rgba(255,255,255,0.14),0 8px 32px rgba(0,0,0,0.4);}',
-    /* Specular top lip — light from above catching the edge. */
-    '.jb-glass::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;',
-    'background:linear-gradient(to bottom,rgba(255,255,255,0.18),transparent 40%);}',
-    /* Fallback: on browsers without backdrop-filter, glass would read as a flat
-       gray box, so give it a solid raised fill instead. */
-    '@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){',
-    '.jb-glass{background:var(--jb-bg-raised);}}',
-
-    /* --- Layout: header / list / composer sit above the orbs ------------------ */
+    /* --- Layout: header / list / composer ------------------------------------ */
     '.jb-head,.jb-list,.jb-form{position:relative;z-index:1;}',
-    '.jb-head{display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.7778) calc(var(--jb-font-base) * 1);flex:0 0 auto;',
-    'border-radius:0;border-left:none;border-right:none;border-top:none;font-weight:600;font-size:var(--jb-font-xl);line-height:var(--jb-line-tight);letter-spacing:-0.01em;',
-    /* V-2: drop the inset top highlight, KEEP the drop shadow — with the
-       highlight gone the shadow is the only thing separating header from
-       transcript, and losing both would flatten them together. Overridden
-       HERE rather than edited on .jb-glass, which also dresses the composer,
-       the calculator cards and the gate card; this call was the header. Wins
-       on source order: same (0,1,0) specificity, declared later. */
-    'box-shadow:0 8px 32px rgba(0,0,0,0.4);}',
-    '.jb-title{color:var(--jb-text-primary);}',
-    '.jb-dot{width:calc(var(--jb-font-base) * 0.5);height:calc(var(--jb-font-base) * 0.5);border-radius:50%;background:var(--jb-accent);flex:0 0 auto;',
-    'box-shadow:0 0 0 0 rgba(247,178,17,0.5);animation:jb-pulse-dot 3.4s var(--jb-ease) infinite;}',
-    '@keyframes jb-pulse-dot{0%{box-shadow:0 0 0 0 rgba(247,178,17,0.45);}70%{box-shadow:0 0 0 7px rgba(247,178,17,0);}100%{box-shadow:0 0 0 0 rgba(247,178,17,0);}}',
+    /* Flat top bar: same surface as the conversation, one hairline below it.
+       Declared after .jb-glass so it wins on source order at equal
+       specificity — the header keeps the class but none of the card look. */
+    '.jb-head{display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-font-base) * 0.5) calc(var(--jb-font-base) * 0.6667);flex:0 0 auto;',
+    'min-height:calc(var(--jb-font-base) * 3.1111);background:var(--jb-bg-base);border:none;border-bottom:1px solid var(--jb-border-subtle);border-radius:0;',
+    'font-weight:600;font-size:var(--jb-font-lg);line-height:var(--jb-line-tight);letter-spacing:-0.01em;}',
+    '.jb-title{color:var(--jb-text-primary);padding:0 calc(var(--jb-font-base) * 0.2222);}',
 
-    '.jb-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:calc(var(--jb-font-base) * 1) calc(var(--jb-font-base) * 0.8889);display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.7778);-webkit-overflow-scrolling:touch;}',
+    '.jb-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:calc(var(--jb-font-base) * 1.5) calc(var(--jb-font-base) * 1) calc(var(--jb-font-base) * 1.3333);display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 1.3333);-webkit-overflow-scrolling:touch;}',
 
-    /* --- Message bubbles (flat translucent fills — glass is reserved for chrome) */
-    '.jb-row{display:flex;animation:jb-in 220ms var(--jb-ease) both;}',
+    /* --- Messages -------------------------------------------------------------
+       One centred column at the measure. James writes straight onto the page
+       (no bubble, no edge mark); the member's turns sit in a soft gray pill
+       on the right. Every row shares the column, so cards and answers align. */
+    '.jb-row{display:flex;width:100%;max-width:var(--jb-measure);margin-left:auto;margin-right:auto;animation:jb-in 240ms var(--jb-ease) both;}',
     '.jb-row.jb-user{justify-content:flex-end;}',
-    '@keyframes jb-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}',
-    '.jb-bubble{max-width:min(86%, var(--jb-measure));padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.9444);font-size:var(--jb-font-md);line-height:var(--jb-line-body);word-break:break-word;overflow-wrap:anywhere;border-radius:var(--jb-radius);}',
-    '.jb-bot .jb-bubble{background:var(--jb-bot-bg);color:var(--jb-bot-text);border:1px solid var(--jb-bot-border);',
-    'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
-    '.jb-user .jb-bubble{background:var(--jb-user-bg);color:var(--jb-user-text);border-top-right-radius:5px;white-space:pre-wrap;font-weight:500;}',
+    '@keyframes jb-in{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}',
+    '.jb-bubble{max-width:min(86%, var(--jb-measure));padding:calc(var(--jb-font-base) * 0.5556) calc(var(--jb-font-base) * 1.0556);font-size:var(--jb-font-md);line-height:var(--jb-line-body);word-break:break-word;overflow-wrap:anywhere;border-radius:var(--jb-radius-bubble);}',
+    '.jb-user .jb-bubble{background:var(--jb-user-bg);color:var(--jb-user-text);white-space:pre-wrap;}',
+    /* (0,4,0) so the width tiers' (0,3,0) .jb-bubble caps cannot narrow the
+       assistant's column — those caps are for the member's pill. */
+    '.jb-root .jb-row.jb-bot .jb-bubble{max-width:100%;padding:0;border-radius:0;background:none;color:var(--jb-text-primary);line-height:var(--jb-line-prose);}',
     /* !important is LOAD-BEARING here, not sloppiness (ruled): the GHL
        lesson container (.editor-content.rich-text-viewer) sets
        `p { margin: 0 !important }` by DESCENDANT SELECTOR, which .jb-root
@@ -226,134 +240,138 @@
        parent's from reaching IN. Without this, James's multi-paragraph
        answers — comps output, step-by-step explanations, the widget's most
        valuable content — collapse into unspaced text. */
-    '.jb-bubble p{margin:0 0 calc(var(--jb-font-base) * 0.4444) !important;}',
+    '.jb-bubble p{margin:0 0 calc(var(--jb-font-base) * 0.6667) !important;}',
     '.jb-bubble p:last-child{margin-bottom:0 !important;}',
-    '.jb-bubble h4{margin:calc(var(--jb-font-base) * 0.6667) 0 calc(var(--jb-font-base) * 0.3333);font-size:var(--jb-font-md);font-weight:700;letter-spacing:-0.01em;}',
+    '.jb-bubble h4{margin:calc(var(--jb-font-base) * 1.1111) 0 calc(var(--jb-font-base) * 0.4444);font-size:var(--jb-font-lg);font-weight:600;line-height:var(--jb-line-tight);letter-spacing:-0.01em;}',
     '.jb-bubble h4:first-child{margin-top:0;}',
-    '.jb-bubble ul{margin:0 0 calc(var(--jb-font-base) * 0.4444);padding-left:calc(var(--jb-font-base) * 1);}',
+    '.jb-bubble ul{margin:0 0 calc(var(--jb-font-base) * 0.6667);padding-left:calc(var(--jb-font-base) * 1.3333);}',
     '.jb-bubble ul:last-child{margin-bottom:0;}',
-    '.jb-bubble li{margin:calc(var(--jb-font-base) * 0.1667) 0;}',
-    '.jb-bubble li::marker{color:var(--jb-accent);}',
-    '.jb-bubble code{background:var(--jb-bg-sunken);padding:1px calc(var(--jb-font-base) * 0.2778);border-radius:calc(var(--jb-font-base) * 0.2222);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--jb-font-xs);}',
-    '.jb-bubble strong{font-weight:700;color:#fff;}',
-    /* The lead figure the count-up lands on — confident, tabular, amber. */
-    '.jb-fig{font-weight:650;letter-spacing:-0.01em;color:var(--jb-accent);font-variant-numeric:tabular-nums;}',
+    '.jb-bubble li{margin:calc(var(--jb-font-base) * 0.2222) 0;padding-left:calc(var(--jb-font-base) * 0.1667);}',
+    '.jb-bubble li::marker{color:var(--jb-text-secondary);}',
+    '.jb-bubble code{background:var(--jb-code-bg);padding:calc(var(--jb-font-base) * 0.0833) calc(var(--jb-font-base) * 0.3333);border-radius:calc(var(--jb-font-base) * 0.3333);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--jb-font-xs);font-weight:500;}',
+    '.jb-bubble strong{font-weight:600;color:inherit;}',
+    '.jb-bubble a:not(.jb-btn-link){color:inherit;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-color:var(--jb-border-strong);transition:text-decoration-color 160ms var(--jb-ease);}',
+    '.jb-bubble a:not(.jb-btn-link):hover{text-decoration-color:currentColor;}',
+    /* The lead figure the count-up lands on: weight, not colour. */
+    '.jb-fig{font-weight:650;letter-spacing:-0.01em;color:inherit;font-variant-numeric:tabular-nums;}',
 
-    /* --- Thinking state ------------------------------------------------------ */
+    /* --- Thinking state --------------------------------------------------------
+       No bubble — a quiet line where the answer will appear: three soft dots
+       and a status label with a light sweeping across it. */
     '.jb-think-row{display:flex;}',
-    '.jb-think{display:inline-flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.8333);border-radius:var(--jb-radius);',
-    'background:var(--jb-bot-bg);border:1px solid var(--jb-bot-border);border-left:2px solid var(--jb-accent);border-top-left-radius:5px;',
+    '.jb-think{display:inline-flex;align-items:center;gap:calc(var(--jb-font-base) * 0.6667);padding:calc(var(--jb-font-base) * 0.2222) 0;',
     'color:var(--jb-text-secondary);font-size:var(--jb-font-sm);}',
     '.jb-think-dots{display:inline-flex;gap:calc(var(--jb-font-base) * 0.2222);}',
-    '.jb-think-dots i{width:calc(var(--jb-font-base) * 0.3333);height:calc(var(--jb-font-base) * 0.3333);border-radius:50%;background:var(--jb-accent);opacity:0.5;animation:jb-blink 1.2s var(--jb-ease) infinite;}',
+    '.jb-think-dots i{width:calc(var(--jb-font-base) * 0.3889);height:calc(var(--jb-font-base) * 0.3889);border-radius:50%;background:var(--jb-text-primary);opacity:0.3;animation:jb-blink 1.2s var(--jb-ease) infinite;}',
     '.jb-think-dots i:nth-child(2){animation-delay:0.18s;}',
     '.jb-think-dots i:nth-child(3){animation-delay:0.36s;}',
-    '@keyframes jb-blink{0%,100%{opacity:0.35;transform:translateY(0);}50%{opacity:1;transform:translateY(-2px);}}',
+    '@keyframes jb-blink{0%,100%{opacity:0.25;transform:scale(0.85);}50%{opacity:0.9;transform:scale(1);}}',
+    '.jb-think-label{background:linear-gradient(90deg,var(--jb-text-tertiary) 0%,var(--jb-text-tertiary) 40%,var(--jb-text-primary) 50%,var(--jb-text-tertiary) 60%,var(--jb-text-tertiary) 100%);',
+    'background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:jb-shimmer 2.4s linear infinite;}',
+    '@keyframes jb-shimmer{from{background-position:100% 0;}to{background-position:0 0;}}',
 
-    /* --- Composer ------------------------------------------------------------ */
-    '.jb-form{display:flex;gap:calc(var(--jb-font-base) * 0.5556);align-items:center;padding:calc(var(--jb-font-base) * 0.6667);flex:0 0 auto;margin:0 calc(var(--jb-font-base) * 0.5556) calc(var(--jb-font-base) * 0.5556);border-radius:calc(var(--jb-font-base) * 0.7778);}',
+    /* --- Composer ---------------------------------------------------------------
+       A floating pill on the conversation's column: the input is borderless
+       inside it, and focus lifts the whole pill's edge rather than ringing
+       the bare input. */
+    '.jb-form{display:flex;gap:calc(var(--jb-font-base) * 0.4444);align-items:center;flex:0 0 auto;',
+    'width:calc(100% - var(--jb-font-base) * 2);max-width:calc(var(--jb-measure) + var(--jb-font-base) * 1.3333);',
+    'margin:0 auto calc(var(--jb-font-base) * 1);padding:calc(var(--jb-font-base) * 0.4444);',
+    'border:none;border-radius:calc(var(--jb-font-base) * 1.5556);background:var(--jb-composer-bg);box-shadow:var(--jb-composer-shadow);',
+    'transition:box-shadow 160ms var(--jb-ease);}',
+    '.jb-form:focus-within{box-shadow:var(--jb-composer-shadow-focus);}',
     /* 16px font keeps iOS Safari from zooming the page on focus. */
-    '.jb-input{flex:1 1 auto;min-width:0;padding:calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 1);border-radius:calc(var(--jb-font-base) * 0.5556);border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
-    '.jb-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
-    '.jb-input::placeholder{color:var(--jb-text-tertiary);}',
+    '.jb-input{flex:1 1 auto;min-width:0;padding:calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 1);border-radius:0;border:none;',
+    'background:transparent;color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;box-shadow:none;}',
+    '.jb-input::placeholder{color:var(--jb-text-tertiary);opacity:1;}',
     '.jb-send{flex:0 0 auto;width:max(44px, calc(var(--jb-font-base) * 2.4444));height:max(44px, calc(var(--jb-font-base) * 2.4444));display:inline-flex;align-items:center;justify-content:center;',
-    'border:none;border-radius:50%;background:var(--jb-accent);color:var(--jb-on-accent);cursor:pointer;',
-    'transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);}',
-    '.jb-send:hover{background:var(--jb-accent-hover);}',
-    '.jb-send:active{transform:scale(0.94);background:var(--jb-accent-pressed);}',
-    '.jb-send:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
-    '.jb-send[disabled]{opacity:0.5;cursor:default;}',
+    'border:none;border-radius:50%;background:var(--jb-inverse-bg);color:var(--jb-inverse-text);cursor:pointer;',
+    'transition:background 160ms var(--jb-ease),opacity 160ms var(--jb-ease),transform 120ms var(--jb-ease);}',
+    '.jb-send:hover{background:var(--jb-inverse-hover);}',
+    '.jb-send:active{transform:scale(0.94);background:var(--jb-inverse-pressed);}',
+    '.jb-send:focus-visible{outline:2px solid var(--jb-focus);outline-offset:2px;}',
+    '.jb-send[disabled]{opacity:0.3;cursor:default;}',
     '.jb-send .jb-send-i{width:calc(var(--jb-font-base) * 1.1111);height:calc(var(--jb-font-base) * 1.1111);display:block;}',
-    /* Send hints it is armed only when there is something to send. */
-    '.jb-form.jb-armed .jb-send{animation:jb-arm 2.2s var(--jb-ease) infinite;}',
-    '@keyframes jb-arm{0%,100%{box-shadow:0 0 0 0 rgba(247,178,17,0);}50%{box-shadow:0 0 0 5px rgba(247,178,17,0.18);}}',
+    /* Send reads as live only when there is something to send: an empty
+       composer leaves it dimmed. jb-armed tracks the input's contents. */
+    '.jb-form:not(.jb-armed) .jb-send{opacity:0.3;}',
     /* Visually-hidden text so the icon-only button still reads "Send". */
     '.jb-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}',
 
-    '.jb-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.7222);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
-    '.jb-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
+    '.jb-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.6667);background:transparent;border:1px solid var(--jb-border-strong);color:var(--jb-text-primary);',
+    'border-radius:999px;padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 1);font-size:var(--jb-font-sm);font-weight:600;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease);}',
+    '.jb-retry:hover{background:var(--jb-hover);}',
 
-    /* --- Inline calculator form (glass card inset into the thread) ----------- */
-    '.jb-calc{max-width:100%;width:100%;border-radius:calc(var(--jb-font-base) * 0.8889);padding:calc(var(--jb-font-base) * 0.8889);animation:jb-card-in 320ms var(--jb-ease) both;}',
-    '@keyframes jb-card-in{from{opacity:0;transform:scale(0.98);}to{opacity:1;transform:scale(1);}}',
-    '.jb-calc-title{font-weight:700;font-size:var(--jb-font-md);letter-spacing:-0.01em;margin:0 0 calc(var(--jb-font-base) * 0.2222);color:var(--jb-text-primary);}',
-    '.jb-calc-sub{color:var(--jb-text-secondary);font-size:var(--jb-font-sm);margin:0 0 calc(var(--jb-font-base) * 0.7778);}',
-    '.jb-field{display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.2778);margin-bottom:calc(var(--jb-font-base) * 0.6667);}',
-    '.jb-label{font-size:var(--jb-font-sm);letter-spacing:0.01em;color:var(--jb-text-secondary);font-weight:600;}',
-    '.jb-req{color:var(--jb-accent);margin-left:calc(var(--jb-font-base) * 0.1667);}',
+    /* --- Inline calculator form (a card in the conversation column) --------- */
+    '.jb-calc{max-width:100%;width:100%;border-radius:calc(var(--jb-font-base) * 1.1111);padding:calc(var(--jb-font-base) * 1.1111);animation:jb-card-in 320ms var(--jb-ease) both;}',
+    '@keyframes jb-card-in{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}',
+    '.jb-calc-title{font-weight:600;font-size:var(--jb-font-lg);line-height:var(--jb-line-tight);letter-spacing:-0.01em;margin:0 0 calc(var(--jb-font-base) * 0.2778);color:var(--jb-text-primary);}',
+    '.jb-calc-sub{color:var(--jb-text-secondary);font-size:var(--jb-font-sm);margin:0 0 calc(var(--jb-font-base) * 1);}',
+    '.jb-field{display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.3333);margin-bottom:calc(var(--jb-font-base) * 0.7778);}',
+    '.jb-label{font-size:var(--jb-font-sm);color:var(--jb-text-primary);font-weight:500;}',
+    '.jb-req{color:var(--jb-text-tertiary);margin-left:calc(var(--jb-font-base) * 0.1667);}',
     '.jb-unit{color:var(--jb-text-tertiary);font-weight:400;}',
-    '.jb-control{width:100%;padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.7222);border-radius:calc(var(--jb-font-base) * 0.5556);border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;',
+    '.jb-control{width:100%;padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.7778);border-radius:calc(var(--jb-font-base) * 0.6667);border:1px solid var(--jb-border-strong);',
+    'background:var(--jb-bg-base);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;',
     'transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
-    '.jb-control:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
-    '.jb-control[aria-invalid="true"]{border-color:var(--jb-danger);box-shadow:0 0 0 3px rgba(255,107,90,0.18);}',
+    '.jb-control:focus{border-color:var(--jb-focus);box-shadow:0 0 0 1px var(--jb-focus);}',
+    '.jb-control[aria-invalid="true"]{border-color:var(--jb-danger);box-shadow:0 0 0 3px var(--jb-danger-ring);}',
     '.jb-adv{margin:calc(var(--jb-font-base) * 0.2222) 0 calc(var(--jb-font-base) * 0.7778);}',
-    '.jb-adv-toggle{min-height:44px;background:transparent;border:none;color:var(--jb-accent);font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;padding:calc(var(--jb-font-base) * 0.2778) 0;}',
-    '.jb-adv-toggle:hover{color:var(--jb-accent-hover);}',
-    '.jb-adv-body{margin-top:calc(var(--jb-font-base) * 0.6667);padding-top:calc(var(--jb-font-base) * 0.6667);border-top:1px solid var(--jb-glass-border);}',
-    '.jb-calc-actions{display:flex;gap:calc(var(--jb-font-base) * 0.5556);align-items:center;margin-top:calc(var(--jb-font-base) * 0.2222);}',
-    '.jb-btn{min-height:44px;border:none;border-radius:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1.1111);background:var(--jb-accent);color:var(--jb-on-accent);',
-    'font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);',
+    '.jb-adv-toggle{min-height:44px;background:transparent;border:none;color:var(--jb-text-primary);font-size:var(--jb-font-sm);font-weight:600;font-family:inherit;cursor:pointer;padding:calc(var(--jb-font-base) * 0.2778) 0;',
+    'text-decoration:underline;text-decoration-color:var(--jb-border-strong);text-underline-offset:3px;}',
+    '.jb-adv-toggle:hover{text-decoration-color:currentColor;}',
+    '.jb-adv-body{margin-top:calc(var(--jb-font-base) * 0.6667);padding-top:calc(var(--jb-font-base) * 0.8889);border-top:1px solid var(--jb-border);}',
+    '.jb-calc-actions{display:flex;gap:calc(var(--jb-font-base) * 0.5556);align-items:center;margin-top:calc(var(--jb-font-base) * 0.4444);}',
+    '.jb-btn{min-height:44px;border:none;border-radius:999px;padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1.2222);background:var(--jb-inverse-bg);color:var(--jb-inverse-text);',
+    'font-weight:600;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),transform 120ms var(--jb-ease);',
     'display:inline-flex;align-items:center;justify-content:center;gap:calc(var(--jb-font-base) * 0.4444);min-width:calc(var(--jb-font-base) * 6.5556);}',
-    '.jb-btn:hover{background:var(--jb-accent-hover);}',
-    '.jb-btn:active{transform:scale(0.97);background:var(--jb-accent-pressed);}',
-    '.jb-btn:focus-visible,.jb-calc-cancel:focus-visible,.jb-adv-toggle:focus-visible,.jb-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
-    '.jb-calc-cancel{min-height:44px;background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--jb-text-secondary);',
-    'border-radius:calc(var(--jb-font-base) * 0.5556);padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.8889);font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:border-color 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
-    '.jb-calc-cancel:hover{border-color:var(--jb-text-secondary);color:var(--jb-text-primary);}',
+    '.jb-btn:hover{background:var(--jb-inverse-hover);}',
+    '.jb-btn:active{transform:scale(0.97);background:var(--jb-inverse-pressed);}',
+    '.jb-btn:focus-visible,.jb-calc-cancel:focus-visible,.jb-adv-toggle:focus-visible,.jb-retry:focus-visible{outline:2px solid var(--jb-focus);outline-offset:2px;}',
+    '.jb-calc-cancel{min-height:44px;background:transparent;border:1px solid var(--jb-border-strong);color:var(--jb-text-primary);',
+    'border-radius:999px;padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1);font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease);}',
+    '.jb-calc-cancel:hover{background:var(--jb-hover);}',
     '.jb-calc-error{color:var(--jb-danger);font-size:var(--jb-font-sm);margin-top:calc(var(--jb-font-base) * 0.5556);}',
-    /* Session ARV pre-fill note — amber-tinted so it reads as the system
-       having done work for you, with the bound address always visible. */
-    '.jb-prefill-note{margin-top:calc(var(--jb-font-base) * 0.2778);font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-accent);opacity:0.92;}',
+    /* Session ARV pre-fill note — the bound address always visible, in the
+       secondary voice so it reads as context, not as a warning. */
+    '.jb-prefill-note{margin-top:calc(var(--jb-font-base) * 0.2778);font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-text-secondary);}',
     // Only-a-link lines render as buttons (§14.18) — same anchor semantics,
-    // button presentation. Colors ride the existing accent variable.
-    '.jb-btnrow{margin:calc(var(--jb-font-base) * 0.3333) 0 calc(var(--jb-font-base) * 0.2222);}',
-    // Text rides --jb-on-accent (near-black), the widget's own token for
-    // text on the amber accent — white was wrong against #F7B211.
-    '.jb-btn-link{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.7778);border-radius:calc(var(--jb-font-base) * 0.4444);background:var(--jb-accent);color:var(--jb-on-accent) !important;text-decoration:none;font-size:var(--jb-font-sm);font-weight:600;line-height:var(--jb-line-tight);}',
-    '.jb-btn-link:hover{opacity:0.88;}',
+    // button presentation: the inverse pill, like every primary action.
+    '.jb-btnrow{margin:calc(var(--jb-font-base) * 0.4444) 0 calc(var(--jb-font-base) * 0.3333);}',
+    /* max-width + anywhere-wrapping: comps listing URLs run ~90 characters,
+       and an unbreakable pill would push past the column on a phone. */
+    '.jb-btn-link{min-height:44px;max-width:100%;overflow-wrap:anywhere;text-align:center;display:inline-flex;align-items:center;justify-content:center;padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 1.1111);border-radius:999px;background:var(--jb-inverse-bg);color:var(--jb-inverse-text) !important;text-decoration:none;font-size:var(--jb-font-sm);font-weight:600;line-height:var(--jb-line-tight);transition:background 160ms var(--jb-ease);}',
+    '.jb-btn-link:hover{background:var(--jb-inverse-hover);}',
+    '.jb-btn-link:focus-visible{outline:2px solid var(--jb-focus);outline-offset:2px;}',
     /* Disabled controls during a run: readable, obviously inert, not greyed to
        the point the member thinks the card broke. */
     '.jb-calc[data-busy="true"] .jb-control{opacity:0.55;cursor:default;}',
-    '.jb-btn[disabled],.jb-calc-cancel[disabled]{opacity:0.68;cursor:default;}',
-    '.jb-btn[disabled]:hover{background:var(--jb-accent);}',
+    '.jb-btn[disabled],.jb-calc-cancel[disabled]{opacity:0.6;cursor:default;}',
+    '.jb-btn[disabled]:hover{background:var(--jb-inverse-bg);}',
 
     /* --- Calculating state ---------------------------------------------------
-       Same room, working: the orbs warm via .jb-busy on the root (the existing
-       thinking treatment), the button acknowledges the click with zero delay,
-       and a skeleton of the result card stands where the answer will land. */
+       The button acknowledges the click with zero delay, and a skeleton of
+       the result card stands where the answer will land. */
     '.jb-spin{width:calc(var(--jb-font-base) * 0.7222);height:calc(var(--jb-font-base) * 0.7222);flex:0 0 auto;border-radius:50%;',
-    'border:2px solid rgba(10,10,11,0.28);border-top-color:var(--jb-on-accent);',
+    'border:2px solid currentColor;border-top-color:transparent;opacity:0.8;',
     'animation:jb-spin 620ms linear infinite;}',
     '@keyframes jb-spin{to{transform:rotate(360deg);}}',
 
-    /* The amber left edge is the app's existing "James is producing this" mark —
-       it is what makes .jb-think and the bot bubbles read on a near-black
-       background. Without it the card was measurably in view but too dim to
-       register as working, which is the whole point of the state. */
-    '.jb-pending{max-width:100%;width:100%;border-radius:calc(var(--jb-font-base) * 0.8889);padding:calc(var(--jb-font-base) * 0.8889);animation:jb-card-in 320ms var(--jb-ease) both;',
-    'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;}',
-    '.jb-pending-head{display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5556);color:var(--jb-text-primary);font-size:var(--jb-font-sm);font-weight:600;margin-bottom:calc(var(--jb-font-base) * 0.7778);}',
-    /* Full-strength amber dots here (the ambient .jb-think-dots sit at 0.5). */
-    '.jb-pending .jb-think-dots i{opacity:0.9;}',
+    '.jb-pending{max-width:100%;width:100%;border-radius:calc(var(--jb-font-base) * 1.1111);padding:calc(var(--jb-font-base) * 1.1111);animation:jb-card-in 320ms var(--jb-ease) both;}',
+    '.jb-pending-head{display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5556);color:var(--jb-text-secondary);font-size:var(--jb-font-sm);font-weight:500;margin-bottom:calc(var(--jb-font-base) * 0.8889);}',
     '.jb-pending-bars{display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.5556);}',
-    '.jb-bar{height:calc(var(--jb-font-base) * 0.6667);border-radius:calc(var(--jb-font-base) * 0.3333);background:rgba(255,255,255,0.11);position:relative;overflow:hidden;}',
-    '.jb-bar-lead{height:calc(var(--jb-font-base) * 1.4444);width:52%;background:rgba(247,178,17,0.16);}',
+    '.jb-bar{height:calc(var(--jb-font-base) * 0.6667);border-radius:calc(var(--jb-font-base) * 0.3333);background:var(--jb-skel);position:relative;overflow:hidden;}',
+    '.jb-bar-lead{height:calc(var(--jb-font-base) * 1.4444);width:52%;}',
     '.jb-bar:nth-child(2){width:88%;}',
     '.jb-bar:nth-child(3){width:70%;}',
-    /* Amber sweep, not a grey shimmer — it reads as this app doing the work. */
     '.jb-bar::after{content:"";position:absolute;inset:0;transform:translateX(-100%);',
-    'background:linear-gradient(90deg,transparent,rgba(247,178,17,0.34),transparent);',
+    'background:linear-gradient(90deg,transparent,var(--jb-skel-sheen),transparent);',
     'animation:jb-sweep 1500ms var(--jb-ease) infinite;}',
-    '.jb-bar-lead::after{background:linear-gradient(90deg,transparent,rgba(247,178,17,0.52),transparent);}',
     '.jb-bar:nth-child(2)::after{animation-delay:150ms;}',
     '.jb-bar:nth-child(3)::after{animation-delay:300ms;}',
     '@keyframes jb-sweep{to{transform:translateX(100%);}}',
 
     /* --- Responsive ---------------------------------------------------------- */
-    /* Mobile: backdrop-filter is costlier per pixel, so soften the blur. */
     /* --- S4.1 CONTAINER TIERS ------------------------------------------
        Every width breakpoint is keyed on jb-w-* classes toggled from the
        ROOT'S OWN measured width, not on @media viewport queries. The widget
@@ -362,14 +380,11 @@
        conversation got ~284px — exactly the cramming the old 560px query
        existed to prevent — and /demo renders full-width, so the whole class
        was invisible on the review surface.
-       Tiers: jb-w-mid <=700 (S4.3 decram), jb-w-narrow <=560 (overlay rail),
-       jb-w-tight <=400 (compact composer). The old viewport tiers at 520 and
-       360 are CONSOLIDATED into narrow (560) and tight (400): container
-       width runs slightly ahead of the old viewport numbers because the
-       column is narrower than the screen that holds it.
+       Tiers: jb-w-mid <=900 (S4.3 decram), jb-w-narrow <=800 (overlay rail),
+       jb-w-tight <=400 (compact composer).
        Coarse-pointer rules stay @media — pointer is a device property, not a
        width. */
-    '.jb-root.jb-w-mid .jb-form{margin:0 calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-font-base) * 0.5556);gap:calc(var(--jb-font-base) * 0.4444);}',
+    '.jb-root.jb-w-mid .jb-form{width:calc(100% - var(--jb-font-base) * 1.3333);margin:0 auto calc(var(--jb-font-base) * 0.6667);padding:calc(var(--jb-font-base) * 0.5556);gap:calc(var(--jb-font-base) * 0.4444);}',
     /* Floored like the base rule: these tier overrides are MORE specific,
        so without the floor they win and drop the touch target below 44px
        exactly where touch matters most. Measured at the 16px base they
@@ -378,11 +393,10 @@
     '.jb-root.jb-w-mid .jb-send{width:max(44px, calc(var(--jb-font-base) * 2.2222));height:max(44px, calc(var(--jb-font-base) * 2.2222));}',
     '.jb-root.jb-w-mid .jb-side{width:var(--jb-rail-w-mid);flex-basis:var(--jb-rail-w-mid);}',
     '.jb-root.jb-w-mid .jb-bubble{max-width:min(92%, var(--jb-measure));}',
-    '.jb-root.jb-w-narrow{--jb-blur:14px;}',
     '.jb-root.jb-w-narrow .jb-bubble{font-size:var(--jb-font-md);}',
-    '.jb-root.jb-w-narrow .jb-list{padding:calc(var(--jb-font-base) * 0.7778) calc(var(--jb-font-base) * 0.6667);}',
-    '.jb-root.jb-w-narrow .jb-head{font-size:var(--jb-font-lg);padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.8333);}',
-    '.jb-root.jb-w-narrow .jb-calc{padding:calc(var(--jb-font-base) * 0.7222);}',
+    '.jb-root.jb-w-narrow .jb-list{padding:calc(var(--jb-font-base) * 1) calc(var(--jb-font-base) * 0.6667);}',
+    '.jb-root.jb-w-narrow .jb-head{font-size:var(--jb-font-lg);padding:calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.5);}',
+    '.jb-root.jb-w-narrow .jb-calc{padding:calc(var(--jb-font-base) * 0.8889);}',
     '.jb-root.jb-w-tight .jb-form{gap:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-font-base) * 0.5556);}',
     /* Floored like the base rule: these tier overrides are MORE specific,
        so without the floor they win and drop the touch target below 44px
@@ -391,14 +405,15 @@
        composer width) is kept above the floor, not through it. */
     '.jb-root.jb-w-tight .jb-send{width:max(44px, calc(var(--jb-font-base) * 2.3333));height:max(44px, calc(var(--jb-font-base) * 2.3333));}',
 
-    /* --- Reduced motion: kill drift, count-up (JS-gated), and all transforms.
+    /* --- Reduced motion: kill loops, count-up (JS-gated), and all transforms.
        Keep opacity fades — they aid comprehension and don't trigger vestibular
        issues. Hard requirement, not a nicety. */
     '@media (prefers-reduced-motion:reduce){',
-    '.jb-orb,.jb-dot,.jb-think-dots i,.jb-form.jb-armed .jb-send{animation:none!important;}',
+    '.jb-think-dots i,.jb-think-label{animation:none!important;}',
+    '.jb-think-label{background:none;color:var(--jb-text-secondary);}',
     '.jb-row{animation:jb-fade 200ms var(--jb-ease) both;}',
     '.jb-calc{animation:jb-fade 220ms var(--jb-ease) both;}',
-    '.jb-send,.jb-btn,.jb-input,.jb-control{transition:none;}',
+    '.jb-send,.jb-btn,.jb-input,.jb-control,.jb-form{transition:none;}',
     '.jb-side{transition:none;}',
     '.jb-send:active,.jb-btn:active{transform:none;}',
     /* Feedback stays, motion goes: the skeleton holds still and the button
@@ -413,33 +428,38 @@
 
     /* --- Sidebar (Phase 1 multi-chat) --------------------------------------
        The pane below the header splits into rail + conversation. The rail is
-       chrome: it uses the same glass tokens as the header so it reads as one
-       surface, and it never competes with the message box for attention. */
+       a quiet tinted column: rows are plain text that pick up a soft fill on
+       hover and a firmer one when active, and it never competes with the
+       conversation for attention. */
     '.jb-body{display:flex;flex:1 1 auto;min-height:0;}',
-    '.jb-main{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;min-height:0;}',
+    '.jb-main{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;min-height:0;background:var(--jb-bg-base);}',
     '.jb-side{display:flex;flex-direction:column;width:var(--jb-rail-w);flex:0 0 var(--jb-rail-w);min-height:0;',
-    'border-right:1px solid var(--jb-glass-border);background:rgba(255,255,255,0.02);',
+    'border-right:1px solid var(--jb-border-subtle);background:var(--jb-bg-side);',
     'transition:width 160ms var(--jb-ease),flex-basis 160ms var(--jb-ease);overflow:hidden;}',
     /* Collapsed is width:0, not display:none — the rail animates shut and its
        controls leave the tab order with it. */
     '.jb-side-collapsed{width:0;flex-basis:0;border-right:none;}',
-    '.jb-side-top{padding:10px var(--jb-rail-inset);flex:0 0 auto;}',
-    '.jb-new{min-height:44px;width:100%;box-sizing:border-box;padding:8px var(--jb-rail-inset);border-radius:calc(var(--jb-font-base) * 0.5);cursor:pointer;',
-    'font:inherit;font-size:var(--jb-font-xs);font-weight:650;color:var(--jb-on-accent);background:var(--jb-accent);',
+    '.jb-side-top{padding:10px var(--jb-rail-inset) 6px;flex:0 0 auto;}',
+    '.jb-new{min-height:44px;width:100%;box-sizing:border-box;padding:8px var(--jb-rail-inset);border-radius:calc(var(--jb-font-base) * 0.5556);cursor:pointer;',
+    'display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5);text-align:left;',
+    'font:inherit;font-size:var(--jb-font-xs);font-weight:500;color:var(--jb-text-primary);background:transparent;',
     'border:none;transition:background 140ms var(--jb-ease);}',
-    '.jb-new:hover{background:var(--jb-accent-hover);}',
-    '.jb-new:active{background:var(--jb-accent-pressed);}',
+    '.jb-new:hover{background:var(--jb-hover);}',
+    '.jb-new:active{background:var(--jb-active);}',
+    '.jb-new:focus-visible{outline:2px solid var(--jb-focus);outline-offset:-2px;}',
+    '.jb-new .jb-ico{width:calc(var(--jb-font-base) * 1);height:calc(var(--jb-font-base) * 1);}',
     '.jb-side-list{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:0 var(--jb-rail-inset) 10px;min-height:0;}',
-    '.jb-chat-row{display:flex;align-items:center;gap:2px;border-radius:calc(var(--jb-font-base) * 0.4444);margin-bottom:2px;min-width:0;max-width:100%;}',
-    '.jb-chat-row:hover{background:rgba(255,255,255,0.05);}',
-    '.jb-chat-active{background:rgba(247,178,17,0.14);}',
+    '.jb-chat-row{display:flex;align-items:center;gap:2px;border-radius:calc(var(--jb-font-base) * 0.5556);margin-bottom:1px;min-width:0;max-width:100%;transition:background 120ms var(--jb-ease);}',
+    '.jb-chat-row:hover{background:var(--jb-hover);}',
+    '.jb-chat-active,.jb-chat-active:hover{background:var(--jb-active);}',
     '.jb-chat-open{flex:1 1 auto;min-width:0;text-align:left;background:none;border:none;cursor:pointer;',
     /* V-3: 6px -> 10px horizontal so the title and its timestamp sit visibly
        inside the row's rounded hover outline instead of grazing it. The
        action buttons are flex SIBLINGS and occupy layout even at opacity:0,
        so this pushes the title away from them, never underneath. */
-    'font:inherit;font-size:var(--jb-font-xs);color:var(--jb-text-secondary);padding:8px var(--jb-rail-inset);',
+    'font:inherit;font-size:var(--jb-font-xs);color:var(--jb-text-primary);padding:8px var(--jb-rail-inset);',
     'white-space:normal;overflow:hidden;}',
+    '.jb-chat-open:focus-visible{outline:2px solid var(--jb-focus);outline-offset:-2px;border-radius:calc(var(--jb-font-base) * 0.5556);}',
     /* S3.1/S3.2 — row identity. The title and its timestamp stack inside the
        open button so the whole row surface stays one tap target; the time is
        part of the row's identity, not a separate control. */
@@ -447,21 +467,22 @@
        to ellipsise a MULTI-line block; it needs all four of display,
        box-orient, overflow and a normal white-space to work. */
     '.jb-chat-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;',
-    'overflow:hidden;white-space:normal;overflow-wrap:anywhere;font-weight:600;}',
+    'overflow:hidden;white-space:normal;overflow-wrap:anywhere;font-weight:400;}',
     '.jb-chat-time{display:block;font-size:var(--jb-font-xs);line-height:var(--jb-line-tight);color:var(--jb-text-tertiary);margin-top:1px;font-weight:400;}',
     /* The EPHEMERAL placeholder reads as a different kind of thing from a real
        row whose title merely has not arrived: italic, dimmed, and no
        timestamp (it has no last_message_at — nothing has happened in it). */
     '.jb-chat-pending .jb-chat-title{font-style:italic;color:var(--jb-text-tertiary);}',
-    '.jb-chat-active .jb-chat-open{color:var(--jb-text-primary);font-weight:600;}',
-    '.jb-chat-act{min-width:26px;min-height:26px;flex:0 0 auto;background:none;border:none;cursor:pointer;padding:4px var(--jb-rail-inset-sm);border-radius:calc(var(--jb-font-base) * 0.3333);',
+    '.jb-chat-active .jb-chat-open{color:var(--jb-text-primary);font-weight:500;}',
+    '.jb-chat-act{min-width:26px;min-height:26px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;padding:4px var(--jb-rail-inset-sm);border-radius:calc(var(--jb-font-base) * 0.3333);',
     'color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-xs);line-height:1;opacity:0;',
-    'transition:opacity 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
+    'transition:opacity 120ms var(--jb-ease),color 120ms var(--jb-ease),background 120ms var(--jb-ease);}',
+    '.jb-chat-act .jb-ico{width:calc(var(--jb-font-base) * 0.8889);height:calc(var(--jb-font-base) * 0.8889);}',
     /* Row actions appear on hover or keyboard focus — focus-within is what
        keeps them reachable without a mouse. */
     '.jb-chat-row:hover .jb-chat-act,.jb-chat-row:focus-within .jb-chat-act{opacity:1;}',
-    '.jb-chat-act:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
-    '.jb-chat-act:focus-visible{opacity:1;outline:2px solid var(--jb-accent);outline-offset:1px;}',
+    '.jb-chat-act:hover{color:var(--jb-text-primary);background:var(--jb-active);}',
+    '.jb-chat-act:focus-visible{opacity:1;outline:2px solid var(--jb-focus);outline-offset:1px;}',
 
     /* S2.1 — ON TOUCH THE ACTIONS ARE ALWAYS VISIBLE.
        opacity:0 revealed on :hover/:focus-within means that on a phone rename
@@ -481,18 +502,19 @@
     '.jb-chat-confirm{display:flex;align-items:center;flex-wrap:wrap;gap:calc(var(--jb-font-base) * 0.4444);width:100%;min-width:0;padding:calc(var(--jb-font-base) * 0.1667) calc(var(--jb-font-base) * 0.2222) calc(var(--jb-font-base) * 0.1667) calc(var(--jb-font-base) * 0.3333);}',
     '.jb-chat-confirm-q{flex:1 1 100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
     'font-size:var(--jb-font-xs);color:var(--jb-text-secondary);}',
-    '.jb-chat-confirm-yes,.jb-chat-confirm-no{min-height:44px;flex:0 0 auto;font:inherit;font-size:var(--jb-font-xs);font-weight:700;',
-    'border-radius:calc(var(--jb-font-base) * 0.3333);padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6667);cursor:pointer;border:1px solid transparent;}',
+    '.jb-chat-confirm-yes,.jb-chat-confirm-no{min-height:44px;flex:0 0 auto;font:inherit;font-size:var(--jb-font-xs);font-weight:600;',
+    'border-radius:999px;padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6667);cursor:pointer;border:1px solid transparent;}',
     '.jb-chat-confirm-yes{background:var(--jb-danger-solid);color:#FFFFFF;border-color:var(--jb-danger-solid);}',
-    '.jb-chat-confirm-no{background:transparent;color:var(--jb-text-secondary);border-color:var(--jb-glass-border);}',
-    '.jb-chat-confirm-no:hover{color:var(--jb-text-primary);border-color:var(--jb-text-secondary);}',
-    '.jb-chat-confirm-yes:focus-visible,.jb-chat-confirm-no:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:1px;}',
+    '.jb-chat-confirm-no{background:transparent;color:var(--jb-text-primary);border-color:var(--jb-border-strong);}',
+    '.jb-chat-confirm-no:hover{background:var(--jb-hover);}',
+    '.jb-chat-confirm-yes:focus-visible,.jb-chat-confirm-no:focus-visible{outline:2px solid var(--jb-focus);outline-offset:1px;}',
     /* A destructive control needs a real tap target where there is no cursor. */
     '@media (hover: none),(pointer: coarse){.jb-chat-confirm-yes,.jb-chat-confirm-no{padding:calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.5556);}}',
     '.jb-chat-rename-input{min-height:44px;flex:1 1 auto;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;',
     'font-size:var(--jb-font-xs);padding:6px var(--jb-rail-inset-sm);',
-    'border-radius:calc(var(--jb-font-base) * 0.3333);border:1px solid var(--jb-glass-edge);background:var(--jb-bg-sunken);',
-    'color:var(--jb-text-primary);}',
+    'border-radius:calc(var(--jb-font-base) * 0.4444);border:1px solid var(--jb-border-strong);background:var(--jb-bg-base);',
+    'color:var(--jb-text-primary);outline:none;}',
+    '.jb-chat-rename-input:focus{border-color:var(--jb-focus);box-shadow:0 0 0 1px var(--jb-focus);}',
     /* TOUCH TARGET (WCAG 2.5.8 / FINDING-066). The visual box stays small —
        a 44px chip in the header would look wrong — and the HIT AREA is
        extended by a centred overlay instead. No layout shift, no visible
@@ -501,9 +523,11 @@
     '.jb-side-toggle{position:relative;}',
     '.jb-side-toggle::after{content:\'\';position:absolute;left:50%;top:50%;',
     'width:100%;height:100%;min-width:44px;min-height:44px;transform:translate(-50%,-50%);}',
-    '.jb-side-toggle{flex:0 0 auto;background:none;border:none;cursor:pointer;padding:calc(var(--jb-font-base) * 0.2222) calc(var(--jb-font-base) * 0.3333);margin-right:2px;',
-    'border-radius:calc(var(--jb-font-base) * 0.3333);color:var(--jb-text-tertiary);font:inherit;font-size:var(--jb-font-sm);line-height:1;}',
-    '.jb-side-toggle:hover{color:var(--jb-text-primary);background:rgba(255,255,255,0.08);}',
+    '.jb-side-toggle{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;padding:calc(var(--jb-font-base) * 0.3889);margin-right:2px;',
+    'border-radius:calc(var(--jb-font-base) * 0.5556);color:var(--jb-text-secondary);font:inherit;font-size:var(--jb-font-sm);line-height:1;',
+    'transition:background 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
+    '.jb-side-toggle:hover{color:var(--jb-text-primary);background:var(--jb-hover);}',
+    '.jb-side-toggle:focus-visible{outline:2px solid var(--jb-focus);outline-offset:1px;}',
     '.jb-side-empty{padding:calc(var(--jb-font-base) * 0.5556) calc(var(--jb-font-base) * 0.4444);font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);}',
 
     /* --- Honest loading (S1.1/S1.2/S1.3) -----------------------------------
@@ -513,10 +537,10 @@
        to misread, no control to click, and aria-hidden so a screen reader is
        not handed three meaningless rows (the list carries aria-busy instead). */
     '.jb-skel-row{display:flex;align-items:center;padding:8px var(--jb-rail-inset);margin-bottom:2px;}',
-    '.jb-skel{height:calc(var(--jb-font-base) * 0.5);border-radius:calc(var(--jb-font-base) * 0.2778);background:rgba(255,255,255,0.09);',
+    '.jb-skel{height:calc(var(--jb-font-base) * 0.5);border-radius:calc(var(--jb-font-base) * 0.2778);background:var(--jb-skel);',
     'position:relative;overflow:hidden;display:block;}',
     '.jb-skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);',
-    'background:linear-gradient(90deg,transparent,rgba(255,255,255,0.13),transparent);',
+    'background:linear-gradient(90deg,transparent,var(--jb-skel-sheen),transparent);',
     'animation:jb-sweep 1500ms var(--jb-ease) infinite;}',
     /* Widths carried by MODIFIER classes, not :nth-child — a skeleton may sit
        below real rows or an error notice, and positional selectors would
@@ -532,65 +556,62 @@
        so there is no chat behind it to invite peeking. jb-gated hides the
        rail, its toggle and the composer. */
     '.jb-root.jb-gated .jb-side,.jb-root.jb-gated .jb-side-toggle,.jb-root.jb-gated .jb-form{display:none;}',
-    '.jb-gate{max-width:calc(var(--jb-font-base) * 22.2222);margin:auto;padding:calc(var(--jb-font-base) * 1.625) calc(var(--jb-font-base) * 1.375);',
-    'border-radius:calc(var(--jb-font-base) * 0.8889);text-align:left;width:100%;}',
-    '.jb-gate-title{font-size:var(--jb-font-lg);font-weight:700;margin:0 0 calc(var(--jb-font-base) * 0.3333);color:var(--jb-text-primary);}',
-    '.jb-gate-copy{font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);margin:0 0 calc(var(--jb-font-base) * 0.7778);}',
+    '.jb-gate{max-width:calc(var(--jb-font-base) * 22.2222);margin:auto;padding:calc(var(--jb-font-base) * 1.75) calc(var(--jb-font-base) * 1.5);',
+    'border-radius:calc(var(--jb-font-base) * 1.1111);text-align:left;width:100%;}',
+    '.jb-gate-title{font-size:var(--jb-font-xl);font-weight:600;letter-spacing:-0.01em;line-height:var(--jb-line-tight);margin:0 0 calc(var(--jb-font-base) * 0.4444);color:var(--jb-text-primary);}',
+    '.jb-gate-copy{font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);margin:0 0 calc(var(--jb-font-base) * 1);}',
     '.jb-gate-row{display:flex;gap:calc(var(--jb-font-base) * 0.5);}',
-    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);border-radius:calc(var(--jb-font-base) * 0.5556);border:1px solid rgba(255,255,255,0.08);',
-    'background:var(--jb-bg-sunken);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;}',
-    '.jb-gate-input:focus{border-color:var(--jb-accent);box-shadow:0 0 0 3px rgba(247,178,17,0.22);}',
-    '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:calc(var(--jb-font-base) * 0.5556);padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);background:var(--jb-accent);',
-    'color:var(--jb-on-accent);font-weight:700;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;}',
-    '.jb-gate-btn:hover{background:var(--jb-accent-hover);}',
+    '.jb-gate-input{flex:1 1 auto;min-width:0;padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);border-radius:999px;border:1px solid var(--jb-border-strong);',
+    'background:var(--jb-bg-base);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;',
+    'transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
+    '.jb-gate-input::placeholder{color:var(--jb-text-tertiary);opacity:1;}',
+    '.jb-gate-input:focus{border-color:var(--jb-focus);box-shadow:0 0 0 1px var(--jb-focus);}',
+    '.jb-gate-btn{flex:0 0 auto;border:none;border-radius:999px;padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x);background:var(--jb-inverse-bg);',
+    'color:var(--jb-inverse-text);font-weight:600;font-size:var(--jb-font-sm);font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease);}',
+    '.jb-gate-btn:hover{background:var(--jb-inverse-hover);}',
     '.jb-gate-btn[disabled]{opacity:0.6;cursor:default;}',
-    '.jb-gate-btn:focus-visible,.jb-gate-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
+    '.jb-gate-btn:focus-visible,.jb-gate-retry:focus-visible{outline:2px solid var(--jb-focus);outline-offset:2px;}',
     /* The three failure states are DIFFERENT PROBLEMS: copy distinguishes all
        three, and only could-not-check gets a retry control. */
     '.jb-gate-status{margin:calc(var(--jb-font-base) * 0.6667) 0 0;font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-danger);min-height:1em;}',
     '.jb-gate-status[data-kind="lookup_failed"]{color:var(--jb-text-secondary);}',
-    '.jb-gate-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-accent);color:var(--jb-accent);',
-    'border-radius:calc(var(--jb-font-base) * 0.4444);padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722);',
-    'font-size:var(--jb-font-sm);font-weight:700;font-family:inherit;cursor:pointer;}',
-    '.jb-gate-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
-    '.jb-side-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.4444);background:transparent;border:1px solid var(--jb-accent);',
-    'color:var(--jb-accent);border-radius:calc(var(--jb-font-base) * 0.3889);padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6111);font-size:var(--jb-font-xs);font-weight:700;',
-    'font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease),color 160ms var(--jb-ease);}',
-    '.jb-side-retry:hover{background:var(--jb-accent);color:var(--jb-on-accent);}',
-    '.jb-side-retry:focus-visible{outline:2px solid var(--jb-accent-hover);outline-offset:2px;}',
+    '.jb-gate-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.5556);background:transparent;border:1px solid var(--jb-border-strong);color:var(--jb-text-primary);',
+    'border-radius:999px;padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722);',
+    'font-size:var(--jb-font-sm);font-weight:600;font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease);}',
+    '.jb-gate-retry:hover{background:var(--jb-hover);}',
+    '.jb-side-retry{min-height:44px;margin-top:calc(var(--jb-font-base) * 0.4444);background:transparent;border:1px solid var(--jb-border-strong);',
+    'color:var(--jb-text-primary);border-radius:999px;padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.7778);font-size:var(--jb-font-xs);font-weight:600;',
+    'font-family:inherit;cursor:pointer;transition:background 160ms var(--jb-ease);}',
+    '.jb-side-retry:hover{background:var(--jb-hover);}',
+    '.jb-side-retry:focus-visible{outline:2px solid var(--jb-focus);outline-offset:2px;}',
 
-    /* Transcript skeleton: the SHAPE of a restored conversation — alternating
-       sides, varied line counts — rather than a spinner, so the pane reads as
-       "your conversation is coming back" instead of "something is happening". */
-    '.jb-hist-skel{display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.6667);}',
+    /* Transcript skeleton: the SHAPE of a restored conversation — the
+       member's pills on the right, James's unboxed lines on the left — rather
+       than a spinner, so the pane reads as "your conversation is coming
+       back" instead of "something is happening". */
+    '.jb-hist-skel{display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 1.3333);width:100%;max-width:var(--jb-measure);margin:0 auto;}',
     '.jb-hist-line{display:flex;}',
     '.jb-hist-line.jb-hist-right{justify-content:flex-end;}',
-    '.jb-hist-block{max-width:70%;border-radius:var(--jb-radius);padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.8333);',
-    'background:var(--jb-bot-bg);border:1px solid var(--jb-bot-border);',
-    'border-left:2px solid var(--jb-accent);border-top-left-radius:5px;',
-    'display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.4444);min-width:calc(var(--jb-font-base) * 7.2222);}',
-    '.jb-hist-right .jb-hist-block{background:rgba(247,178,17,0.10);',
-    'border:1px solid rgba(247,178,17,0.18);border-top-right-radius:5px;',
-    'border-top-left-radius:var(--jb-radius);}',
+    '.jb-hist-block{width:70%;display:flex;flex-direction:column;gap:calc(var(--jb-font-base) * 0.5);}',
+    '.jb-hist-right .jb-hist-block{width:42%;background:var(--jb-user-bg);border-radius:var(--jb-radius-bubble);',
+    'padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 1.0556);}',
     '.jb-hist-block .jb-skel{height:calc(var(--jb-font-base) * 0.6111);}',
-    /* Narrow hosts (a GHL lesson column) get the rail closed by default via
-       the same collapsed class the toggle uses; nothing here is layout-only. */
     /* S4.2 — below the narrow tier the rail is a DRAWER: closed by default,
        slid in by the header toggle, dismissed by scrim tap, outside click, or
        Escape. The old behaviour had no scrim and no exit but the toggle. */
     '.jb-root.jb-w-narrow .jb-side{position:absolute;z-index:3;height:100%;width:var(--jb-rail-w);flex-basis:var(--jb-rail-w);',
-    'background:var(--jb-bg-raised);box-shadow:0 8px 32px rgba(0,0,0,0.45);',
+    'background:var(--jb-bg-side);box-shadow:var(--jb-drawer-shadow);',
     'transform:translateX(-105%);transition:transform 200ms var(--jb-ease);}',
     '.jb-root.jb-w-narrow.jb-drawer-open .jb-side{transform:translateX(0);}',
     /* The desktop collapse preference must not leave a width-0 drawer: at
        narrow, the transform is the only thing that hides the rail. */
-    '.jb-root.jb-w-narrow .jb-side.jb-side-collapsed{width:var(--jb-rail-w);flex-basis:var(--jb-rail-w);border-right:1px solid var(--jb-glass-border);}',
+    '.jb-root.jb-w-narrow .jb-side.jb-side-collapsed{width:var(--jb-rail-w);flex-basis:var(--jb-rail-w);border-right:1px solid var(--jb-border-subtle);}',
     '.jb-root.jb-w-narrow .jb-body{position:relative;}',
     /* The scrim: sits between the conversation and the drawer, tap closes.
        Display-gated on BOTH classes so it can never shade a wide layout. */
     '.jb-scrim{display:none;}',
     '.jb-root.jb-w-narrow.jb-drawer-open .jb-scrim{display:block;position:absolute;inset:0;z-index:2;',
-    'background:rgba(0,0,0,0.45);}',
+    'background:var(--jb-scrim);}',
     /* S4.2 scroll lock — scoped INSIDE the widget subtree, never the host
        page: the drawer covers the widget, not the portal, so the page behind
        keeps scrolling and nothing outlives a GHL lesson swap by construction.
@@ -648,19 +669,19 @@
        11) and a shared shorthand would flatten that difference. */
     '.jb-root .jb-input{padding:calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 1) !important;}',
     '.jb-root .jb-gate-input{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
-    '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
+    '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:var(--jb-font-sm) !important;font-weight:600 !important;',
     'line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-gate-btn{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
     '.jb-root .jb-gate-retry{padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722) !important;}',
     '.jb-root .jb-calc-cancel{font-size:var(--jb-font-sm) !important;line-height:var(--jb-line-tight) !important;}',
-    '.jb-root .jb-adv-toggle{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
+    '.jb-root .jb-adv-toggle{font-size:var(--jb-font-sm) !important;font-weight:600 !important;',
     'line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-side-toggle{font-size:var(--jb-font-sm) !important;line-height:1 !important;}',
-    '.jb-root .jb-retry,.jb-root .jb-gate-retry{font-size:var(--jb-font-sm) !important;font-weight:700 !important;',
+    '.jb-root .jb-retry,.jb-root .jb-gate-retry{font-size:var(--jb-font-sm) !important;font-weight:600 !important;',
     'line-height:var(--jb-line-tight) !important;}',
-    '.jb-root .jb-side-retry{font-size:var(--jb-font-xs) !important;font-weight:700 !important;',
+    '.jb-root .jb-side-retry{font-size:var(--jb-font-xs) !important;font-weight:600 !important;',
     'line-height:var(--jb-line-tight) !important;}',
-    '.jb-root .jb-new{font-size:var(--jb-font-xs) !important;font-weight:650 !important;',
+    '.jb-root .jb-new{font-size:var(--jb-font-xs) !important;font-weight:500 !important;',
     'line-height:var(--jb-line-tight) !important;padding:8px var(--jb-rail-inset) !important;}',
     '.jb-root .jb-chat-open{font-size:var(--jb-font-xs) !important;text-align:left !important;',
     'min-width:0 !important;overflow:hidden !important;line-height:var(--jb-line-tight) !important;',
@@ -668,24 +689,24 @@
     '.jb-root .jb-chat-title{max-width:100% !important;overflow:hidden !important;',
     'white-space:normal !important;display:-webkit-box !important;',
     '-webkit-line-clamp:2 !important;-webkit-box-orient:vertical !important;}',
-    '.jb-root .jb-chat-active .jb-chat-open{font-weight:600 !important;}',
+    '.jb-root .jb-chat-active .jb-chat-open{font-weight:500 !important;}',
     '.jb-root .jb-chat-act{font-size:var(--jb-font-xs) !important;line-height:1 !important;',
     'padding:4px var(--jb-rail-inset-sm) !important;}',
     '.jb-root .jb-chat-rename-input{font-size:var(--jb-font-xs) !important;min-width:0 !important;',
     'max-width:100% !important;box-sizing:border-box !important;',
     'padding:6px var(--jb-rail-inset-sm) !important;}',
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{',
-    'font-size:var(--jb-font-xs) !important;font-weight:700 !important;padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6667) !important;}',
+    'font-size:var(--jb-font-xs) !important;font-weight:600 !important;padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.6667) !important;}',
     /* THE FIRST NON-FONT PROPERTY OBSERVED LOSING TO THE HOST. The resting
        surface needs (0,2,0); the STATE rules then need (0,3,0) or the
        resting !important would swallow them and the button would never
        react again. See the audit in the run report: background, color and
        border are undefended on ~17 controls, of which this is one. */
-    '.jb-root .jb-send{background:var(--jb-accent) !important;color:var(--jb-on-accent) !important;',
+    '.jb-root .jb-send{background:var(--jb-inverse-bg) !important;color:var(--jb-inverse-text) !important;',
     'border:none !important;}',
-    '.jb-root .jb-send:hover{background:var(--jb-accent-hover) !important;}',
-    '.jb-root .jb-send:active{background:var(--jb-accent-pressed) !important;}',
-    '.jb-root .jb-send[disabled]{opacity:0.5 !important;}',
+    '.jb-root .jb-send:hover{background:var(--jb-inverse-hover) !important;}',
+    '.jb-root .jb-send:active{background:var(--jb-inverse-pressed) !important;}',
+    '.jb-root .jb-send[disabled]{opacity:0.3 !important;}',
     '.jb-root .jb-chat-confirm-yes{background:var(--jb-danger-solid) !important;',
     'color:#FFFFFF !important;border-color:var(--jb-danger-solid) !important;}',
     '@media (hover: none),(pointer: coarse){',
@@ -728,15 +749,15 @@
     '.jb-list::-webkit-scrollbar,.jb-side-list::-webkit-scrollbar{width:10px;height:10px;}',
     '.jb-list::-webkit-scrollbar-track,.jb-side-list::-webkit-scrollbar-track{background:transparent;}',
     /* transparent border + background-clip gives the thumb breathing room
-       without a track that reads as a light channel on a near-black panel. */
+       without a track that reads as a channel against the panel. */
     '.jb-list::-webkit-scrollbar-thumb,.jb-side-list::-webkit-scrollbar-thumb{',
-    'background:rgba(255,255,255,0.14);border-radius:6px;',
+    'background:var(--jb-scroll-thumb);border-radius:6px;',
     'border:2px solid transparent;background-clip:content-box;}',
     '.jb-list::-webkit-scrollbar-thumb:hover,.jb-side-list::-webkit-scrollbar-thumb:hover{',
-    'background:rgba(255,255,255,0.26);border:2px solid transparent;background-clip:content-box;}',
+    'background:var(--jb-scroll-thumb-hover);border:2px solid transparent;background-clip:content-box;}',
     '.jb-list::-webkit-scrollbar-corner,.jb-side-list::-webkit-scrollbar-corner{background:transparent;}',
     /* Firefox — also scoped; `thin` is narrower than its default. */
-    '.jb-list,.jb-side-list{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.18) transparent;}',
+    '.jb-list,.jb-side-list{scrollbar-width:thin;scrollbar-color:var(--jb-scroll-thumb) transparent;}',
   ].join('');
 
   function injectStyles() {
@@ -1081,14 +1102,14 @@
         var idx = m.index;
         var after = node.splitText(idx);
         after.nodeValue = after.nodeValue.slice(matchText.length);
-        // The amber lead figure is a STATIC design choice (§5) — it stays amber
-        // even when motion is off. Only the count-up itself is motion-gated.
+        // The emphasised lead figure is a STATIC design choice (§5) — it stays
+        // emphasised when motion is off. Only the count-up itself is motion-gated.
         var span = el('span', 'jb-fig');
         span.textContent = matchText;
         after.parentNode.insertBefore(span, after);
 
         if (prefersReducedMotion() || typeof window.requestAnimationFrame !== 'function') {
-          return; // amber, but no count-up
+          return; // emphasised, but no count-up
         }
 
         var prefix = matchText.indexOf('-') === 0 ? '-' : '';
@@ -1112,9 +1133,30 @@
     return (
       '<span class="jb-sr">Send</span>' +
       '<svg class="jb-send-i" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-      '<path d="M4 12h13M11 6l7 6-7 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      '<path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
     );
   }
+
+  // --- UI icons: one authored set, 24px grid, 1.75 stroke ---------------------
+  // Decorative only (aria-hidden): every button that carries one also carries
+  // an accessible name of its own (aria-label or visible text).
+  function icon(paths) {
+    return (
+      '<svg class="jb-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" ' +
+      'stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
+      paths + '</svg>'
+    );
+  }
+  var ICON_SIDEBAR = icon('<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9.5 4.5v15"/>');
+  var ICON_NEW_CHAT = icon(
+    '<path d="M11 4.5H7.5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3V13"/>' +
+    '<path d="M17.6 3.9a1.9 1.9 0 0 1 2.7 2.7L12.5 14.4 9 15l.6-3.5z"/>'
+  );
+  var ICON_RENAME = icon('<path d="M15.2 5.3a2 2 0 0 1 2.9 2.9L8.5 17.8 4.5 19l1.2-4z"/><path d="M13.5 7l3.5 3.5"/>');
+  var ICON_DELETE = icon(
+    '<path d="M4.5 7h15"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/>' +
+    '<path d="M6.5 7l.8 11.1a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/>'
+  );
 
   // --- Widget --------------------------------------------------------------
 
@@ -1164,13 +1206,11 @@
       injectStyles();
 
       var root = el('div', 'jb-root');
-
-      // Ambient light behind everything (decorative — hidden from a11y tree).
-      var orbs = el('div', 'jb-orbs', { 'aria-hidden': 'true' });
-      orbs.appendChild(el('div', 'jb-orb jb-orb-a'));
-      orbs.appendChild(el('div', 'jb-orb jb-orb-b'));
-      orbs.appendChild(el('div', 'jb-orb jb-orb-c'));
-      root.appendChild(orbs);
+      // An explicit theme pins the palette; anything else (including no
+      // option) leaves the attribute off and the device setting decides.
+      if (options.theme === 'light' || options.theme === 'dark') {
+        root.setAttribute('data-jb-theme', options.theme);
+      }
 
       var header = el('div', 'jb-head jb-glass');
       var sideToggle = el('button', 'jb-side-toggle', {
@@ -1179,9 +1219,8 @@
         'aria-expanded': 'true',
         title: 'Chats',
       });
-      sideToggle.textContent = '☰';
+      sideToggle.innerHTML = ICON_SIDEBAR;
       header.appendChild(sideToggle);
-      header.appendChild(el('span', 'jb-dot', { 'aria-hidden': 'true' }));
       var title = el('span', 'jb-title');
       title.textContent = 'Ask James';
       header.appendChild(title);
@@ -1192,7 +1231,7 @@
       var side = el('aside', 'jb-side', { 'aria-label': 'Your chats' });
       var sideTop = el('div', 'jb-side-top');
       var newChatBtn = el('button', 'jb-new', { type: 'button' });
-      newChatBtn.textContent = '+  New chat';
+      newChatBtn.innerHTML = ICON_NEW_CHAT + '<span>New chat</span>';
       sideTop.appendChild(newChatBtn);
       var sideList = el('div', 'jb-side-list', { role: 'list' });
       side.appendChild(sideTop);
@@ -1614,9 +1653,10 @@
         return { row: row, bubble: bubble };
       }
 
-      // Thinking indicator: honest rotating copy, and it warms the whole room
-      // (jb-busy on root speeds/warms the orbs) so a 15–20s wait reads as
-      // intentional, not stuck. Removed the instant the answer lands.
+      // Thinking indicator: honest rotating copy with a light sweeping across
+      // it, so a 15–20s wait reads as intentional, not stuck. jb-busy on root
+      // marks the whole widget as working (a styling hook for hosts and
+      // tests). Removed the instant the answer lands.
       function addTyping() {
         var stick = nearBottom();
         var row = el('div', 'jb-row jb-bot jb-think-row');
@@ -1647,9 +1687,9 @@
       }
 
       // Calculating placeholder: a skeleton of the result card, standing where
-      // the answer will land. Reuses the room-warming (jb-busy on root) that the
-      // typed-message thinking state already uses, so a calculation reads as the
-      // same system doing focused work rather than a bolted-on spinner.
+      // the answer will land. Sets the same jb-busy root state the typed-message
+      // thinking indicator uses, so a calculation reads as the same system doing
+      // focused work rather than a bolted-on spinner.
       //
       // Under reduced motion the sweep and the dots are CSS-disabled and the
       // label is plain "Calculating…" — feedback without movement.
@@ -2178,7 +2218,7 @@
             'aria-label': 'Rename chat',
             title: 'Rename',
           });
-          rename.textContent = '✎';
+          rename.innerHTML = ICON_RENAME;
           rename.addEventListener('click', function () {
             confirmingId = null; // one open question at a time
             renamingId = chat.id;
@@ -2191,7 +2231,7 @@
             'aria-label': 'Delete chat',
             title: 'Delete',
           });
-          del.textContent = '✕';
+          del.innerHTML = ICON_DELETE;
           del.addEventListener('click', function () {
             // Step ONE of two. Nothing destructive happens here. This control
             // sits beside the one you tap to SWITCH chats, and on touch both
