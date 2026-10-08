@@ -234,4 +234,48 @@ describe('BUG-046 — text buttons defend their padding', () => {
   it.each(PADDED)('%s pins its padding against the host reset', (sel) => {
     expect(declaredPadding(sel), `${sel} has no (0,2,0) !important padding`).not.toBeNull();
   });
+
+  // Observed live: the calculator fields had no pin, the portal's input reset
+  // zeroed their padding, and the typed value sat against the left edge.
+  it.each(['.jb-control', '.jb-input', '.jb-gate-input', '.jb-lib-search', '.jb-chat-rename-input'])(
+    'text field %s pins its padding against the host reset',
+    (sel) => {
+      expect(declaredPadding(sel), `${sel} has no (0,2,0) !important padding`).not.toBeNull();
+    },
+  );
+});
+
+describe('BUG-046 — every button defends its colours', () => {
+  // Observed live: the portal's button rule set the label colour, so the
+  // black primary pills ("Continue", "Calculate", "Run again") rendered
+  // near-black text on a near-black fill. Every button must pin colour and
+  // background at (0,2,0) !important, in a rule that may list several.
+  const BUTTONS = [
+    '.jb-btn', '.jb-gate-btn', '.jb-send', '.jb-calc-cancel', '.jb-retry', '.jb-gate-retry',
+    '.jb-side-retry', '.jb-chat-confirm-no', '.jb-chat-confirm-yes', '.jb-lib-icon', '.jb-new',
+    '.jb-chat-open', '.jb-adv-toggle', '.jb-lib-row', '.jb-saved-open', '.jb-side-toggle',
+    '.jb-lib-back', '.jb-chat-act',
+  ];
+  /** The body of the (0,2,0) rule whose selector list names `.jb-root <sel>`. */
+  const pinnedBody = (sel: string): string | null => {
+    const escaped = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Selector lists may span JS string joins; the body runs to the first '}'.
+    const re = new RegExp(
+      "\\.jb-root " + escaped + "(?=[,{])(?:[^{}]|',\\s*')*?\\{((?:[^}'\\\\]|',\\s*')*)\\}",
+      'g',
+    );
+    let found: string | null = null;
+    for (const m of WIDGET_SRC.matchAll(re)) {
+      if (/color:[^;]*!important/.test(m[1]) && /background:[^;]*!important/.test(m[1])) found = m[1];
+    }
+    return found;
+  };
+
+  // The resolved-colour half cannot be asserted here: jsdom drops a
+  // declaration whose value is a var() token and reports the host's colour
+  // regardless (see THE HARNESS SPLIT above). It is checked in real Chrome,
+  // against a hostile `button { color/background !important }` host sheet.
+  it.each(BUTTONS)('%s pins colour and background against the host', (sel) => {
+    expect(pinnedBody(sel), `${sel} has no (0,2,0) !important colour + background`).not.toBeNull();
+  });
 });
