@@ -755,6 +755,18 @@
        11) and a shared shorthand would flatten that difference. */
     '.jb-root .jb-input{padding:calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 1) !important;}',
     '.jb-root .jb-gate-input{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
+    /* The calculator fields, same tier. Observed live: with no pin, the
+       portal's input reset zeroed their padding and the typed value sat
+       hard against the left edge of the box. */
+    '.jb-root .jb-control{padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 0.7778) !important;}',
+    /* Fields' surfaces, pinned for the same reason the buttons' are: a host
+       input rule colouring the box or its text would make dark mode
+       unreadable. States sit one tier up so the pin cannot swallow them. */
+    '.jb-root .jb-control,.jb-root .jb-gate-input,.jb-root .jb-lib-search,.jb-root .jb-chat-rename-input{',
+    'background:var(--jb-bg-base) !important;color:var(--jb-text-primary) !important;border:1px solid var(--jb-border-strong) !important;}',
+    '.jb-root .jb-control:focus,.jb-root .jb-gate-input:focus,.jb-root .jb-lib-search:focus,.jb-root .jb-chat-rename-input:focus{border-color:var(--jb-focus) !important;}',
+    '.jb-root .jb-control[aria-invalid="true"]{border-color:var(--jb-danger) !important;}',
+    '.jb-root .jb-input{background:transparent !important;color:var(--jb-text-primary) !important;border:none !important;}',
     '.jb-root .jb-btn,.jb-root .jb-gate-btn{font-size:var(--jb-font-sm) !important;font-weight:600 !important;',
     'line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-gate-btn{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
@@ -816,6 +828,34 @@
     '.jb-root .jb-send[disabled]{opacity:0.3 !important;}',
     '.jb-root .jb-chat-confirm-yes{background:var(--jb-danger-solid) !important;',
     'color:#FFFFFF !important;border-color:var(--jb-danger-solid) !important;}',
+    /* THE REST OF THE ~17, CLOSED. Observed live once the buttons became
+       black pills: the portal's button rule set the LABEL colour, so
+       "Continue", "Calculate" and "Run again" rendered near-black text on
+       the near-black fill — unreadable. Every button now pins its resting
+       surface (background, colour, border) at (0,2,0) !important, and each
+       state rule sits at (0,3,0)+ so the resting pin cannot swallow it —
+       the same two-tier shape as .jb-send above. */
+    // Primary: the inverse pill.
+    '.jb-root .jb-btn,.jb-root .jb-gate-btn{background:var(--jb-inverse-bg) !important;color:var(--jb-inverse-text) !important;border:none !important;}',
+    '.jb-root .jb-btn:hover:not([disabled]),.jb-root .jb-gate-btn:hover:not([disabled]){background:var(--jb-inverse-hover) !important;}',
+    '.jb-root .jb-btn:active:not([disabled]),.jb-root .jb-gate-btn:active:not([disabled]){background:var(--jb-inverse-pressed) !important;}',
+    // Secondary: outlined pills.
+    '.jb-root .jb-calc-cancel,.jb-root .jb-retry,.jb-root .jb-gate-retry,.jb-root .jb-side-retry,.jb-root .jb-chat-confirm-no{',
+    'background:transparent !important;color:var(--jb-text-primary) !important;border:1px solid var(--jb-border-strong) !important;}',
+    '.jb-root .jb-lib-icon{background:transparent !important;color:var(--jb-text-secondary) !important;border:1px solid var(--jb-border-strong) !important;}',
+    // Quiet: text-only controls whose fill appears on hover.
+    '.jb-root .jb-new,.jb-root .jb-chat-open,.jb-root .jb-adv-toggle,.jb-root .jb-lib-row,.jb-root .jb-saved-open{',
+    'background:transparent !important;color:var(--jb-text-primary) !important;border:none !important;}',
+    '.jb-root .jb-side-toggle,.jb-root .jb-lib-back{background:transparent !important;color:var(--jb-text-secondary) !important;border:none !important;}',
+    '.jb-root .jb-chat-act{background:transparent !important;color:var(--jb-text-tertiary) !important;border:none !important;}',
+    // States, one tier up.
+    '.jb-root .jb-calc-cancel:hover:not([disabled]),.jb-root .jb-retry:hover,.jb-root .jb-gate-retry:hover,.jb-root .jb-side-retry:hover,',
+    '.jb-root .jb-chat-confirm-no:hover,.jb-root .jb-new:hover,.jb-root .jb-lib-row:hover,.jb-root .jb-saved-open:hover{background:var(--jb-hover) !important;}',
+    '.jb-root .jb-side-toggle:hover,.jb-root .jb-lib-back:hover,.jb-root .jb-lib-icon:hover{background:var(--jb-hover) !important;color:var(--jb-text-primary) !important;}',
+    '.jb-root .jb-chat-act:hover{background:var(--jb-active) !important;color:var(--jb-text-primary) !important;}',
+    '.jb-root .jb-new:active,.jb-root .jb-nav-lib[aria-pressed="true"]{background:var(--jb-active) !important;}',
+    '.jb-root .jb-chat-active .jb-chat-open{color:var(--jb-text-primary) !important;}',
+    '.jb-root .jb-chat-pending .jb-chat-open{color:var(--jb-text-tertiary) !important;}',
     '@media (hover: none),(pointer: coarse){',
     '.jb-root .jb-chat-confirm-yes,.jb-root .jb-chat-confirm-no{padding:calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.7778) !important;}}',
 
