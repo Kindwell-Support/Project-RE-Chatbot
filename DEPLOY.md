@@ -171,13 +171,17 @@ order:
    - `[ghl] Course Access field id VERIFIED against definitions`
    - no `NOT VERIFIED` lines from the migrate probes.
 
-**2. IMMEDIATELY after cutover — the stale Project Flip loader.** The header
-tracking code is PER-COURSE, and Project Flip carries its own independent
-pre-Phase-3 snippet. Against the gated API that old widget cannot
-authenticate — members would get a bot that cannot connect. Replace its
-Header Tracking Code with the canonical snippet from README ("GHL embed — THE
-live snippet"), or remove it. This is the only step where members are
-visibly broken until it is done.
+**2. After cutover — no stale loaders remain (verified 2026-10-08).** The
+header tracking code is PER-COURSE, so an old pre-Phase-3 snippet left in any
+course would keep loading a widget that cannot authenticate against the gated
+API. This step used to name Project Flip as carrying one; it no longer does.
+All nine courses in the sub-account were checked in GHL (Course → Settings →
+Advanced: Header Tracking Code, Footer Tracking Code, and Custom Javascript):
+ONLY "Ask James — AI Mentor" loads the bot, with the canonical README snippet
+(including `theme: 'light'`). Project Flip's three fields are empty, as are
+those of every other course. If a course ever gains a copy of the loader,
+it must be the canonical snippet from README ("GHL embed — THE live
+snippet"); re-run this check whenever a course is added or duplicated.
 
 **3. Paste the canonical snippet into each NEW course** embedding the bot
 (per-course, one copy each), and the mount div into each lesson (Description
