@@ -7,12 +7,20 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { AppConfig } from '../config.js';
 import { runAgent, type SeedToolCall } from '../agent/agent.js';
-import { isCalculatorKey } from '../agent/formSchema.js';
+import { CALCULATOR_FORMS, isCalculatorKey } from '../agent/formSchema.js';
 import {
   buildFormSubmission,
   describeSubmission,
   FormValidationError,
+  normalizePropertyName,
 } from '../agent/formSubmission.js';
+import {
+  archiveCalculation,
+  createCalculationLibrary,
+  getCalculation,
+  listCalculations,
+  renameCalculation,
+} from './calculations.js';
 import { getHistory, appendExchange } from './memory.js';
 import { logExchange } from './logging.js';
 import { OWNER_KEY_HEADER, OwnerKeyError, resolveOwnerKey } from './ownerKey.js';
@@ -725,6 +733,101 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
     }
   });
 
+  // --- /calculations (the calculation library) ------------------------------
+  //
+  // Same posture as /chats: gated by the preHandler, every handler resolves
+  // the owner through ownerOr400 and scopes its WHERE to it, and an entry
+  // belonging to someone else answers 404, never 403. Entries are CREATED only
+  // by /chat (a successful calculator run); members list, open, rename and
+  // delete them here.
+
+  app.get<{ Querystring: { q?: string } }>('/calculations', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    try {
+      return await listCalculations(getSupabase(), ownerKey, { query: request.query?.q });
+    } catch (err) {
+      request.log.error({ err }, 'calculation list failed');
+      reply.code(503);
+      return { error: 'Your calculation library is unavailable right now.' };
+    }
+  });
+
+  app.get<{ Params: { id: string } }>('/calculations/:id', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    if (!isChatId(request.params.id)) {
+      reply.code(404);
+      return { error: 'Calculation not found.' };
+    }
+    try {
+      const row = await getCalculation(getSupabase(), ownerKey, request.params.id);
+      if (!row) {
+        reply.code(404);
+        return { error: 'Calculation not found.' };
+      }
+      // The calculator's form travels with the entry so "Run again" renders
+      // the same derived form a fresh request would, pre-filled from `inputs`.
+      const form = isCalculatorKey(row.calculator) ? CALCULATOR_FORMS[row.calculator] : undefined;
+      return { ...row, ...(form ? { form } : {}) };
+    } catch (err) {
+      request.log.error({ err }, 'calculation read failed');
+      reply.code(503);
+      return { error: 'Could not open that calculation right now.' };
+    }
+  });
+
+  app.patch<{ Params: { id: string }; Body: { property_name?: unknown } }>(
+    '/calculations/:id',
+    async (request, reply) => {
+      const ownerKey = ownerOr400(request, reply);
+      if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+      const propertyName = normalizePropertyName(request.body?.property_name);
+      if (!propertyName) {
+        reply.code(400);
+        return { error: 'property_name is required' };
+      }
+      if (!isChatId(request.params.id)) {
+        reply.code(404);
+        return { error: 'Calculation not found.' };
+      }
+      try {
+        const row = await renameCalculation(getSupabase(), ownerKey, request.params.id, propertyName);
+        if (!row) {
+          reply.code(404);
+          return { error: 'Calculation not found.' };
+        }
+        return row;
+      } catch (err) {
+        request.log.error({ err }, 'calculation rename failed');
+        reply.code(503);
+        return { error: 'Could not rename that calculation right now.' };
+      }
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>('/calculations/:id', async (request, reply) => {
+    const ownerKey = ownerOr400(request, reply);
+    if (!ownerKey) return { error: `${OWNER_KEY_HEADER} header is required` };
+    if (!isChatId(request.params.id)) {
+      reply.code(404);
+      return { error: 'Calculation not found.' };
+    }
+    try {
+      const archived = await archiveCalculation(getSupabase(), ownerKey, request.params.id);
+      if (!archived) {
+        reply.code(404);
+        return { error: 'Calculation not found.' };
+      }
+      reply.code(204);
+      return null;
+    } catch (err) {
+      request.log.error({ err }, 'calculation delete failed');
+      reply.code(503);
+      return { error: 'Could not delete that calculation right now.' };
+    }
+  });
+
   app.post<{ Body: ChatBody }>('/chat', async (request, reply) => {
     const { message, session_id, member_email, form_submission } = request.body ?? {};
 
@@ -850,6 +953,12 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
           stateStore: getSessionStateStore(),
           logger: request.log,
         },
+        // Filed under the resolved owner — the same identity /calculations
+        // lists by. No owner (uncredentialed dev) means no library: an entry
+        // nobody can list would be a write with no reader.
+        ...(ownerKey
+          ? { library: createCalculationLibrary(sb, ownerKey, session_id, request.log) }
+          : {}),
       });
     } catch (err) {
       // request.log is silenced under NODE_ENV=test, which made live-test 502s
@@ -931,6 +1040,12 @@ export function buildApp(config: AppConfig, deps: AppDeps = {}): FastifyInstance
       // Form submissions have no typed message, so the widget echoes this —
       // the same line stored in memory, so a later /history replay matches.
       ...(form_submission ? { user_message: userMessage } : {}),
+      // The library receipt: what was filed this turn, so the widget can show
+      // "Saved to Calculations" from fact rather than from the model's prose,
+      // and refresh the library list. `library_unsaved` counts runs that
+      // completed but could not be filed — shown as a quiet notice.
+      ...(result.savedCalculations.length ? { saved_calculations: result.savedCalculations } : {}),
+      ...(result.unsavedCalculations ? { library_unsaved: result.unsavedCalculations } : {}),
     };
   });
 

@@ -239,6 +239,7 @@ describe('6.2 the form fires every time, not usually', () => {
       'run a flip',
     );
     expect(result.renderForm!.required.map((f) => f.name)).toEqual([
+      'property_name',
       'purchase_price',
       'rehab_budget',
       'after_repair_value',
@@ -278,6 +279,7 @@ describe('6.3 a full typed deal still calculates, with no form in the way', () =
             id: 'c1',
             name: 'flip_calculator',
             args: {
+              property_name: 'Test property',
               purchase_price: 350000,
               rehab_budget: 75000,
               after_repair_value: 600000,
@@ -437,6 +439,7 @@ describe('6.5 /chat returns render_form deterministically', () => {
         form_submission: {
           calculator: 'flip',
           values: {
+            property_name: 'Test property',
             purchase_price: '350000',
             rehab_budget: '75000',
             after_repair_value: '600000',

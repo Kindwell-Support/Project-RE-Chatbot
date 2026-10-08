@@ -23,6 +23,7 @@ import {
 } from '../features/comps/tools.js';
 import { normalizeAddress } from '../features/comps/normalize.js';
 import { applyFormArvPrefill } from '../features/comps/formPrefill.js';
+import type { CalculationLibrary, SavedCalculation } from '../server/calculations.js';
 
 const MAX_TOOL_ROUNDS = 6;
 
@@ -133,6 +134,10 @@ export interface AgentResult {
    * 'model' is the residual tool-call path for cases the rules don't cover.
    */
   formTrigger?: 'router' | 'model';
+  /** Calculations filed in the member's library this turn, in run order. */
+  savedCalculations: SavedCalculation[];
+  /** How many calculator runs this turn could NOT be saved (library down). */
+  unsavedCalculations: number;
 }
 
 export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string };
@@ -158,6 +163,11 @@ export interface RunAgentOptions {
    * set_manual_arv registers whenever comps context exists at all.
    */
   comps?: CompsToolContext;
+  /**
+   * Where successful calculator runs are filed. Absent (tests, or a request
+   * with no resolvable owner) means nothing is saved and nothing else changes.
+   */
+  library?: CalculationLibrary;
 }
 
 export async function runAgent(
@@ -200,6 +210,9 @@ export async function runAgent(
     formRequest,
     comps,
     userMessage,
+    library: options.library,
+    savedCalculations: [],
+    unsavedCalculations: 0,
   };
 
   // Form submission: run the calculator first, then let the model narrate it.
@@ -342,6 +355,8 @@ export async function runAgent(
     ...(formRequest.form
       ? { renderForm: formRequest.form, formTrigger: formTrigger ?? 'model' }
       : {}),
+    savedCalculations: ctx.savedCalculations,
+    unsavedCalculations: ctx.unsavedCalculations,
   });
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
@@ -404,6 +419,9 @@ interface ToolContext {
   comps?: CompsToolContext;
   /** The current member message — the ARV pre-fill's address-mismatch guard reads it. */
   userMessage: string;
+  library?: CalculationLibrary;
+  savedCalculations: SavedCalculation[];
+  unsavedCalculations: number;
   /** Set when a calculator ran on a pre-filled/bound ARV this turn; finish() enforces the echo. */
   lastArvPrefill?: {
     arv: number;
@@ -581,6 +599,25 @@ async function applyArvPrefill(
   };
 }
 
+/**
+ * File a successful calculator run in the member's library. Runs AFTER the
+ * runner returned, so only a calculation the member actually received is
+ * saved — a refused ARV, a missing input, or a thrown runner never reaches
+ * here. `inputs` are the arguments the calculator ran on (pre-fill applied),
+ * which is exactly what a "run again" form needs.
+ */
+async function saveToLibrary(
+  ctx: ToolContext,
+  calculator: CalculatorKey,
+  inputs: Record<string, unknown>,
+  result: Record<string, unknown>,
+): Promise<void> {
+  if (!ctx.library) return;
+  const saved = await ctx.library.save({ calculator, inputs, result });
+  if (saved) ctx.savedCalculations.push(saved);
+  else ctx.unsavedCalculations += 1;
+}
+
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
@@ -591,16 +628,21 @@ async function executeTool(
       const prefilled = await applyArvPrefill(args, ctx);
       if ('error' in prefilled) return prefilled;
       const result = runFlipTool(prefilled.args);
+      await saveToLibrary(ctx, 'flip', prefilled.args, result);
       return prefilled.prefill ? { ...result, arv_prefill: prefilled.prefill } : result;
     }
     case 'brrrr_calculator': {
       const prefilled = await applyArvPrefill(args, ctx);
       if ('error' in prefilled) return prefilled;
       const result = runBrrrrTool(prefilled.args);
+      await saveToLibrary(ctx, 'brrrr', prefilled.args, result);
       return prefilled.prefill ? { ...result, arv_prefill: prefilled.prefill } : result;
     }
-    case 'land_purchase_calculator':
-      return runLandTool(args);
+    case 'land_purchase_calculator': {
+      const result = runLandTool(args);
+      await saveToLibrary(ctx, 'land_purchase', args, result);
+      return result;
+    }
     case 'run_comps': {
       if (!ctx.comps) return { error: 'Comps are not configured on this deployment.' };
       return runCompsToolHandler(args, ctx.comps);

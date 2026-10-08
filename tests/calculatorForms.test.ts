@@ -126,6 +126,7 @@ describe('4.1 form fields derive from the calculator tool schemas', () => {
 
 describe('4.2 form submission and natural language produce the identical result', () => {
   const DEAL = {
+    property_name: 'Tacoma duplex',
     purchase_price: 350000,
     rehab_budget: 75000,
     after_repair_value: 600000,
@@ -139,6 +140,7 @@ describe('4.2 form submission and natural language produce the identical result'
     // Form path: strings out of DOM inputs, coerced by the submission builder,
     // then handed to THE SAME runner.
     const built = buildFormSubmission('flip', {
+      property_name: 'Tacoma duplex',
       purchase_price: '350000',
       rehab_budget: '75000',
       after_repair_value: '600000',
@@ -156,6 +158,7 @@ describe('4.2 form submission and natural language produce the identical result'
 
   it('accepts the formatting members actually type ($ and thousands separators)', () => {
     const built = buildFormSubmission('flip', {
+      property_name: '  Tacoma   duplex ',
       purchase_price: '$350,000',
       rehab_budget: ' 75,000 ',
       after_repair_value: '$600,000',
@@ -167,6 +170,7 @@ describe('4.2 form submission and natural language produce the identical result'
 
   it('an edited optional field changes the result the same way typing it does', () => {
     const built = buildFormSubmission('flip', {
+      property_name: 'Tacoma duplex',
       purchase_price: '350000',
       rehab_budget: '75000',
       after_repair_value: '600000',
@@ -190,6 +194,7 @@ describe('4.3 a blank required field is rejected, not defaulted', () => {
   ])('rejects %s', (_label, overrides) => {
     expect(() =>
       buildFormSubmission('flip', {
+        property_name: 'Test property',
         purchase_price: '350000',
         rehab_budget: '75000',
         holding_months: '4',
@@ -200,7 +205,7 @@ describe('4.3 a blank required field is rejected, not defaulted', () => {
 
   it('names the missing field in plain language', () => {
     try {
-      buildFormSubmission('flip', { purchase_price: '350000' });
+      buildFormSubmission('flip', { property_name: 'Test property', purchase_price: '350000' });
       expect.unreachable('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(FormValidationError);
@@ -212,9 +217,28 @@ describe('4.3 a blank required field is rejected, not defaulted', () => {
     }
   });
 
+  it('a missing property name is named in plain language too', () => {
+    try {
+      buildFormSubmission('flip', {
+        property_name: '   ',
+        purchase_price: '350000',
+        rehab_budget: '75000',
+        after_repair_value: '600000',
+        holding_months: '4',
+      });
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(FormValidationError);
+      const e = err as FormValidationError;
+      expect(e.message).toContain('Property name');
+      expect(e.fields.length).toBe(1);
+    }
+  });
+
   it('rejects non-numeric text rather than coercing it to 0', () => {
     expect(() =>
       buildFormSubmission('flip', {
+        property_name: 'Test property',
         purchase_price: 'three hundred fifty thousand',
         rehab_budget: '75000',
         after_repair_value: '600000',
@@ -226,6 +250,7 @@ describe('4.3 a blank required field is rejected, not defaulted', () => {
   it('rejects an out-of-enum choice', () => {
     expect(() =>
       buildFormSubmission('brrrr', {
+        property_name: 'Test property',
         purchase_price: '350000',
         rehab_budget: '75000',
         after_repair_value: '600000',
@@ -237,6 +262,7 @@ describe('4.3 a blank required field is rejected, not defaulted', () => {
 
   it('0 is a real value, not a blank', () => {
     const built = buildFormSubmission('flip', {
+      property_name: 'Test property',
       purchase_price: '350000',
       rehab_budget: '0',
       after_repair_value: '600000',
@@ -253,6 +279,7 @@ describe('4.3 a blank required field is rejected, not defaulted', () => {
 describe('4.4 optional fields left alone use — and disclose — the defaults', () => {
   it('omits untouched optionals so defaults_applied reports them', () => {
     const built = buildFormSubmission('flip', {
+      property_name: 'Test property',
       purchase_price: '350000',
       rehab_budget: '75000',
       after_repair_value: '600000',
@@ -273,6 +300,7 @@ describe('4.4 optional fields left alone use — and disclose — the defaults',
 
   it('an explicitly supplied optional drops out of defaults_applied', () => {
     const built = buildFormSubmission('flip', {
+      property_name: 'Test property',
       purchase_price: '350000',
       rehab_budget: '75000',
       after_repair_value: '600000',
@@ -330,12 +358,18 @@ describe('4.5 intent routes to a form only when the numbers are absent', () => {
     );
     const form = result.renderForm!;
     expect(form.required.map((f) => f.name)).toEqual([
+      'property_name',
       'purchase_price',
       'rehab_budget',
       'after_repair_value',
       'holding_months',
     ]);
-    expect(form.required[0]).toMatchObject({ label: 'Purchase price', unit: 'usd', type: 'number' });
+    expect(form.required[0]).toMatchObject({
+      label: 'Property name',
+      type: 'text',
+      description: 'Saved to your calculation library under this name',
+    });
+    expect(form.required[1]).toMatchObject({ label: 'Purchase price', unit: 'usd', type: 'number' });
     expect(form.optional.find((f) => f.name === 'interest_rate')!.default).toBe(0.12);
   });
 
@@ -362,6 +396,7 @@ describe('4.5 intent routes to a form only when the numbers are absent', () => {
               id: 'c1',
               name: 'flip_calculator',
               args: {
+                property_name: 'Tacoma duplex',
                 purchase_price: 350000,
                 rehab_budget: 75000,
                 after_repair_value: 600000,
@@ -412,6 +447,7 @@ describe('4.6 /chat handles form submissions on the shared path', () => {
         form_submission: {
           calculator: 'flip',
           values: {
+            property_name: 'Tacoma duplex',
             purchase_price: '350000',
             rehab_budget: '75000',
             after_repair_value: '600000',
@@ -434,6 +470,7 @@ describe('4.6 /chat handles form submissions on the shared path', () => {
     const memory = supabase.inserts.find((i) => i.table === 'chat_messages');
     expect(memory, 'form submission was not remembered').toBeDefined();
     expect(body.user_message).toContain('Fix & Flip');
+    expect(body.user_message).toContain('for Tacoma duplex');
     expect(body.user_message).toContain('$350,000');
 
     await flushDetached();
@@ -452,7 +489,12 @@ describe('4.6 /chat handles form submissions on the shared path', () => {
         session_id: 's-bad',
         form_submission: {
           calculator: 'flip',
-          values: { purchase_price: '350000', rehab_budget: '75000', holding_months: '4' },
+          values: {
+            property_name: 'Test property',
+            purchase_price: '350000',
+            rehab_budget: '75000',
+            holding_months: '4',
+          },
         },
       },
     });

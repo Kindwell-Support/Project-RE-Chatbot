@@ -676,8 +676,10 @@ describe('fresh gate pass — lands on a new chat', () => {
     // Guards the brief's "do not fork a second implementation". Both callers
     // must route through startNewChat, which routes through startPlaceholder.
     const callers = WIDGET_SRC.match(/startNewChat\(/g) ?? [];
-    // one definition + two call sites
-    expect(callers.length, 'startNewChat gained or lost a caller').toBe(3);
+    // one definition + three call sites: the + New chat button, the gate,
+    // and the library's "Run again" (which opens its pre-filled form in a
+    // fresh chat — through the same path, not a second implementation).
+    expect(callers.length, 'startNewChat gained or lost a caller').toBe(4);
     expect(WIDGET_SRC).toMatch(/function startNewChat\(origin\) \{\s*\n\s*startPlaceholder\(\);/);
     expect(WIDGET_SRC, 'the gate path does not go through startNewChat').toContain("startNewChat('gate')");
   });

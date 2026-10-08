@@ -203,3 +203,35 @@ describe('BUG-046 — the block beats the hostile container', () => {
     expect(getComputedStyle(bare).fontSize, 'the fixture is not hostile').toBe('32px');
   });
 });
+
+describe('BUG-046 — text buttons defend their padding', () => {
+  // Observed live: the portal's button reset zeroed the rail's "Try again"
+  // padding, so its label ran edge to edge inside the pill. Every text button
+  // with a visible edge must pin its padding at (0,2,0) with !important, the
+  // same tier as the font layer — a (0,1,0) rule loses to the host's (0,1,1).
+  const PADDED = [
+    '.jb-btn',
+    '.jb-calc-cancel',
+    '.jb-retry',
+    '.jb-side-retry',
+    '.jb-gate-btn',
+    '.jb-gate-retry',
+    '.jb-new',
+    '.jb-chat-open',
+    '.jb-side-toggle',
+    '.jb-adv-toggle',
+  ];
+  // A rule may continue across JS string literals ('...;',\n    '...;}'),
+  // so the body may cross a `',\s*'` join but never a closing brace.
+  const declaredPadding = (sel: string): string | null => {
+    const re = new RegExp(
+      "'\\.jb-root " + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+        "\\{(?:[^'}]|',\\s*')*?padding:([^;']+) !important",
+    );
+    return WIDGET_SRC.match(re)?.[1] ?? null;
+  };
+
+  it.each(PADDED)('%s pins its padding against the host reset', (sel) => {
+    expect(declaredPadding(sel), `${sel} has no (0,2,0) !important padding`).not.toBeNull();
+  });
+});

@@ -6,6 +6,7 @@
 import { calculateFlip, FLIP_DEFAULTS, type FlipInputs } from '../calculators/flip.js';
 import { calculateBrrrr, BRRRR_DEFAULTS, type BrrrrInputs } from '../calculators/brrrr.js';
 import { calculateLand, LAND_DEFAULTS, type LandInputs } from '../calculators/land.js';
+import { normalizePropertyName } from './formSubmission.js';
 
 const ESTIMATE_NOTE =
   'All figures are estimates for education only, based on the inputs and defaults shown — not financial advice. Verify ARV, rehab, rents, and financing independently before acting.';
@@ -64,6 +65,22 @@ function assertRequired(
   if (missing.length > 0) throw new MissingRequiredInputError(calculator, missing);
 }
 
+/**
+ * The property name is required like the numeric inputs, and fails the same
+ * way: a blank name would file the result in the library under nothing, so
+ * the model is told to ask rather than guess. Returns the args WITHOUT the
+ * name — the pure calculators take numbers only — plus the cleaned name.
+ */
+function takePropertyName(
+  calculator: string,
+  args: Record<string, unknown>,
+): { propertyName: string; numeric: Record<string, unknown> } {
+  const { property_name: raw, ...numeric } = args;
+  const propertyName = normalizePropertyName(raw);
+  if (!propertyName) throw new MissingRequiredInputError(calculator, ['property_name']);
+  return { propertyName, numeric };
+}
+
 export const REQUIRED_INPUTS = {
   flip: ['purchase_price', 'rehab_budget', 'after_repair_value', 'holding_months'],
   brrrr: ['purchase_price', 'rehab_budget', 'after_repair_value', 'monthly_rent'],
@@ -76,11 +93,12 @@ export const REQUIRED_INPUTS = {
 } as const;
 
 export function runFlipTool(rawArgs: Record<string, unknown>) {
-  const args = stripUndefined(rawArgs);
+  const { propertyName, numeric: args } = takePropertyName('flip_calculator', stripUndefined(rawArgs));
   assertRequired('flip_calculator', args, REQUIRED_INPUTS.flip);
   const outputs = calculateFlip(args as unknown as FlipInputs);
   return {
     calculator: 'flip',
+    property_name: propertyName,
     inputs_used: { ...FLIP_DEFAULTS, ...args },
     defaults_applied: defaultsApplied(FLIP_DEFAULTS, args),
     outputs,
@@ -89,11 +107,12 @@ export function runFlipTool(rawArgs: Record<string, unknown>) {
 }
 
 export function runBrrrrTool(rawArgs: Record<string, unknown>) {
-  const args = stripUndefined(rawArgs);
+  const { propertyName, numeric: args } = takePropertyName('brrrr_calculator', stripUndefined(rawArgs));
   assertRequired('brrrr_calculator', args, REQUIRED_INPUTS.brrrr);
   const { projection, ...outputs } = calculateBrrrr(args as unknown as BrrrrInputs);
   return {
     calculator: 'brrrr',
+    property_name: propertyName,
     inputs_used: { ...BRRRR_DEFAULTS, ...args },
     defaults_applied: defaultsApplied(BRRRR_DEFAULTS, args),
     outputs,
@@ -103,11 +122,15 @@ export function runBrrrrTool(rawArgs: Record<string, unknown>) {
 }
 
 export function runLandTool(rawArgs: Record<string, unknown>) {
-  const args = stripUndefined(rawArgs);
+  const { propertyName, numeric: args } = takePropertyName(
+    'land_purchase_calculator',
+    stripUndefined(rawArgs),
+  );
   assertRequired('land_purchase_calculator', args, REQUIRED_INPUTS.land_purchase);
   const { intermediates, ...outputs } = calculateLand(args as unknown as LandInputs);
   return {
     calculator: 'land_purchase',
+    property_name: propertyName,
     inputs_used: { ...LAND_DEFAULTS, ...args },
     defaults_applied: defaultsApplied(LAND_DEFAULTS, args),
     computed_formula_cells: intermediates,

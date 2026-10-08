@@ -101,6 +101,7 @@ async function openFormWithHeldRequest(options: { reducedMotion?: boolean } = {}
   await tick();
 
   // A complete, valid deal so local validation never short-circuits the submit.
+  fill('property_name', 'Tacoma duplex');
   fill('purchase_price', '350000');
   fill('rehab_budget', '75000');
   fill('after_repair_value', '600000');
@@ -150,7 +151,7 @@ function errorText(): string {
 }
 
 const ANSWER = {
-  body: { output: 'Net profit is about $101,916.', user_message: 'Run the Fix & Flip calculator.' },
+  body: { output: 'Net profit is about $101,916.', user_message: 'Run the Fix & Flip calculator for Tacoma duplex.' },
 };
 
 beforeEach(() => {

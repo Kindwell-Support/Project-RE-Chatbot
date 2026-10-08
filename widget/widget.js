@@ -618,6 +618,92 @@
        Derived from the same class as the drawer, so they cannot desync. */
     '.jb-root.jb-drawer-open .jb-list{overflow:hidden;}',
 
+    /* --- Calculation library ------------------------------------------------
+       A view over the main pane: the conversation and composer step aside
+       while it is open, and come back untouched when it closes. Laid out on
+       the same centred measure as the conversation, so switching between the
+       two never shifts the reading column. */
+    '.jb-lib[hidden]{display:none;}',
+    '.jb-lib{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:calc(var(--jb-font-base) * 1.5) calc(var(--jb-font-base) * 1) calc(var(--jb-font-base) * 2);}',
+    '.jb-root.jb-lib-open .jb-list,.jb-root.jb-lib-open .jb-form{display:none;}',
+    '.jb-lib-inner{width:100%;max-width:var(--jb-measure);margin:0 auto;}',
+    '.jb-nav-lib[aria-pressed="true"]{background:var(--jb-active);}',
+    /* With the library open no chat is "where you are", so the rail stops
+       claiming one is. */
+    '.jb-root.jb-lib-open .jb-chat-active{background:transparent;}',
+    '.jb-root.jb-lib-open .jb-chat-active:hover{background:var(--jb-hover);}',
+    '.jb-root.jb-lib-open .jb-chat-active .jb-chat-open{font-weight:400;}',
+    '.jb-lib-h,.jb-lib-title{margin:0 0 calc(var(--jb-font-base) * 0.2222);font-size:var(--jb-font-xl);font-weight:600;line-height:var(--jb-line-tight);letter-spacing:-0.01em;color:var(--jb-text-primary);overflow-wrap:anywhere;}',
+    '.jb-lib-sub{margin:0 0 calc(var(--jb-font-base) * 1);font-size:var(--jb-font-sm);color:var(--jb-text-secondary);}',
+    '.jb-lib-search{width:100%;padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1);border-radius:999px;border:1px solid var(--jb-border-strong);',
+    'background:var(--jb-bg-base);color:var(--jb-text-primary);font-size:var(--jb-font-control);font-family:inherit;outline:none;',
+    'transition:border-color 160ms var(--jb-ease),box-shadow 160ms var(--jb-ease);}',
+    '.jb-lib-search::placeholder{color:var(--jb-text-tertiary);opacity:1;}',
+    '.jb-lib-search:focus{border-color:var(--jb-focus);box-shadow:0 0 0 1px var(--jb-focus);}',
+    '.jb-lib-results{display:flex;flex-direction:column;margin-top:calc(var(--jb-font-base) * 0.8889);}',
+    '.jb-lib-row{display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.8889);width:100%;min-height:44px;text-align:left;cursor:pointer;',
+    'padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.7778);border:none;border-radius:calc(var(--jb-font-base) * 0.6667);',
+    'background:transparent;color:var(--jb-text-primary);font:inherit;transition:background 120ms var(--jb-ease);}',
+    /* Dividers are inset hairlines, not row borders: a border on a rounded
+       row curves at the corners, and the hover fill must be able to swallow
+       the lines above and below it. */
+    '.jb-lib-row{position:relative;}',
+    '.jb-lib-row + .jb-lib-row::before{content:"";position:absolute;top:0;left:calc(var(--jb-font-base) * 0.7778);right:calc(var(--jb-font-base) * 0.7778);height:1px;background:var(--jb-border-subtle);pointer-events:none;}',
+    '.jb-lib-row:hover{background:var(--jb-hover);}',
+    '.jb-lib-row:hover::before,.jb-lib-row:hover + .jb-lib-row::before{opacity:0;}',
+    '.jb-lib-row:focus-visible{outline:2px solid var(--jb-focus);outline-offset:-2px;}',
+    '.jb-lib-row-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto;}',
+    '.jb-lib-name{font-size:var(--jb-font-md);font-weight:500;line-height:var(--jb-line-tight);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.jb-lib-meta{font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);line-height:var(--jb-line-tight);}',
+    '.jb-lib-fig{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:0 0 auto;text-align:right;}',
+    '.jb-lib-fig-label{font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);line-height:var(--jb-line-tight);}',
+    '.jb-lib-fig-value{font-size:var(--jb-font-sm);font-weight:600;font-variant-numeric:tabular-nums;line-height:var(--jb-line-tight);}',
+    '.jb-lib-empty{padding:calc(var(--jb-font-base) * 1.3333) calc(var(--jb-font-base) * 0.7778);font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);}',
+    '.jb-lib-skel{padding:calc(var(--jb-font-base) * 0.9444) calc(var(--jb-font-base) * 0.7778);}',
+    '.jb-lib-skel .jb-skel{height:calc(var(--jb-font-base) * 0.6667);}',
+    /* Detail view */
+    '.jb-lib-back{display:inline-flex;align-items:center;gap:calc(var(--jb-font-base) * 0.3333);min-height:44px;margin:0 0 calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * -0.5);',
+    'padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.4444);',
+    'border:none;border-radius:999px;background:transparent;color:var(--jb-text-secondary);font:inherit;font-size:var(--jb-font-sm);cursor:pointer;transition:background 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
+    '.jb-lib-back:hover{background:var(--jb-hover);color:var(--jb-text-primary);}',
+    '.jb-lib-back:focus-visible{outline:2px solid var(--jb-focus);outline-offset:1px;}',
+    '.jb-lib-back .jb-ico{width:calc(var(--jb-font-base) * 1);height:calc(var(--jb-font-base) * 1);}',
+    '.jb-lib-head .jb-lib-sub{margin-bottom:calc(var(--jb-font-base) * 0.8889);}',
+    '.jb-lib-rename{margin-bottom:calc(var(--jb-font-base) * 0.2222);font-size:var(--jb-font-lg);font-weight:600;}',
+    '.jb-lib-actions{display:flex;flex-wrap:wrap;align-items:center;gap:calc(var(--jb-font-base) * 0.5);}',
+    '.jb-lib-icon{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex:0 0 auto;border-radius:50%;',
+    'border:1px solid var(--jb-border-strong);background:transparent;color:var(--jb-text-secondary);cursor:pointer;transition:background 120ms var(--jb-ease),color 120ms var(--jb-ease);}',
+    '.jb-lib-icon:hover{background:var(--jb-hover);color:var(--jb-text-primary);}',
+    '.jb-lib-icon:focus-visible{outline:2px solid var(--jb-focus);outline-offset:2px;}',
+    '.jb-lib-icon .jb-ico{width:calc(var(--jb-font-base) * 1);height:calc(var(--jb-font-base) * 1);}',
+    '.jb-lib-confirm{width:auto;flex:1 1 100%;padding-left:0;}',
+    '.jb-lib-section{margin-top:calc(var(--jb-font-base) * 1.7778);}',
+    '.jb-lib-section-h{margin:0 0 calc(var(--jb-font-base) * 0.3333);font-size:var(--jb-font-md);font-weight:600;color:var(--jb-text-primary);}',
+    '.jb-kv{display:flex;align-items:baseline;justify-content:space-between;gap:calc(var(--jb-font-base) * 1);padding:calc(var(--jb-font-base) * 0.5) 0;box-shadow:0 1px 0 var(--jb-border-subtle);font-size:var(--jb-font-sm);}',
+    '.jb-kv-k{color:var(--jb-text-secondary);}',
+    '.jb-kv-v{color:var(--jb-text-primary);font-weight:500;font-variant-numeric:tabular-nums;text-align:right;}',
+    '.jb-kv-strong .jb-kv-k{color:var(--jb-text-primary);font-weight:500;}',
+    '.jb-kv-strong .jb-kv-v{font-size:var(--jb-font-lg);font-weight:650;letter-spacing:-0.01em;}',
+    '.jb-tag{display:inline-block;margin-left:calc(var(--jb-font-base) * 0.4444);padding:0 calc(var(--jb-font-base) * 0.4444);border-radius:999px;',
+    'box-shadow:inset 0 0 0 1px var(--jb-border);font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);line-height:1.6;vertical-align:1px;}',
+    '.jb-proj-wrap{overflow-x:auto;}',
+    '.jb-proj{width:100%;border-collapse:collapse;font-size:var(--jb-font-sm);font-variant-numeric:tabular-nums;}',
+    '.jb-proj th{text-align:right;font-weight:500;color:var(--jb-text-secondary);padding:calc(var(--jb-font-base) * 0.4444) 0 calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.8889);box-shadow:0 1px 0 var(--jb-border);white-space:nowrap;}',
+    '.jb-proj td{text-align:right;padding:calc(var(--jb-font-base) * 0.4444) 0 calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.8889);box-shadow:0 1px 0 var(--jb-border-subtle);white-space:nowrap;}',
+    '.jb-proj th:first-child,.jb-proj td:first-child{text-align:left;padding-left:0;}',
+    '.jb-lib-note{margin:calc(var(--jb-font-base) * 1.3333) 0 0;font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-text-tertiary);}',
+    /* The receipt under a calculator reply. */
+    '.jb-saved{display:flex;flex-wrap:wrap;align-items:center;gap:calc(var(--jb-font-base) * 0.3333);margin-top:calc(var(--jb-font-base) * 0.7778);font-size:var(--jb-font-sm);line-height:var(--jb-line-tight);color:var(--jb-text-secondary);}',
+    '.jb-saved .jb-ico{width:calc(var(--jb-font-base) * 0.8889);height:calc(var(--jb-font-base) * 0.8889);}',
+    '.jb-saved-open{min-height:32px;padding:calc(var(--jb-font-base) * 0.2222) calc(var(--jb-font-base) * 0.5);border:none;border-radius:999px;background:transparent;cursor:pointer;',
+    'color:var(--jb-text-primary);font:inherit;font-weight:500;text-decoration:underline;text-decoration-color:var(--jb-border-strong);text-underline-offset:3px;}',
+    '.jb-saved-open:hover{background:var(--jb-hover);text-decoration-color:currentColor;}',
+    '.jb-saved-open:focus-visible{outline:2px solid var(--jb-focus);outline-offset:1px;}',
+    '.jb-saved-warn{color:var(--jb-danger);}',
+    '.jb-root.jb-w-narrow .jb-lib{padding:calc(var(--jb-font-base) * 1) calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 1.5);}',
+    '.jb-root.jb-w-tight .jb-lib-fig-label{display:none;}',
+    '.jb-root.jb-gated .jb-nav-lib{display:none;}',
+
     /* --- BUG-046: THE FORM-CONTROL DEFENSIVE LAYER ------------------------
        The gate's email input and the composer BOTH already set
        font-size:16px, and both still rendered at roughly double size in the
@@ -673,6 +759,27 @@
     'line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-gate-btn{padding:var(--jb-ctl-pad-y) var(--jb-ctl-pad-x) !important;}',
     '.jb-root .jb-gate-retry{padding:calc(var(--jb-ctl-pad-y) * 0.545) calc(var(--jb-ctl-pad-x) * 0.722) !important;}',
+    /* PADDING on the remaining text buttons, same (0,2,0) !important tier.
+       Observed live: the portal's button reset zeroed the rail's "Try again"
+       padding, so the label ran edge to edge inside its pill. The square
+       buttons of the old look hid the loss; pill shapes make it plain. Every
+       button whose label sits inside a visible edge is pinned here. */
+    '.jb-root .jb-btn{padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1.2222) !important;}',
+    '.jb-root .jb-calc-cancel{padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1) !important;}',
+    '.jb-root .jb-retry{padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 1) !important;}',
+    '.jb-root .jb-side-retry{padding:calc(var(--jb-font-base) * 0.2778) calc(var(--jb-font-base) * 0.7778) !important;}',
+    '.jb-root .jb-side-toggle{padding:calc(var(--jb-font-base) * 0.3889) !important;}',
+    '.jb-root .jb-adv-toggle{padding:calc(var(--jb-font-base) * 0.2778) 0 !important;}',
+    /* The library's controls, same tier and same reason. */
+    '.jb-root .jb-lib-row{padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.7778) !important;text-align:left !important;}',
+    '.jb-root .jb-lib-back{padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.4444) !important;',
+    'font-size:var(--jb-font-sm) !important;}',
+    '.jb-root .jb-lib-icon{padding:0 !important;}',
+    '.jb-root .jb-saved-open{padding:calc(var(--jb-font-base) * 0.2222) calc(var(--jb-font-base) * 0.5) !important;',
+    'font-size:var(--jb-font-sm) !important;font-weight:500 !important;}',
+    '.jb-root .jb-lib-search{padding:calc(var(--jb-font-base) * 0.6111) calc(var(--jb-font-base) * 1) !important;',
+    'font-size:var(--jb-font-control) !important;text-align:left !important;}',
+    '.jb-root .jb-lib-rename{font-size:var(--jb-font-lg) !important;font-weight:600 !important;}',
     '.jb-root .jb-calc-cancel{font-size:var(--jb-font-sm) !important;line-height:var(--jb-line-tight) !important;}',
     '.jb-root .jb-adv-toggle{font-size:var(--jb-font-sm) !important;font-weight:600 !important;',
     'line-height:var(--jb-line-tight) !important;}',
@@ -1153,6 +1260,12 @@
     '<path d="M17.6 3.9a1.9 1.9 0 0 1 2.7 2.7L12.5 14.4 9 15l.6-3.5z"/>'
   );
   var ICON_RENAME = icon('<path d="M15.2 5.3a2 2 0 0 1 2.9 2.9L8.5 17.8 4.5 19l1.2-4z"/><path d="M13.5 7l3.5 3.5"/>');
+  var ICON_LIBRARY = icon(
+    '<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 7.5h7"/>' +
+    '<path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01M8.5 15h.01M12 15h.01M15.5 15h.01"/>'
+  );
+  var ICON_BACK = icon('<path d="M15 5l-7 7 7 7"/>');
+  var ICON_CHECK = icon('<path d="M5 12.5l4.5 4.5L19 7.5"/>');
   var ICON_DELETE = icon(
     '<path d="M4.5 7h15"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/>' +
     '<path d="M6.5 7l.8 11.1a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/>'
@@ -1233,6 +1346,11 @@
       var newChatBtn = el('button', 'jb-new', { type: 'button' });
       newChatBtn.innerHTML = ICON_NEW_CHAT + '<span>New chat</span>';
       sideTop.appendChild(newChatBtn);
+      // The calculation library's entry point — a peer of New chat, the way
+      // a library sits beside the chat list rather than inside it.
+      var libraryBtn = el('button', 'jb-new jb-nav-lib', { type: 'button', 'aria-pressed': 'false' });
+      libraryBtn.innerHTML = ICON_LIBRARY + '<span>Calculations</span>';
+      sideTop.appendChild(libraryBtn);
       var sideList = el('div', 'jb-side-list', { role: 'list' });
       side.appendChild(sideTop);
       side.appendChild(sideList);
@@ -1257,7 +1375,12 @@
       form.appendChild(input);
       form.appendChild(send);
 
+      // The library pane. Empty until opened — it is built on demand, so a
+      // member who never opens it carries no extra controls in the pane.
+      var libraryPane = el('section', 'jb-lib', { 'aria-label': 'Saved calculations', hidden: 'hidden' });
+
       main.appendChild(list);
+      main.appendChild(libraryPane);
       main.appendChild(form);
       var scrim = el('div', 'jb-scrim', { 'aria-hidden': 'true' });
       body.appendChild(side);
@@ -2207,6 +2330,10 @@
         }
         open.setAttribute('title', chatLabel(chat));
         open.addEventListener('click', function () {
+          // Picking a chat always lands on the conversation — including the
+          // chat that is already active, which is how the library view is
+          // left by clicking the chat you came from.
+          closeLibrary();
           if (chat.pending) return; // already here
           switchToChat(chat.id);
         });
@@ -2951,6 +3078,17 @@
             node.textContent = option;
             control.appendChild(node);
           });
+        } else if (field.type === 'text') {
+          // The property name: free text, and the key the result is filed
+          // under in the member's calculation library.
+          control = el('input', 'jb-control', {
+            id: id,
+            name: field.name,
+            type: 'text',
+            maxlength: '120',
+            autocomplete: 'off',
+            placeholder: 'e.g. 123 Main St or Tacoma duplex',
+          });
         } else {
           control = el('input', 'jb-control', {
             id: id,
@@ -2991,7 +3129,14 @@
         return wrap;
       }
 
-      function renderCalculatorForm(spec) {
+      /**
+       * opts.values — a saved calculation's inputs, for "Run again" from the
+       * library. They are written into the controls as ordinary typed values:
+       * required ones submit, and an optional one that equals its default is
+       * still omitted by collectValues, exactly as if the member had left it.
+       */
+      function renderCalculatorForm(spec, opts) {
+        opts = opts || {};
         var stick = nearBottom();
         var row = el('div', 'jb-row jb-bot');
         var card = el('div', 'jb-calc jb-glass', {
@@ -3003,7 +3148,9 @@
         var title = el('p', 'jb-calc-title');
         title.textContent = spec.title + ' calculator';
         var sub = el('p', 'jb-calc-sub');
-        sub.textContent = 'Fill in the required fields and hit Calculate.';
+        sub.textContent = opts.values
+          ? 'Change anything you like and hit Calculate. It saves as a new entry.'
+          : 'Fill in the required fields and hit Calculate.';
         card.appendChild(title);
         card.appendChild(sub);
 
@@ -3037,6 +3184,28 @@
           adv.appendChild(toggle);
           adv.appendChild(advBody);
           card.appendChild(adv);
+        }
+
+        if (opts.values) {
+          var changedOptional = false;
+          Array.prototype.forEach.call(card.querySelectorAll('.jb-control'), function (control) {
+            var name = control.getAttribute('name');
+            var saved = opts.values[name];
+            if (saved === undefined || saved === null) return;
+            control.value = String(saved);
+            var fallback = control.getAttribute('data-default');
+            if (fallback !== null && String(saved) !== fallback) changedOptional = true;
+          });
+          // A re-run whose saved deal moved an optional off its default opens
+          // the advanced section, so that change is visible, not hidden.
+          if (changedOptional && advBody) {
+            advBody.style.display = 'block';
+            var advToggle = card.querySelector('.jb-adv-toggle');
+            if (advToggle) {
+              advToggle.setAttribute('aria-expanded', 'true');
+              advToggle.textContent = 'Hide advanced options (' + optional.length + ')';
+            }
+          }
         }
 
         var actions = el('div', 'jb-calc-actions');
@@ -3243,9 +3412,10 @@
             }
             // The result card transitions in with the existing entry animation
             // and the lead-figure count-up, straight out of the skeleton.
-            addBubble(result.data.output || "I didn't catch that — try again.", 'bot', {
+            var answer = addBubble(result.data.output || "I didn't catch that — try again.", 'bot', {
               animate: true,
             });
+            showLibraryReceipt(answer.bubble, result.data);
             liveTurns.push({ role: 'assistant', content: String(result.data.output || '') });
             materialisePlaceholder();
             bumpActiveChat();
@@ -3258,6 +3428,554 @@
           .then(function () {
             endOp(op);
           });
+      }
+
+      // --- Calculation library ---------------------------------------------
+      // Every completed calculator run is filed server-side under the property
+      // name the member gave it. This is the read side: a list (searchable by
+      // property), a detail view of one entry, and the receipt under a reply.
+      // The library is a VIEW over the main pane — opening it does not touch
+      // the active chat, so closing it lands the member exactly where they were.
+
+      var libraryOpen = false;
+      var libraryView = 'list'; // 'list' | 'detail'
+      var calcs = [];
+      var calcsState = 'idle'; // idle | loading | ready | error — 'idle' = stale, refetch on open
+      var calcQuery = '';
+      var calcSearchTimer = null;
+      // Separate generations so a slow list fetch cannot paint over a detail
+      // view (or vice versa); closeLibrary invalidates both.
+      var listGen = 0;
+      var detailGen = 0;
+      var libResults = null;
+
+      var CALC_TITLES = { flip: 'Fix & Flip', brrrr: 'BRRRR', land_purchase: 'Land / New Construction' };
+
+      /** Output labels and formats, keyed by the calculators' own output names. */
+      var OUTPUT_META = {
+        total_direct_costs: ['Total direct costs', 'usd'],
+        total_selling_costs: ['Total selling costs', 'usd'],
+        est_net_profit: ['Estimated net profit', 'usd'],
+        down_payment: ['Down payment', 'usd'],
+        monthly_carrying_cost: ['Monthly carrying cost', 'usd'],
+        total_carrying_costs: ['Total carrying costs', 'usd'],
+        cash_out_of_pocket: ['Cash out of pocket', 'usd'],
+        cash_on_cash_return: ['Cash-on-cash return', 'pct'],
+        annualized_return: ['Annualized return', 'pct'],
+        cash_left_in_deal: ['Cash left in deal', 'usd'],
+        monthly_cash_flow: ['Monthly cash flow', 'usd'],
+        return_on_equity: ['Return on equity', 'pct'],
+        five_year_irr: ['5-year IRR', 'pct'],
+        equity_captured: ['Equity captured', 'usd'],
+        dscr_at_refinance: ['DSCR at refinance', 'ratio'],
+        max_allowable_offer: ['Max allowable offer', 'usd'],
+        target_land_contract: ['Target land contract', 'usd'],
+        land_acquisition_cost: ['Land acquisition cost', 'usd'],
+        total_construction_budget: ['Total construction budget', 'usd'],
+        total_project_costs: ['Total project costs', 'usd'],
+        construction_loan_amount: ['Construction loan amount', 'usd'],
+        total_cash_investment: ['Total cash investment', 'usd'],
+        net_profit: ['Net profit', 'usd'],
+        sales_proceeds: ['Sales proceeds', 'usd'],
+      };
+      /** The output each calculator leads with — mirrors the server's list headline. */
+      var HEADLINE_KEY = { flip: 'est_net_profit', brrrr: 'monthly_cash_flow', land_purchase: 'target_land_contract' };
+
+      var usdFormat =
+        typeof Intl !== 'undefined'
+          ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+          : null;
+
+      function formatAs(value, kind) {
+        if (value === 'n/a' || value === null || value === undefined) return 'n/a';
+        if (typeof value !== 'number' || !isFinite(value)) return String(value);
+        if (kind === 'usd') return usdFormat ? usdFormat.format(value) : '$' + Math.round(value);
+        if (kind === 'pct' || kind === 'decimal') return (value * 100).toFixed(1).replace(/\.0$/, '') + '%';
+        if (kind === 'ratio') return value.toFixed(2);
+        if (kind === 'months') return value + (value === 1 ? ' month' : ' months');
+        if (kind === 'sf') return value.toLocaleString('en-US') + ' sq ft';
+        return value.toLocaleString('en-US');
+      }
+
+      function outputMeta(key) {
+        if (OUTPUT_META[key]) return OUTPUT_META[key];
+        var label = key.replace(/_/g, ' ');
+        label = label.charAt(0).toUpperCase() + label.slice(1);
+        return [label, /return|irr|pct|rate/.test(key) ? 'pct' : /dscr/.test(key) ? 'ratio' : 'usd'];
+      }
+
+      function formatDateTime(iso) {
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        try {
+          return d.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          });
+        } catch (e) {
+          return d.toISOString().slice(0, 10);
+        }
+      }
+
+      function libraryInner() {
+        libraryPane.innerHTML = '';
+        var inner = el('div', 'jb-lib-inner');
+        libraryPane.appendChild(inner);
+        libraryPane.scrollTop = 0;
+        return inner;
+      }
+
+      function openLibrary() {
+        libraryOpen = true;
+        root.classList.add('jb-lib-open');
+        libraryPane.removeAttribute('hidden');
+        libraryBtn.setAttribute('aria-pressed', 'true');
+        drawerOpen = false;
+        applyDrawer();
+        renderLibraryList();
+        loadCalculations();
+      }
+
+      function closeLibrary() {
+        if (!libraryOpen) return;
+        libraryOpen = false;
+        listGen += 1;
+        detailGen += 1;
+        if (calcSearchTimer) {
+          clearTimeout(calcSearchTimer);
+          calcSearchTimer = null;
+        }
+        root.classList.remove('jb-lib-open');
+        libraryPane.setAttribute('hidden', 'hidden');
+        libraryPane.innerHTML = '';
+        libResults = null;
+        libraryBtn.setAttribute('aria-pressed', 'false');
+      }
+
+      function loadCalculations() {
+        var gen = ++listGen;
+        calcsState = 'loading';
+        renderLibraryResults();
+        var path = '/calculations' + (calcQuery ? '?q=' + encodeURIComponent(calcQuery) : '');
+        chatsApi(path, { method: 'GET' })
+          .then(function (rows) {
+            if (gen !== listGen) return;
+            calcs = Array.isArray(rows) ? rows : [];
+            calcsState = 'ready';
+            renderLibraryResults();
+          })
+          .catch(function () {
+            if (gen !== listGen) return;
+            calcsState = 'error';
+            renderLibraryResults();
+          });
+      }
+
+      /** The list view's frame. Built once per visit so typing in search keeps focus. */
+      function renderLibraryList() {
+        libraryView = 'list';
+        detailGen += 1;
+        var inner = libraryInner();
+        var heading = el('h2', 'jb-lib-h');
+        heading.textContent = 'Calculations';
+        var sub = el('p', 'jb-lib-sub');
+        sub.textContent = 'Every calculator result, saved under its property name.';
+        var search = el('input', 'jb-lib-search', {
+          type: 'search',
+          placeholder: 'Search by property',
+          'aria-label': 'Search saved calculations by property',
+          autocomplete: 'off',
+        });
+        search.value = calcQuery;
+        search.addEventListener('input', function () {
+          if (calcSearchTimer) clearTimeout(calcSearchTimer);
+          calcSearchTimer = setTimeout(function () {
+            calcSearchTimer = null;
+            var next = search.value.trim();
+            if (next === calcQuery) return;
+            calcQuery = next;
+            loadCalculations();
+          }, 250);
+        });
+        libResults = el('div', 'jb-lib-results', { role: 'list', 'aria-live': 'polite' });
+        inner.appendChild(heading);
+        inner.appendChild(sub);
+        inner.appendChild(search);
+        inner.appendChild(libResults);
+        renderLibraryResults();
+      }
+
+      function libraryRow(entry) {
+        var row = el('button', 'jb-lib-row', { type: 'button', role: 'listitem' });
+        var rowMain = el('span', 'jb-lib-row-main');
+        var name = el('span', 'jb-lib-name');
+        name.textContent = entry.property_name;
+        var meta = el('span', 'jb-lib-meta');
+        var when = relativeTime(entry.created_at);
+        meta.textContent = (CALC_TITLES[entry.calculator] || entry.calculator) + (when ? ' · ' + when : '');
+        rowMain.appendChild(name);
+        rowMain.appendChild(meta);
+        row.appendChild(rowMain);
+        if (entry.headline) {
+          var fig = el('span', 'jb-lib-fig');
+          var figLabel = el('span', 'jb-lib-fig-label');
+          figLabel.textContent = entry.headline.label;
+          var figValue = el('span', 'jb-lib-fig-value');
+          figValue.textContent = formatAs(entry.headline.value, entry.headline.unit);
+          fig.appendChild(figLabel);
+          fig.appendChild(figValue);
+          row.appendChild(fig);
+        }
+        row.addEventListener('click', function () {
+          openCalculation(entry.id);
+        });
+        return row;
+      }
+
+      function renderLibraryResults() {
+        if (!libResults || libraryView !== 'list') return;
+        libResults.innerHTML = '';
+        libResults.setAttribute('aria-busy', calcsState === 'loading' ? 'true' : 'false');
+        if (calcsState === 'loading' || calcsState === 'idle') {
+          ['a', 'b', 'c'].forEach(function (v) {
+            var sk = el('div', 'jb-lib-skel', { 'aria-hidden': 'true' });
+            sk.appendChild(el('span', 'jb-skel jb-skel-' + v));
+            libResults.appendChild(sk);
+          });
+          return;
+        }
+        if (calcsState === 'error') {
+          var box = el('div', 'jb-lib-empty', { role: 'status' });
+          box.appendChild(document.createTextNode("Couldn't load your calculations."));
+          var retry = el('button', 'jb-retry', { type: 'button' });
+          retry.textContent = 'Try again';
+          retry.addEventListener('click', loadCalculations);
+          box.appendChild(el('br'));
+          box.appendChild(retry);
+          libResults.appendChild(box);
+          return;
+        }
+        if (!calcs.length) {
+          var empty = el('div', 'jb-lib-empty');
+          empty.textContent = calcQuery
+            ? 'No calculations match "' + calcQuery + '".'
+            : 'Nothing saved yet. Run any calculator and the result is saved here under its property name.';
+          libResults.appendChild(empty);
+          return;
+        }
+        calcs.forEach(function (entry) {
+          libResults.appendChild(libraryRow(entry));
+        });
+      }
+
+      function backToList() {
+        renderLibraryList();
+        if (calcsState !== 'ready') loadCalculations();
+      }
+
+      function openCalculation(id) {
+        if (!libraryOpen) openLibrary();
+        libraryView = 'detail';
+        var gen = ++detailGen;
+        var inner = libraryInner();
+        inner.appendChild(backButton());
+        var sk = el('div', 'jb-lib-skel', { 'aria-hidden': 'true' });
+        sk.appendChild(el('span', 'jb-skel jb-skel-a'));
+        inner.appendChild(sk);
+        chatsApi('/calculations/' + encodeURIComponent(id), { method: 'GET' })
+          .then(function (row) {
+            if (gen !== detailGen || !libraryOpen) return;
+            renderCalcDetail(row);
+          })
+          .catch(function () {
+            if (gen !== detailGen || !libraryOpen) return;
+            var again = libraryInner();
+            again.appendChild(backButton());
+            var box = el('div', 'jb-lib-empty', { role: 'status' });
+            box.appendChild(document.createTextNode("Couldn't open that calculation."));
+            box.appendChild(el('br'));
+            var retry = el('button', 'jb-retry', { type: 'button' });
+            retry.textContent = 'Try again';
+            retry.addEventListener('click', function () {
+              openCalculation(id);
+            });
+            box.appendChild(retry);
+            again.appendChild(box);
+          });
+      }
+
+      function backButton() {
+        var back = el('button', 'jb-lib-back', { type: 'button' });
+        back.innerHTML = ICON_BACK + '<span>All calculations</span>';
+        back.addEventListener('click', backToList);
+        return back;
+      }
+
+      function kvRow(label, value, opts) {
+        opts = opts || {};
+        var row = el('div', 'jb-kv' + (opts.strong ? ' jb-kv-strong' : ''));
+        var k = el('span', 'jb-kv-k');
+        k.textContent = label;
+        if (opts.tag) {
+          var tag = el('span', 'jb-tag');
+          tag.textContent = opts.tag;
+          k.appendChild(tag);
+        }
+        var v = el('span', 'jb-kv-v');
+        v.textContent = value;
+        row.appendChild(k);
+        row.appendChild(v);
+        return row;
+      }
+
+      function section(title) {
+        var wrap = el('section', 'jb-lib-section');
+        var h = el('h3', 'jb-lib-section-h');
+        h.textContent = title;
+        wrap.appendChild(h);
+        return wrap;
+      }
+
+      function renderCalcDetail(row) {
+        var inner = libraryInner();
+        var result = row.result || {};
+        var outputs = result.outputs || {};
+        var used = result.inputs_used || {};
+        var defaults = result.defaults_applied || {};
+
+        inner.appendChild(backButton());
+
+        var head = el('div', 'jb-lib-head');
+        var title = el('h2', 'jb-lib-title');
+        title.textContent = row.property_name;
+        var meta = el('p', 'jb-lib-sub');
+        meta.textContent = (CALC_TITLES[row.calculator] || row.calculator) + ' · ' + formatDateTime(row.created_at);
+        head.appendChild(title);
+        head.appendChild(meta);
+        inner.appendChild(head);
+
+        var actions = el('div', 'jb-lib-actions');
+        var again = el('button', 'jb-btn', { type: 'button' });
+        again.textContent = 'Run again';
+        again.disabled = !row.form;
+        again.addEventListener('click', function () {
+          closeLibrary();
+          startNewChat();
+          renderCalculatorForm(row.form, { values: row.inputs || {} });
+        });
+        actions.appendChild(again);
+
+        var chatKnown = row.chat_id && chats.some(function (c) { return c.id === row.chat_id; });
+        if (chatKnown) {
+          var openChat = el('button', 'jb-calc-cancel', { type: 'button' });
+          openChat.textContent = 'Open chat';
+          openChat.addEventListener('click', function () {
+            closeLibrary();
+            switchToChat(row.chat_id);
+          });
+          actions.appendChild(openChat);
+        }
+
+        var rename = el('button', 'jb-lib-icon', { type: 'button', 'aria-label': 'Rename', title: 'Rename' });
+        rename.innerHTML = ICON_RENAME;
+        var del = el('button', 'jb-lib-icon', { type: 'button', 'aria-label': 'Delete', title: 'Delete' });
+        del.innerHTML = ICON_DELETE;
+        actions.appendChild(rename);
+        actions.appendChild(del);
+        inner.appendChild(actions);
+
+        var status = el('div', 'jb-calc-error', { role: 'alert' });
+        inner.appendChild(status);
+
+        rename.addEventListener('click', function () {
+          var field = el('input', 'jb-control jb-lib-rename', {
+            type: 'text',
+            maxlength: '120',
+            'aria-label': 'Property name',
+          });
+          field.value = row.property_name;
+          head.replaceChild(field, title);
+          field.focus();
+          field.select();
+          var done = false;
+          function finish(save) {
+            if (done) return;
+            done = true;
+            var next = field.value.trim().replace(/\s+/g, ' ');
+            if (field.parentNode) head.replaceChild(title, field);
+            if (!save || !next || next === row.property_name) return;
+            var previous = row.property_name;
+            row.property_name = next;
+            title.textContent = next;
+            chatsApi('/calculations/' + encodeURIComponent(row.id), {
+              method: 'PATCH',
+              body: JSON.stringify({ property_name: next }),
+            })
+              .then(function () {
+                calcsState = 'idle'; // the list order/name is stale now
+              })
+              .catch(function () {
+                row.property_name = previous;
+                title.textContent = previous;
+                status.textContent = "Couldn't rename it — try again in a moment.";
+              });
+          }
+          field.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              finish(true);
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              finish(false);
+            }
+          });
+          field.addEventListener('blur', function () {
+            finish(true);
+          });
+        });
+
+        del.addEventListener('click', function () {
+          if (actions.querySelector('.jb-chat-confirm')) return;
+          var ask = el('div', 'jb-chat-confirm jb-lib-confirm', { role: 'group', 'aria-label': 'Confirm delete' });
+          var q = el('span', 'jb-chat-confirm-q');
+          q.textContent = 'Delete this calculation?';
+          var yes = el('button', 'jb-chat-confirm-yes', { type: 'button' });
+          yes.textContent = 'Delete';
+          var no = el('button', 'jb-chat-confirm-no', { type: 'button' });
+          no.textContent = 'Cancel';
+          ask.appendChild(q);
+          ask.appendChild(yes);
+          ask.appendChild(no);
+          actions.appendChild(ask);
+          no.focus();
+          no.addEventListener('click', function () {
+            if (ask.parentNode) ask.parentNode.removeChild(ask);
+            del.focus();
+          });
+          yes.addEventListener('click', function () {
+            yes.disabled = true;
+            chatsApi('/calculations/' + encodeURIComponent(row.id), { method: 'DELETE' })
+              .then(function () {
+                calcs = calcs.filter(function (c) {
+                  return c.id !== row.id;
+                });
+                if (libraryOpen) backToList();
+              })
+              .catch(function () {
+                yes.disabled = false;
+                status.textContent = "Couldn't delete it — try again in a moment.";
+              });
+          });
+        });
+
+        // Results: the headline first, emphasised, then the rest in the
+        // calculator's own order.
+        var resultsSection = section('Results');
+        var lead = HEADLINE_KEY[row.calculator];
+        if (lead && outputs[lead] !== undefined) {
+          var leadMeta = outputMeta(lead);
+          resultsSection.appendChild(kvRow(leadMeta[0], formatAs(outputs[lead], leadMeta[1]), { strong: true }));
+        }
+        Object.keys(outputs).forEach(function (key) {
+          if (key === lead) return;
+          var m = outputMeta(key);
+          resultsSection.appendChild(kvRow(m[0], formatAs(outputs[key], m[1])));
+        });
+        inner.appendChild(resultsSection);
+
+        // Inputs: labelled from the calculator's own form, so they read the
+        // same as the form the member filled in. Defaults are marked.
+        var inputsSection = section('Inputs');
+        var fields = row.form ? (row.form.required || []).concat(row.form.optional || []) : [];
+        fields.forEach(function (field) {
+          if (field.name === 'property_name') return;
+          if (!(field.name in used)) return;
+          var kind = field.type === 'enum' ? 'text' : field.unit || 'number';
+          var shown = kind === 'text' ? String(used[field.name]) : formatAs(used[field.name], kind);
+          inputsSection.appendChild(
+            kvRow(field.label, shown, field.name in defaults ? { tag: 'default' } : {})
+          );
+        });
+        inner.appendChild(inputsSection);
+
+        // BRRRR carries a five-year projection; show its spine.
+        var projection = result.five_year_projection;
+        if (Array.isArray(projection) && projection.length) {
+          var projSection = section('5-year projection');
+          var scroller = el('div', 'jb-proj-wrap');
+          var table = el('table', 'jb-proj');
+          var cols = [
+            ['year', 'Year', 'plain'],
+            ['noi', 'NOI', 'usd'],
+            ['cash_flow', 'Cash flow', 'usd'],
+            ['loan_balance', 'Loan balance', 'usd'],
+            ['equity', 'Equity', 'usd'],
+          ];
+          var thead = el('thead');
+          var hr = el('tr');
+          cols.forEach(function (c) {
+            var th = el('th', null, { scope: 'col' });
+            th.textContent = c[1];
+            hr.appendChild(th);
+          });
+          thead.appendChild(hr);
+          table.appendChild(thead);
+          var tbody = el('tbody');
+          projection.forEach(function (yearRow) {
+            var tr = el('tr');
+            cols.forEach(function (c) {
+              var td = el('td');
+              var v = yearRow[c[0]];
+              td.textContent = c[2] === 'plain' ? String(v) : formatAs(v, c[2]);
+              tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+          });
+          table.appendChild(tbody);
+          scroller.appendChild(table);
+          projSection.appendChild(scroller);
+          inner.appendChild(projSection);
+        }
+
+        if (result.note) {
+          var note = el('p', 'jb-lib-note');
+          note.textContent = result.note;
+          inner.appendChild(note);
+        }
+      }
+
+      /**
+       * The receipt under a calculator reply — drawn from the server's
+       * saved_calculations, never from the model's prose, so "saved" on screen
+       * always means a row exists. A run that completed but could not be
+       * filed says so plainly instead.
+       */
+      function showLibraryReceipt(bubble, data) {
+        var saved = data && Array.isArray(data.saved_calculations) ? data.saved_calculations : [];
+        if (saved.length) {
+          calcsState = 'idle'; // the list is stale; the next open refetches
+          saved.forEach(function (entry) {
+            var line = el('div', 'jb-saved');
+            line.innerHTML = ICON_CHECK;
+            var text = el('span', 'jb-saved-text');
+            text.textContent = 'Saved to Calculations as "' + entry.property_name + '"';
+            var view = el('button', 'jb-saved-open', { type: 'button' });
+            view.textContent = 'View';
+            view.addEventListener('click', function () {
+              openCalculation(entry.id);
+            });
+            line.appendChild(text);
+            line.appendChild(view);
+            bubble.appendChild(line);
+          });
+        } else if (data && data.library_unsaved) {
+          var warn = el('div', 'jb-saved jb-saved-warn', { role: 'status' });
+          warn.textContent = "This result couldn't be saved to your Calculations library.";
+          bubble.appendChild(warn);
+        }
       }
 
       function submitMessage(override, skipEcho) {
@@ -3335,7 +4053,8 @@
               return;
             }
             removeTyping();
-            addBubble(data.output || "I didn't catch that — try again.", 'bot', { animate: true });
+            var reply = addBubble(data.output || "I didn't catch that — try again.", 'bot', { animate: true });
+            showLibraryReceipt(reply.bubble, data);
             liveTurns.push({ role: 'assistant', content: String(data.output || '') });
             // The model decides a form is warranted; the response carries the
             // descriptor. Rendered after the reply so the copy reads first.
@@ -3479,7 +4198,13 @@
       });
 
       newChatBtn.addEventListener('click', function () {
+        closeLibrary();
         startNewChat();
+      });
+
+      libraryBtn.addEventListener('click', function () {
+        if (libraryOpen && libraryView === 'list') return;
+        openLibrary();
       });
 
       /**
@@ -3546,6 +4271,12 @@
         /** Positive identity only: '' whenever the token could not name
          *  its owner, which is what makes the draft rule fail closed. */
         var confirmedEmail = isExpiryRecovery ? expiredTokenEmail : '';
+        // The gate renders into the conversation pane, so the library view
+        // must step aside or it would hide the gate behind it. Its cached
+        // list goes too: the next member through this gate is not owed it.
+        closeLibrary();
+        calcs = [];
+        calcsState = 'idle';
         root.classList.add('jb-gated');
         list.innerHTML = '';
         historySkeleton = null;
