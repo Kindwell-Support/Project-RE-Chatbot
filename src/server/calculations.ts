@@ -12,6 +12,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Logger } from './logger.js';
 import { normalizePropertyName } from '../agent/formSubmission.js';
 import type { CalculatorKey } from '../agent/formSchema.js';
+import { normalizeAddress } from '../features/comps/normalize.js';
 
 /**
  * What a library entry can be: one of the three calculators, or a comps
@@ -23,13 +24,60 @@ export interface CalculationSummary {
   id: string;
   calculator: LibraryKind;
   property_name: string;
+  /**
+   * The property FOLDER this run belongs to (see propertyKey). Runs whose
+   * names differ in spelling but denote the same property share it — so a
+   * comps snapshot filed under "123 MAIN STREET, SEATTLE, WA 98101" and a
+   * flip the member named "123 Main St" land in one folder.
+   */
+  property_key: string;
   chat_id: string | null;
   created_at: string;
   /** The one figure the library list shows per entry. Null when unavailable. */
   headline: { label: string; value: number; unit: 'usd' } | null;
 }
 
-export interface CalculationRow extends Omit<CalculationSummary, 'headline'> {
+/**
+ * Street-type words that END the street part of an address. Normalized forms
+ * (normalizeAddress expands ST -> STREET etc.), plus common suffixes the
+ * expansion table does not abbreviate.
+ */
+const STREET_SUFFIXES = new Set([
+  'STREET', 'AVENUE', 'ROAD', 'DRIVE', 'BOULEVARD', 'LANE', 'COURT', 'PLACE',
+  'WAY', 'TERRACE', 'CIRCLE', 'PARKWAY', 'HIGHWAY', 'LOOP', 'TRAIL', 'ALLEY',
+  'SQUARE', 'PIKE', 'ROW', 'RUN', 'CRESCENT', 'POINT', 'PATH', 'PLAZA', 'WALK',
+]);
+const UNIT_RE = /(?:#|\b(?:unit|apt|apartment|suite|ste)\b)\s*#?\s*([0-9a-z-]+)/i;
+
+/**
+ * The folder a run belongs to — the property, not the spelling.
+ *
+ * A name that starts with a house number is an ADDRESS: the key is its street
+ * part (house number through the first street-type word, normalized), plus
+ * its unit if it names one. City/state/ZIP are dropped because members type
+ * them inconsistently ("123 Main St" vs Zillow's "123 MAIN STREET, SEATTLE,
+ * WA 98101") — the stated trade-off is that two properties at the same street
+ * address in different cities would share a folder, which within one
+ * member's library is rare and visible (both runs are listed, each with its
+ * own full name).
+ *
+ * Anything else ("Tacoma duplex") is a member's label: the key is the label
+ * itself, case- and punctuation-insensitive.
+ */
+export function propertyKey(name: string): string {
+  const raw = String(name ?? '');
+  const unit = raw.match(UNIT_RE)?.[1]?.toUpperCase();
+  const streetPart = raw.split(',')[0];
+  const tokens = normalizeAddress(streetPart.replace(UNIT_RE, ' ')).split(' ').filter(Boolean);
+  if (tokens.length >= 2 && /^\d+[A-Z]?$/.test(tokens[0])) {
+    const end = tokens.findIndex((t, i) => i > 0 && STREET_SUFFIXES.has(t));
+    const street = (end === -1 ? tokens : tokens.slice(0, end + 1)).join(' ');
+    return `addr:${street}${unit ? ` #${unit}` : ''}`;
+  }
+  return `name:${normalizeAddress(raw)}`;
+}
+
+export interface CalculationRow extends Omit<CalculationSummary, 'headline' | 'property_key'> {
   inputs: Record<string, unknown>;
   result: Record<string, unknown>;
 }
@@ -86,8 +134,12 @@ export async function listCalculations(
     .order('created_at', { ascending: false })
     .limit(options.limit ?? CALCULATION_LIST_LIMIT);
   if (error) throw error;
-  return ((data ?? []) as unknown as Array<Omit<CalculationSummary, 'headline'> & { outputs: unknown }>).map(
-    ({ outputs, ...row }) => ({ ...row, headline: headlineFor(row.calculator, outputs) }),
+  return ((data ?? []) as unknown as Array<Omit<CalculationSummary, 'headline' | 'property_key'> & { outputs: unknown }>).map(
+    ({ outputs, ...row }) => ({
+      ...row,
+      property_key: propertyKey(row.property_name),
+      headline: headlineFor(row.calculator, outputs),
+    }),
   );
 }
 
@@ -122,10 +174,10 @@ export async function renameCalculation(
     .is('archived_at', null)
     .select(SUMMARY_COLUMNS);
   if (error) throw error;
-  const rows = (data ?? []) as unknown as Array<Omit<CalculationSummary, 'headline'> & { outputs: unknown }>;
+  const rows = (data ?? []) as unknown as Array<Omit<CalculationSummary, 'headline' | 'property_key'> & { outputs: unknown }>;
   if (!rows[0]) return null;
   const { outputs, ...row } = rows[0];
-  return { ...row, headline: headlineFor(row.calculator, outputs) };
+  return { ...row, property_key: propertyKey(row.property_name), headline: headlineFor(row.calculator, outputs) };
 }
 
 /** SOFT delete, like chats: the row stays, every read path skips it. */
@@ -157,13 +209,10 @@ export interface CalculationToSave {
   calculator: LibraryKind;
   inputs: Record<string, unknown>;
   result: Record<string, unknown>;
-  /**
-   * Idempotency key for snapshots: when set, an existing active entry of the
-   * same kind for this owner carrying the same `result.run_id` is returned
-   * instead of writing a second one. A comps cache hit replays the original
-   * run's id, so asking for the same comps twice files one snapshot, not two.
-   */
-  runId?: string;
+  // No idempotency key, deliberately (client QA ruling): EVERY run is its own
+  // record, comps included — a repeat lookup answered from the comps cache
+  // replays the original run id, and an earlier version used that to skip
+  // the write, which members experienced as "my second comps run vanished".
 }
 
 /** The seam the agent saves through. Tests inject a fake; production builds one per request. */
@@ -183,19 +232,6 @@ export function createCalculationLibrary(
       const propertyName = normalizePropertyName(entry.result.property_name ?? entry.inputs.property_name);
       if (!propertyName) return null; // the runner refuses unnamed runs; belt and braces
       try {
-        if (entry.runId) {
-          const { data: existing, error: lookupError } = await supabase
-            .from('calculations')
-            .select('id, calculator, property_name')
-            .eq('owner_key', ownerKey)
-            .eq('calculator', entry.calculator)
-            .eq('result->>run_id', entry.runId)
-            .is('archived_at', null)
-            .limit(1);
-          if (lookupError) throw lookupError;
-          const found = ((existing ?? []) as unknown as SavedCalculation[])[0];
-          if (found) return found;
-        }
         const { data, error } = await supabase
           .from('calculations')
           .insert({

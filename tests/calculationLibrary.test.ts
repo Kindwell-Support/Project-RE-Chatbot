@@ -21,6 +21,7 @@ import { OWNER_KEY_HEADER } from '../src/server/ownerKey.js';
 import {
   createCalculationLibrary,
   headlineFor,
+  propertyKey,
   type CalculationLibrary,
   type CalculationToSave,
   type SavedCalculation,
@@ -250,6 +251,37 @@ describe('createCalculationLibrary — the write path', () => {
       library.save({ calculator: 'flip', inputs: { property_name: 'X' }, result: { property_name: 'X' } }),
     ).resolves.toBeNull();
     expect(errors, 'the lost save was not logged').toHaveLength(1);
+  });
+
+  it('propertyKey: spellings of one address share a folder; units and labels stay distinct', () => {
+    const same = [
+      '123 Main St',
+      '123 Main Street, Tacoma',
+      '123 MAIN STREET, SEATTLE, WA 98101',
+      '123 main st.',
+      '123 Main St Seattle WA',
+    ].map(propertyKey);
+    expect(new Set(same).size, `spellings split: ${same.join(' | ')}`).toBe(1);
+    expect(same[0]).toBe('addr:123 MAIN STREET');
+    expect(propertyKey('100 Oak Ave Unit 3')).toBe('addr:100 OAK AVENUE #3');
+    expect(propertyKey('100 Oak Ave #3, Seattle')).toBe('addr:100 OAK AVENUE #3');
+    expect(propertyKey('100 Oak Ave Unit 4')).not.toBe(propertyKey('100 Oak Ave Unit 3'));
+    expect(propertyKey('124 Main St')).not.toBe(propertyKey('123 Main St'));
+    expect(propertyKey('Tacoma duplex')).toBe(propertyKey('  tacoma   DUPLEX '));
+    expect(propertyKey('Tacoma duplex')).not.toBe(propertyKey('Tacoma triplex'));
+    // A house number with no street-type word keeps the whole name.
+    expect(propertyKey('123 main test 1')).toBe('addr:123 MAIN TEST 1');
+  });
+
+  it('the list carries each entry\'s property_key', async () => {
+    const { app } = appWith([
+      calculationRecord({ owner_key: OWNER_A, property_name: '123 Main St' }),
+      calculationRecord({ owner_key: OWNER_A, calculator: 'comps', property_name: '123 MAIN STREET, SEATTLE, WA 98101' }),
+    ]);
+    const res = await app.inject({ method: 'GET', url: '/calculations', headers: auth(OWNER_A) });
+    const keys = (res.json() as Array<{ property_key: string }>).map((r) => r.property_key);
+    expect(keys).toEqual(['addr:123 MAIN STREET', 'addr:123 MAIN STREET']);
+    await app.close();
   });
 
   it('headlineFor reads each calculator\'s lead figure and nothing else', () => {

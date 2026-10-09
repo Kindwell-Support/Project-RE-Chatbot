@@ -25,6 +25,7 @@ interface Summary {
   id: string;
   calculator: string;
   property_name: string;
+  property_key?: string;
   chat_id: string | null;
   created_at: string;
   headline: { label: string; value: number; unit: 'usd' } | null;
@@ -34,6 +35,7 @@ const SUMMARY_A: Summary = {
   id: CALC_A,
   calculator: 'flip',
   property_name: 'Tacoma duplex',
+  property_key: 'name:TACOMA DUPLEX',
   chat_id: CHAT,
   created_at: new Date(Date.now() - 3_600_000).toISOString(),
   headline: { label: 'Net profit', value: 101916, unit: 'usd' },
@@ -42,6 +44,7 @@ const SUMMARY_B: Summary = {
   id: CALC_B,
   calculator: 'brrrr',
   property_name: 'Oak St rental',
+  property_key: 'name:OAK STREET RENTAL',
   chat_id: null,
   created_at: new Date(Date.now() - 86_400_000 * 3).toISOString(),
   headline: { label: 'Cash flow / mo', value: 412, unit: 'usd' },
@@ -298,16 +301,72 @@ describe('the Calculations view', () => {
     expect($$('.jb-main button'), 'the conversation pane gained a control').toHaveLength(1);
   });
 
-  it('opens over the conversation and lists entries with their headline figure', async () => {
+  it('opens over the conversation and lists one FOLDER per property', async () => {
     boot();
     await tick();
     await openLibrary();
     expect($('.jb-root')!.classList.contains('jb-lib-open')).toBe(true);
     expect($('.jb-nav-lib')!.getAttribute('aria-pressed')).toBe('true');
-    const rows = $$('.jb-lib-row');
-    expect(rows.map((r) => r.querySelector('.jb-lib-name')!.textContent)).toEqual(['Tacoma duplex', 'Oak St rental']);
-    expect(rows[0].querySelector('.jb-lib-meta')!.textContent).toContain('Fix & Flip');
-    expect(rows[0].querySelector('.jb-lib-fig-value')!.textContent).toBe('$101,916');
+    const names = $$('.jb-lib-folder-name').map((n) => n.textContent);
+    expect(names).toEqual(['Tacoma duplex', 'Oak St rental']);
+    const firstHead = $$('.jb-lib-folder-head')[0];
+    expect(firstHead.querySelector('.jb-lib-meta')!.textContent).toBe('1 run · Fix & Flip');
+    // Several folders start closed; opening one shows its runs.
+    expect(firstHead.getAttribute('aria-expanded')).toBe('false');
+    expect($$('.jb-lib-folder-body')[0].hasAttribute('hidden')).toBe(true);
+    click(firstHead);
+    expect(firstHead.getAttribute('aria-expanded')).toBe('true');
+    const body = $$('.jb-lib-folder-body')[0];
+    expect(body.hasAttribute('hidden')).toBe(false);
+    const run = body.querySelector('.jb-lib-row')!;
+    expect(run.querySelector('.jb-lib-name')!.textContent, 'a run does not name its type').toBe('Fix & Flip');
+    expect(run.querySelector('.jb-lib-meta')!.textContent, 'a run does not show its timestamp').toMatch(/\d{4}/);
+    expect(run.querySelector('.jb-lib-fig-value')!.textContent).toBe('$101,916');
+    click(firstHead);
+    expect(body.hasAttribute('hidden'), 'the folder did not close again').toBe(true);
+  });
+
+  it('runs of one property group into ONE folder — calculations and comps together, every run kept', async () => {
+    library = [
+      { id: 'r1', calculator: 'comps', property_name: '123 MAIN STREET, SEATTLE, WA 98101', property_key: 'addr:123 MAIN STREET', chat_id: null, created_at: '2026-10-10T12:00:00.000Z', headline: { label: 'Median $/sq ft', value: 340, unit: 'usd' } },
+      { id: 'r2', calculator: 'comps', property_name: '123 MAIN STREET, SEATTLE, WA 98101', property_key: 'addr:123 MAIN STREET', chat_id: null, created_at: '2026-10-10T11:00:00.000Z', headline: { label: 'Median $/sq ft', value: 338, unit: 'usd' } },
+      { id: 'r3', calculator: 'flip', property_name: '123 Main St', property_key: 'addr:123 MAIN STREET', chat_id: null, created_at: '2026-10-09T10:00:00.000Z', headline: { label: 'Net profit', value: 50000, unit: 'usd' } },
+      { id: 'r4', calculator: 'brrrr', property_name: 'Oak St rental', property_key: 'name:OAK STREET RENTAL', chat_id: null, created_at: '2026-10-08T10:00:00.000Z', headline: null },
+    ];
+    boot();
+    await tick();
+    await openLibrary();
+    expect($$('.jb-lib-folder-name').map((n) => n.textContent)).toEqual([
+      // Titled by the comps snapshot's resolved address, the fullest spelling.
+      '123 MAIN STREET, SEATTLE, WA 98101',
+      'Oak St rental',
+    ]);
+    const head = $$('.jb-lib-folder-head')[0];
+    expect(head.querySelector('.jb-lib-meta')!.textContent).toBe('3 runs · Comps, Fix & Flip');
+    click(head);
+    const runs = Array.from($$('.jb-lib-folder-body')[0].querySelectorAll('.jb-lib-row'));
+    expect(runs.map((r) => r.querySelector('.jb-lib-name')!.textContent), 'a comps run went missing').toEqual([
+      'Comps',
+      'Comps',
+      'Fix & Flip',
+    ]);
+    // The flip was filed under a different spelling — shown, not hidden.
+    expect(runs[2].querySelector('.jb-lib-meta')!.textContent).toContain('as "123 Main St"');
+    expect(runs[0].querySelector('.jb-lib-meta')!.textContent).not.toContain('as "');
+  });
+
+  it('back from a run returns to the list with that run\'s folder open', async () => {
+    boot();
+    await tick();
+    await openLibrary();
+    click($$('.jb-lib-folder-head')[1]);
+    click($$('.jb-lib-folder-body')[1].querySelector('.jb-lib-row'));
+    await tick();
+    click($('.jb-lib-back'));
+    await tick();
+    const heads = $$('.jb-lib-folder-head');
+    expect(heads[1].getAttribute('aria-expanded')).toBe('true');
+    expect(heads[0].getAttribute('aria-expanded')).toBe('false');
   });
 
   it('an empty library explains how entries get there', async () => {
@@ -327,7 +386,9 @@ describe('the Calculations view', () => {
     search.dispatchEvent(new window.Event('input', { bubbles: true }));
     await tick(320);
     expect(calls.some((c) => c.url.endsWith('/calculations?q=oak'))).toBe(true);
-    expect($$('.jb-lib-name').map((n) => n.textContent)).toEqual(['Oak St rental']);
+    expect($$('.jb-lib-folder-name').map((n) => n.textContent)).toEqual(['Oak St rental']);
+    // A search opens what it found.
+    expect($$('.jb-lib-folder-head')[0].getAttribute('aria-expanded')).toBe('true');
     expect($('.jb-lib-search'), 'the search box was rebuilt and lost the member\'s place').toBe(search);
   });
 
@@ -408,7 +469,7 @@ describe('the Calculations view', () => {
     click($('.jb-lib-confirm .jb-chat-confirm-yes'));
     await tick(30);
     expect(calls.some((c) => c.method === 'DELETE' && c.url.endsWith(`/calculations/${CALC_A}`))).toBe(true);
-    expect($$('.jb-lib-name').map((n) => n.textContent)).toEqual(['Oak St rental']);
+    expect($$('.jb-lib-folder-name').map((n) => n.textContent)).toEqual(['Oak St rental']);
   });
 
   it('a comps snapshot shows the block as it was pulled — and cannot run again', async () => {
@@ -417,6 +478,7 @@ describe('the Calculations view', () => {
         id: CALC_C,
         calculator: 'comps',
         property_name: DETAIL_C.property_name,
+        property_key: 'addr:123 MAIN STREET',
         chat_id: null,
         created_at: DETAIL_C.created_at,
         headline: { label: 'Median $/sq ft', value: 340, unit: 'usd' },
@@ -425,8 +487,10 @@ describe('the Calculations view', () => {
     boot();
     await tick();
     await openLibrary();
+    // A single property's folder opens without a click.
+    expect($$('.jb-lib-folder-head')[0].getAttribute('aria-expanded')).toBe('true');
     const row = $$('.jb-lib-row')[0];
-    expect(row.querySelector('.jb-lib-meta')!.textContent).toContain('Comps');
+    expect(row.querySelector('.jb-lib-name')!.textContent).toBe('Comps');
     expect(row.querySelector('.jb-lib-fig-value')!.textContent).toBe('$340');
     click(row);
     await tick();

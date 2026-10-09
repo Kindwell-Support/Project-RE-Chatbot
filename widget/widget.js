@@ -658,6 +658,24 @@
     '.jb-lib-fig{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:0 0 auto;text-align:right;}',
     '.jb-lib-fig-label{font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);line-height:var(--jb-line-tight);}',
     '.jb-lib-fig-value{font-size:var(--jb-font-sm);font-weight:600;font-variant-numeric:tabular-nums;line-height:var(--jb-line-tight);}',
+    /* Property folders: a quiet header row with a chevron that turns when
+       open, and the folder's runs indented beneath it on a hairline guide. */
+    '.jb-lib-folder + .jb-lib-folder{margin-top:2px;}',
+    '.jb-lib-folder-head{display:flex;align-items:center;gap:calc(var(--jb-font-base) * 0.5556);width:100%;min-height:44px;text-align:left;cursor:pointer;',
+    'padding:calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 0.7778);border:none;border-radius:calc(var(--jb-font-base) * 0.6667);',
+    'background:transparent;color:var(--jb-text-primary);font:inherit;transition:background 120ms var(--jb-ease);}',
+    '.jb-lib-folder-head:hover{background:var(--jb-hover);}',
+    '.jb-lib-folder-head:focus-visible{outline:2px solid var(--jb-focus);outline-offset:-2px;}',
+    '.jb-lib-folder-head .jb-ico{width:calc(var(--jb-font-base) * 1);height:calc(var(--jb-font-base) * 1);color:var(--jb-text-secondary);}',
+    '.jb-lib-folder-head .jb-ico:first-child{width:calc(var(--jb-font-base) * 0.8889);height:calc(var(--jb-font-base) * 0.8889);transition:transform 160ms var(--jb-ease);}',
+    '.jb-lib-folder-head[aria-expanded="true"] .jb-ico:first-child{transform:rotate(90deg);}',
+    '.jb-lib-folder-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto;}',
+    '.jb-lib-folder-name{font-size:var(--jb-font-md);font-weight:600;line-height:var(--jb-line-tight);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.jb-lib-folder-when{flex:0 0 auto;font-size:var(--jb-font-xs);color:var(--jb-text-tertiary);}',
+    '.jb-lib-folder-body{margin:0 0 calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 1.4444);padding-left:calc(var(--jb-font-base) * 0.4444);',
+    'box-shadow:inset 1px 0 0 var(--jb-border);display:flex;flex-direction:column;}',
+    '.jb-lib-folder-body[hidden]{display:none;}',
+    '.jb-lib-folder-body .jb-lib-name{font-size:var(--jb-font-sm);font-weight:500;}',
     '.jb-lib-empty{padding:calc(var(--jb-font-base) * 1.3333) calc(var(--jb-font-base) * 0.7778);font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);}',
     '.jb-lib-skel{padding:calc(var(--jb-font-base) * 0.9444) calc(var(--jb-font-base) * 0.7778);}',
     '.jb-lib-skel .jb-skel{height:calc(var(--jb-font-base) * 0.6667);}',
@@ -789,6 +807,7 @@
     '.jb-root .jb-adv-toggle{padding:calc(var(--jb-font-base) * 0.2778) 0 !important;}',
     /* The library's controls, same tier and same reason. */
     '.jb-root .jb-lib-row{padding:calc(var(--jb-font-base) * 0.7222) calc(var(--jb-font-base) * 0.7778) !important;text-align:left !important;}',
+    '.jb-root .jb-lib-folder-head{padding:calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 0.7778) !important;text-align:left !important;}',
     '.jb-root .jb-lib-back{padding:calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.6667) calc(var(--jb-font-base) * 0.3333) calc(var(--jb-font-base) * 0.4444) !important;',
     'font-size:var(--jb-font-sm) !important;}',
     '.jb-root .jb-lib-icon{padding:0 !important;}',
@@ -849,13 +868,13 @@
     'background:transparent !important;color:var(--jb-text-primary) !important;border:1px solid var(--jb-border-strong) !important;}',
     '.jb-root .jb-lib-icon{background:transparent !important;color:var(--jb-text-secondary) !important;border:1px solid var(--jb-border-strong) !important;}',
     // Quiet: text-only controls whose fill appears on hover.
-    '.jb-root .jb-new,.jb-root .jb-chat-open,.jb-root .jb-adv-toggle,.jb-root .jb-lib-row,.jb-root .jb-saved-open{',
+    '.jb-root .jb-new,.jb-root .jb-chat-open,.jb-root .jb-adv-toggle,.jb-root .jb-lib-row,.jb-root .jb-lib-folder-head,.jb-root .jb-saved-open{',
     'background:transparent !important;color:var(--jb-text-primary) !important;border:none !important;}',
     '.jb-root .jb-side-toggle,.jb-root .jb-lib-back{background:transparent !important;color:var(--jb-text-secondary) !important;border:none !important;}',
     '.jb-root .jb-chat-act{background:transparent !important;color:var(--jb-text-tertiary) !important;border:none !important;}',
     // States, one tier up.
     '.jb-root .jb-calc-cancel:hover:not([disabled]),.jb-root .jb-retry:hover,.jb-root .jb-gate-retry:hover,.jb-root .jb-side-retry:hover,',
-    '.jb-root .jb-chat-confirm-no:hover,.jb-root .jb-new:hover,.jb-root .jb-lib-row:hover,.jb-root .jb-saved-open:hover{background:var(--jb-hover) !important;}',
+    '.jb-root .jb-chat-confirm-no:hover,.jb-root .jb-new:hover,.jb-root .jb-lib-row:hover,.jb-root .jb-lib-folder-head:hover,.jb-root .jb-saved-open:hover{background:var(--jb-hover) !important;}',
     '.jb-root .jb-side-toggle:hover,.jb-root .jb-lib-back:hover,.jb-root .jb-lib-icon:hover{background:var(--jb-hover) !important;color:var(--jb-text-primary) !important;}',
     '.jb-root .jb-chat-act:hover{background:var(--jb-active) !important;color:var(--jb-text-primary) !important;}',
     '.jb-root .jb-new:active,.jb-root .jb-nav-lib[aria-pressed="true"]{background:var(--jb-active) !important;}',
@@ -1310,6 +1329,8 @@
     '<path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01M8.5 15h.01M12 15h.01M15.5 15h.01"/>'
   );
   var ICON_BACK = icon('<path d="M15 5l-7 7 7 7"/>');
+  var ICON_CHEVRON = icon('<path d="M9 6l6 6-6 6"/>');
+  var ICON_FOLDER = icon('<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>');
   var ICON_CHECK = icon('<path d="M5 12.5l4.5 4.5L19 7.5"/>');
   var ICON_DELETE = icon(
     '<path d="M4.5 7h15"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/>' +
@@ -3493,6 +3514,10 @@
       var listGen = 0;
       var detailGen = 0;
       var libResults = null;
+      // Which property folders the member opened or closed, by property_key.
+      // Kept while the widget lives so "back" from a run returns to the same
+      // view; unset keys fall back to the default in isFolderOpen.
+      var openFolders = {};
 
       var CALC_TITLES = { flip: 'Fix & Flip', brrrr: 'BRRRR', land_purchase: 'Land / New Construction', comps: 'Comps' };
 
@@ -3652,7 +3677,7 @@
             loadCalculations();
           }, 250);
         });
-        libResults = el('div', 'jb-lib-results', { role: 'list', 'aria-live': 'polite' });
+        libResults = el('div', 'jb-lib-results', { 'aria-live': 'polite' });
         inner.appendChild(heading);
         inner.appendChild(sub);
         inner.appendChild(search);
@@ -3660,14 +3685,107 @@
         renderLibraryResults();
       }
 
-      function libraryRow(entry) {
+      /** The folder a run belongs to — the server's property_key, or the name itself. */
+      function folderKeyOf(entry) {
+        return entry.property_key || 'name:' + String(entry.property_name || '').trim().toUpperCase();
+      }
+
+      /**
+       * Group runs into property folders, newest-active folder first (the list
+       * arrives newest-first, so first appearance is most recent activity).
+       * A folder is titled by its comps snapshot's resolved address when it has
+       * one — the most complete spelling — else by its most recent run's name.
+       */
+      function groupIntoFolders(entries) {
+        var order = [];
+        var byKey = {};
+        // Newest first by timestamp, whatever order the list arrived in, so
+        // a folder's first run is its latest and folders sort by activity.
+        var sorted = entries.slice().sort(function (a, b) {
+          return String(b.created_at).localeCompare(String(a.created_at));
+        });
+        sorted.forEach(function (entry) {
+          var key = folderKeyOf(entry);
+          if (!byKey[key]) {
+            byKey[key] = { key: key, runs: [] };
+            order.push(byKey[key]);
+          }
+          byKey[key].runs.push(entry);
+        });
+        order.forEach(function (folder) {
+          var comps = folder.runs.filter(function (r) { return r.calculator === 'comps'; })[0];
+          folder.label = (comps || folder.runs[0]).property_name;
+        });
+        return order;
+      }
+
+      function isFolderOpen(folder, folderCount) {
+        if (openFolders[folder.key] !== undefined) return openFolders[folder.key];
+        // A search shows what it found; a single property needs no extra click.
+        return Boolean(calcQuery) || folderCount === 1;
+      }
+
+      function libraryFolder(folder, folderCount) {
+        var wrap = el('section', 'jb-lib-folder');
+        var bodyId = 'jb-lib-f-' + Math.random().toString(36).slice(2, 8);
+        var open = isFolderOpen(folder, folderCount);
+        var head = el('button', 'jb-lib-folder-head', {
+          type: 'button',
+          'aria-expanded': open ? 'true' : 'false',
+          'aria-controls': bodyId,
+        });
+        head.innerHTML = ICON_CHEVRON + ICON_FOLDER;
+        var headMain = el('span', 'jb-lib-folder-main');
+        var name = el('span', 'jb-lib-folder-name');
+        name.textContent = folder.label;
+        var meta = el('span', 'jb-lib-meta');
+        var kinds = [];
+        folder.runs.forEach(function (r) {
+          var t = CALC_TITLES[r.calculator] || r.calculator;
+          if (kinds.indexOf(t) === -1) kinds.push(t);
+        });
+        meta.textContent =
+          folder.runs.length + (folder.runs.length === 1 ? ' run' : ' runs') + ' · ' + kinds.join(', ');
+        headMain.appendChild(name);
+        headMain.appendChild(meta);
+        head.appendChild(headMain);
+        var latest = el('span', 'jb-lib-folder-when');
+        latest.textContent = relativeTime(folder.runs[0].created_at) || '';
+        head.appendChild(latest);
+
+        var body = el('div', 'jb-lib-folder-body', { id: bodyId, role: 'list' });
+        if (!open) body.setAttribute('hidden', 'hidden');
+        folder.runs.forEach(function (entry) {
+          body.appendChild(libraryRow(entry, folder.label));
+        });
+
+        head.addEventListener('click', function () {
+          var next = head.getAttribute('aria-expanded') !== 'true';
+          openFolders[folder.key] = next;
+          head.setAttribute('aria-expanded', next ? 'true' : 'false');
+          if (next) body.removeAttribute('hidden');
+          else body.setAttribute('hidden', 'hidden');
+        });
+
+        wrap.appendChild(head);
+        wrap.appendChild(body);
+        return wrap;
+      }
+
+      /**
+       * One run inside a folder: its type, its exact time, and its headline.
+       * When the run was filed under a different spelling from the folder's
+       * title, that name is shown too, so nothing is hidden by the grouping.
+       */
+      function libraryRow(entry, folderLabel) {
         var row = el('button', 'jb-lib-row', { type: 'button', role: 'listitem' });
         var rowMain = el('span', 'jb-lib-row-main');
         var name = el('span', 'jb-lib-name');
-        name.textContent = entry.property_name;
+        name.textContent = CALC_TITLES[entry.calculator] || entry.calculator;
         var meta = el('span', 'jb-lib-meta');
-        var when = relativeTime(entry.created_at);
-        meta.textContent = (CALC_TITLES[entry.calculator] || entry.calculator) + (when ? ' · ' + when : '');
+        var alias =
+          folderLabel && entry.property_name !== folderLabel ? ' · as "' + entry.property_name + '"' : '';
+        meta.textContent = formatDateTime(entry.created_at) + alias;
         rowMain.appendChild(name);
         rowMain.appendChild(meta);
         row.appendChild(rowMain);
@@ -3718,8 +3836,9 @@
           libResults.appendChild(empty);
           return;
         }
-        calcs.forEach(function (entry) {
-          libResults.appendChild(libraryRow(entry));
+        var folders = groupIntoFolders(calcs);
+        folders.forEach(function (folder) {
+          libResults.appendChild(libraryFolder(folder, folders.length));
         });
       }
 
@@ -3730,6 +3849,10 @@
 
       function openCalculation(id) {
         if (!libraryOpen) openLibrary();
+        // "Back" should land in the folder this run lives in, open.
+        calcs.forEach(function (entry) {
+          if (entry.id === id) openFolders[folderKeyOf(entry)] = true;
+        });
         libraryView = 'detail';
         var gen = ++detailGen;
         var inner = libraryInner();
@@ -4353,6 +4476,7 @@
         closeLibrary();
         calcs = [];
         calcsState = 'idle';
+        openFolders = {};
         root.classList.add('jb-gated');
         list.innerHTML = '';
         historySkeleton = null;

@@ -89,8 +89,7 @@ describe('a successful comps lookup is filed as a snapshot, by address', () => {
     expect(entry.inputs.property_name, 'not filed by address').toBe('123 MAIN STREET, SEATTLE, WA 98101');
     expect(entry.inputs.requested_address).toBe('123 Main St, Seattle WA');
     expect(entry.result.rendered_block, 'the snapshot is not what the member saw').toBe(shown);
-    expect(entry.runId, 'no run id — repeats could not be deduplicated').toBeTruthy();
-    expect(entry.result.run_id).toBe(entry.runId);
+    expect(entry.result.run_id, 'the snapshot lost its run id (traceability)').toBeTruthy();
     expect(typeof entry.result.pulled_at).toBe('string');
     expect((entry.result.comps as unknown[]).length).toBeGreaterThan(0);
     expect((entry.result.outputs as Record<string, number>).comp_count).toBe((entry.result.comps as unknown[]).length);
@@ -116,42 +115,35 @@ describe('a successful comps lookup is filed as a snapshot, by address', () => {
   });
 });
 
-describe('the same run is one snapshot per member', () => {
-  it('a repeat save with the same run id returns the existing entry instead of writing', async () => {
+// CLIENT QA RULING (supersedes the earlier one-snapshot-per-run dedupe):
+// running comps again for the same property must APPEND a new record every
+// time — never omitted, overwritten, or deduplicated. The repeat that the
+// dedupe used to swallow is exactly a cache-served lookup, which replays the
+// original run id; these cases pin that it is saved anyway.
+describe('every comps run appends its own record', () => {
+  it('a cache-served repeat (same run id) is saved as a SECOND record', async () => {
     const fake = makeCalculationsSupabase([]);
     const library = createCalculationLibrary(fake.client as never, OWNER, CHAT, silentLogger);
     const entry = {
       calculator: 'comps' as const,
       inputs: { property_name: '123 MAIN STREET, SEATTLE, WA 98101' },
       result: { calculator: 'comps', property_name: '123 MAIN STREET, SEATTLE, WA 98101', run_id: 'run-1' },
-      runId: 'run-1',
     };
     const first = await library.save(entry);
     const second = await library.save(entry);
-    expect(fake.rows, 'a cache-hit repeat filed a second snapshot').toHaveLength(1);
-    expect(second).toEqual(first);
+    expect(fake.rows, 'the second comps run was deduplicated away').toHaveLength(2);
+    expect(second!.id, 'the second run overwrote the first').not.toBe(first!.id);
   });
 
-  it('a different run of the same address IS a new snapshot (a later pull)', async () => {
+  it('end to end: running comps twice on the same address through the agent files two records', async () => {
     const fake = makeCalculationsSupabase([]);
     const library = createCalculationLibrary(fake.client as never, OWNER, CHAT, silentLogger);
-    const base = { calculator: 'comps' as const, inputs: { property_name: 'A' } };
-    await library.save({ ...base, result: { run_id: 'run-1', property_name: 'A' }, runId: 'run-1' });
-    await library.save({ ...base, result: { run_id: 'run-2', property_name: 'A' }, runId: 'run-2' });
-    expect(fake.rows).toHaveLength(2);
-  });
-
-  it("another member's identical run does not suppress this member's snapshot", async () => {
-    const fake = makeCalculationsSupabase([]);
-    const entry = {
-      calculator: 'comps' as const,
-      inputs: { property_name: 'A' },
-      result: { run_id: 'run-1', property_name: 'A' },
-      runId: 'run-1',
-    };
-    await createCalculationLibrary(fake.client as never, OWNER, CHAT, silentLogger).save(entry);
-    await createCalculationLibrary(fake.client as never, 'device:22222222-2222-4222-8222-222222222222', CHAT, silentLogger).save(entry);
-    expect(fake.rows).toHaveLength(2);
+    // Two separate lookups through the real agent path. (The cache-replay
+    // case — same run id twice — is pinned at the library level above.)
+    await compsTurn(library);
+    await compsTurn(library);
+    expect(fake.rows.map((r) => r.calculator)).toEqual(['comps', 'comps']);
+    expect(new Set(fake.rows.map((r) => r.id)).size).toBe(2);
   });
 });
 
