@@ -18,6 +18,7 @@ import type { CensusCacheLike } from './cache/censusCache.js';
 import type { DetailCacheLike } from './cache/detailCache.js';
 import type { DemographicsProviderLike } from './providers/census.js';
 import type { PropertyDataProvider } from './providers/types.js';
+import type { CompsResult } from './types.js';
 
 /** The §8 atomic block. `state.comps` holds this whole object or nothing. */
 export interface CompsStateBlock {
@@ -73,6 +74,13 @@ export interface CompsToolContext {
    * degrades safe: an unbound ARV never mis-fires the guard.
    */
   userMessage?: string;
+  /**
+   * Called once per SUCCESSFUL lookup with the outcome and the exact block the
+   * member is shown — the calculation library files a snapshot from it. Its
+   * failures are its own: the handler swallows them, so a library outage can
+   * never cost the member their comps.
+   */
+  onSuccess?: (outcome: CompsResult, renderedBlock: string, requestedAddress: string) => Promise<void>;
 }
 
 /**
@@ -182,6 +190,13 @@ export async function runCompsToolHandler(
   const rendered = renderCompsForChat(outcome);
 
   if (outcome.ok) {
+    if (ctx.onSuccess) {
+      try {
+        await ctx.onSuccess(outcome, rendered, address);
+      } catch (err) {
+        ctx.logger?.warn({ err }, 'comps onSuccess hook failed — comps still returned');
+      }
+    }
     // NOTHING about an ARV reaches the model from this tool (CONTRACT §14.8).
     // No `arv`, no `confidence`, and no claim that anything will pre-fill a
     // calculator — the previous instruction said exactly that and it is now

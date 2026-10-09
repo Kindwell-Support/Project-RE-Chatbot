@@ -126,6 +126,15 @@ export function makeCalculationsSupabase(
         return proxy;
       },
       eq: (column: string, value: unknown) => {
+        // PostgREST JSON text path: `result->>run_id` compares the key's text.
+        if (column.includes('->>')) {
+          const [col, key] = column.split('->>').map((p) => p.trim());
+          filters.push((row) => {
+            const v = row[col]?.[key];
+            return v !== undefined && v !== null && String(v) === String(value);
+          });
+          return proxy;
+        }
         filters.push((row) => String(row[column]) === String(value));
         return proxy;
       },

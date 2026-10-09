@@ -691,6 +691,11 @@
     '.jb-proj th{text-align:right;font-weight:500;color:var(--jb-text-secondary);padding:calc(var(--jb-font-base) * 0.4444) 0 calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.8889);box-shadow:0 1px 0 var(--jb-border);white-space:nowrap;}',
     '.jb-proj td{text-align:right;padding:calc(var(--jb-font-base) * 0.4444) 0 calc(var(--jb-font-base) * 0.4444) calc(var(--jb-font-base) * 0.8889);box-shadow:0 1px 0 var(--jb-border-subtle);white-space:nowrap;}',
     '.jb-proj th:first-child,.jb-proj td:first-child{text-align:left;padding-left:0;}',
+    /* A comps snapshot: the chat's prose styles, laid flat on the page. */
+    '.jb-lib-snapshot-note{margin:0 0 calc(var(--jb-font-base) * 1.1111);padding:calc(var(--jb-font-base) * 0.5556) calc(var(--jb-font-base) * 0.7778);border-radius:calc(var(--jb-font-base) * 0.6667);',
+    'background:var(--jb-hover);font-size:var(--jb-font-sm);line-height:var(--jb-line-body);color:var(--jb-text-secondary);}',
+    // (0,4,0) so the width tiers' .jb-bubble caps cannot narrow it.
+    '.jb-root .jb-lib .jb-bubble.jb-lib-snapshot{max-width:100%;padding:0;border-radius:0;background:none;color:var(--jb-text-primary);line-height:var(--jb-line-prose);}',
     '.jb-lib-note{margin:calc(var(--jb-font-base) * 1.3333) 0 0;font-size:var(--jb-font-xs);line-height:var(--jb-line-body);color:var(--jb-text-tertiary);}',
     /* The receipt under a calculator reply. */
     '.jb-saved{display:flex;flex-wrap:wrap;align-items:center;gap:calc(var(--jb-font-base) * 0.3333);margin-top:calc(var(--jb-font-base) * 0.7778);font-size:var(--jb-font-sm);line-height:var(--jb-line-tight);color:var(--jb-text-secondary);}',
@@ -3489,7 +3494,7 @@
       var detailGen = 0;
       var libResults = null;
 
-      var CALC_TITLES = { flip: 'Fix & Flip', brrrr: 'BRRRR', land_purchase: 'Land / New Construction' };
+      var CALC_TITLES = { flip: 'Fix & Flip', brrrr: 'BRRRR', land_purchase: 'Land / New Construction', comps: 'Comps' };
 
       /** Output labels and formats, keyed by the calculators' own output names. */
       var OUTPUT_META = {
@@ -3517,9 +3522,16 @@
         total_cash_investment: ['Total cash investment', 'usd'],
         net_profit: ['Net profit', 'usd'],
         sales_proceeds: ['Sales proceeds', 'usd'],
+        median_price_per_sqft: ['Median $/sq ft', 'usd'],
+        comp_count: ['Comparable sales', 'plain'],
       };
       /** The output each calculator leads with — mirrors the server's list headline. */
-      var HEADLINE_KEY = { flip: 'est_net_profit', brrrr: 'monthly_cash_flow', land_purchase: 'target_land_contract' };
+      var HEADLINE_KEY = {
+        flip: 'est_net_profit',
+        brrrr: 'monthly_cash_flow',
+        land_purchase: 'target_land_contract',
+        comps: 'median_price_per_sqft',
+      };
 
       var usdFormat =
         typeof Intl !== 'undefined'
@@ -3622,7 +3634,7 @@
         var heading = el('h2', 'jb-lib-h');
         heading.textContent = 'Calculations';
         var sub = el('p', 'jb-lib-sub');
-        sub.textContent = 'Every calculator result, saved under its property name.';
+        sub.textContent = 'Every calculation and comps lookup, saved by property.';
         var search = el('input', 'jb-lib-search', {
           type: 'search',
           placeholder: 'Search by property',
@@ -3702,7 +3714,7 @@
           var empty = el('div', 'jb-lib-empty');
           empty.textContent = calcQuery
             ? 'No calculations match "' + calcQuery + '".'
-            : 'Nothing saved yet. Run any calculator and the result is saved here under its property name.';
+            : 'Nothing saved yet. Run any calculator or comps lookup and it is saved here under its property.';
           libResults.appendChild(empty);
           return;
         }
@@ -3791,22 +3803,30 @@
         var head = el('div', 'jb-lib-head');
         var title = el('h2', 'jb-lib-title');
         title.textContent = row.property_name;
+        var isComps = row.calculator === 'comps';
         var meta = el('p', 'jb-lib-sub');
-        meta.textContent = (CALC_TITLES[row.calculator] || row.calculator) + ' · ' + formatDateTime(row.created_at);
+        meta.textContent =
+          (CALC_TITLES[row.calculator] || row.calculator) +
+          (isComps ? ' · pulled ' : ' · ') +
+          formatDateTime(result.pulled_at || row.created_at);
         head.appendChild(title);
         head.appendChild(meta);
         inner.appendChild(head);
 
         var actions = el('div', 'jb-lib-actions');
-        var again = el('button', 'jb-btn', { type: 'button' });
-        again.textContent = 'Run again';
-        again.disabled = !row.form;
-        again.addEventListener('click', function () {
-          closeLibrary();
-          startNewChat();
-          renderCalculatorForm(row.form, { values: row.inputs || {} });
-        });
-        actions.appendChild(again);
+        // Only a calculator entry can run again — it carries its form. A comps
+        // snapshot is deliberately never refreshed (client ruling): what was
+        // pulled that day is the record.
+        if (row.form) {
+          var again = el('button', 'jb-btn', { type: 'button' });
+          again.textContent = 'Run again';
+          again.addEventListener('click', function () {
+            closeLibrary();
+            startNewChat();
+            renderCalculatorForm(row.form, { values: row.inputs || {} });
+          });
+          actions.appendChild(again);
+        }
 
         var chatKnown = row.chat_id && chats.some(function (c) { return c.id === row.chat_id; });
         if (chatKnown) {
@@ -3911,6 +3931,19 @@
           });
         });
 
+        // A comps snapshot shows exactly what the member was shown that day —
+        // the same block, rendered the same way as in the chat.
+        if (isComps) {
+          var note = el('p', 'jb-lib-snapshot-note');
+          note.textContent =
+            'Snapshot: these are the sales as they were when the comps were pulled. They are not refreshed.';
+          inner.appendChild(note);
+          var snapshot = el('div', 'jb-bubble jb-lib-snapshot');
+          renderMarkdownInto(snapshot, String(result.rendered_block || ''));
+          inner.appendChild(snapshot);
+          return;
+        }
+
         // Results: the headline first, emphasised, then the rest in the
         // calculator's own order.
         var resultsSection = section('Results');
@@ -4001,7 +4034,10 @@
             var line = el('div', 'jb-saved');
             line.innerHTML = ICON_CHECK;
             var text = el('span', 'jb-saved-text');
-            text.textContent = 'Saved to Calculations as "' + entry.property_name + '"';
+            text.textContent =
+              entry.calculator === 'comps'
+                ? 'Comps snapshot saved to Calculations under "' + entry.property_name + '"'
+                : 'Saved to Calculations as "' + entry.property_name + '"';
             var view = el('button', 'jb-saved-open', { type: 'button' });
             view.textContent = 'View';
             view.addEventListener('click', function () {

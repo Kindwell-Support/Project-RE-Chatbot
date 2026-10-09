@@ -23,7 +23,8 @@ import {
 } from '../features/comps/tools.js';
 import { normalizeAddress } from '../features/comps/normalize.js';
 import { applyFormArvPrefill } from '../features/comps/formPrefill.js';
-import type { CalculationLibrary, SavedCalculation } from '../server/calculations.js';
+import type { CalculationLibrary, LibraryKind, SavedCalculation } from '../server/calculations.js';
+import { buildCompsSnapshot } from '../features/comps/snapshot.js';
 
 const MAX_TOOL_ROUNDS = 6;
 
@@ -608,12 +609,13 @@ async function applyArvPrefill(
  */
 async function saveToLibrary(
   ctx: ToolContext,
-  calculator: CalculatorKey,
+  calculator: LibraryKind,
   inputs: Record<string, unknown>,
   result: Record<string, unknown>,
+  runId?: string,
 ): Promise<void> {
   if (!ctx.library) return;
-  const saved = await ctx.library.save({ calculator, inputs, result });
+  const saved = await ctx.library.save({ calculator, inputs, result, ...(runId ? { runId } : {}) });
   if (saved) ctx.savedCalculations.push(saved);
   else ctx.unsavedCalculations += 1;
 }
@@ -645,7 +647,22 @@ async function executeTool(
     }
     case 'run_comps': {
       if (!ctx.comps) return { error: 'Comps are not configured on this deployment.' };
-      return runCompsToolHandler(args, ctx.comps);
+      // Client ruling: a successful lookup is filed in the library as a dated
+      // SNAPSHOT under the property's address — through the same
+      // saveToLibrary as the calculators, so the receipt and the unsaved
+      // count behave identically. A failed lookup saves nothing.
+      const compsNow = ctx.comps.now ?? (() => new Date());
+      return runCompsToolHandler(args, {
+        ...ctx.comps,
+        ...(ctx.library
+          ? {
+              onSuccess: async (outcome, rendered, requested) => {
+                const snap = buildCompsSnapshot(outcome, rendered, requested, compsNow());
+                await saveToLibrary(ctx, 'comps', snap.inputs, snap.result, snap.runId);
+              },
+            }
+          : {}),
+      });
     }
     case 'set_manual_arv': {
       if (!ctx.comps) return { error: 'Comps state is not configured on this deployment.' };
