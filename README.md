@@ -167,6 +167,7 @@ tools/dump.mjs     dev utility: dumps formulas + cached values from the xlsx fil
 - Land calculator: `C9` (interest reserve months), `C11` (purchase closing costs), and `C12` (utilities/insurance) are **computed formulas**, exactly as in the sheet — the old build hardcoded them and produced wrong numbers. Explicit overrides exist but are opt-in.
 - Every unspecified optional input falls back to the sheet default, and each tool result reports `defaults_applied` so the agent can disclose them.
 - Every calculator requires a **property name** (the first field on each form; the agent asks for it when a member types numbers without one). Each completed run is saved to the member's calculation library under that name — typed and form runs alike, one new entry per run — and is listed, searched, re-run, renamed and deleted from the widget's **Calculations** view (`GET/PATCH/DELETE /calculations`).
+- Every successful **comps lookup** is saved to the same library as a dated **snapshot**, filed under the property's resolved address: the exact block the member was shown, never refreshed (a snapshot has no "Run again"). Asking for the same comps again from the cache files one snapshot, not two. Existing databases need `sql/calculations_add_comps.sql` (widens the `calculator` check to accept `'comps'`).
 
 ## Known gaps
 

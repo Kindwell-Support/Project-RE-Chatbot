@@ -4,17 +4,24 @@
  * to it, and no read path returns owner_key.
  *
  * Writes come from ONE place: the agent's executeTool, after a calculator
- * succeeds (see createCalculationLibrary). Members can rename and delete
- * entries; they never write inputs or results directly.
+ * succeeds or a comps lookup succeeds (a dated snapshot, filed by address —
+ * see createCalculationLibrary). Members can rename and delete entries; they
+ * never write inputs or results directly.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Logger } from './logger.js';
 import { normalizePropertyName } from '../agent/formSubmission.js';
 import type { CalculatorKey } from '../agent/formSchema.js';
 
+/**
+ * What a library entry can be: one of the three calculators, or a comps
+ * snapshot (client ruling: comps are saved as dated snapshots, by address).
+ */
+export type LibraryKind = CalculatorKey | 'comps';
+
 export interface CalculationSummary {
   id: string;
-  calculator: CalculatorKey;
+  calculator: LibraryKind;
   property_name: string;
   chat_id: string | null;
   created_at: string;
@@ -39,17 +46,18 @@ const SUMMARY_COLUMNS = 'id, calculator, property_name, chat_id, created_at, out
  * Which output headlines each calculator in the list — the number a member
  * scans for. Keys are the calculators' own output names (calculators/*.ts).
  */
-const HEADLINES: Record<CalculatorKey, { key: string; label: string }> = {
+const HEADLINES: Record<LibraryKind, { key: string; label: string }> = {
   flip: { key: 'est_net_profit', label: 'Net profit' },
   brrrr: { key: 'monthly_cash_flow', label: 'Cash flow / mo' },
   land_purchase: { key: 'target_land_contract', label: 'Target land price' },
+  comps: { key: 'median_price_per_sqft', label: 'Median $/sq ft' },
 };
 
 export function headlineFor(
   calculator: string,
   outputs: unknown,
 ): CalculationSummary['headline'] {
-  const spec = HEADLINES[calculator as CalculatorKey];
+  const spec = HEADLINES[calculator as LibraryKind];
   if (!spec || !outputs || typeof outputs !== 'object') return null;
   const value = (outputs as Record<string, unknown>)[spec.key];
   return typeof value === 'number' && Number.isFinite(value)
@@ -141,14 +149,21 @@ export async function archiveCalculation(
 /** What a successful save reports back to the agent, and on to the widget. */
 export interface SavedCalculation {
   id: string;
-  calculator: CalculatorKey;
+  calculator: LibraryKind;
   property_name: string;
 }
 
 export interface CalculationToSave {
-  calculator: CalculatorKey;
+  calculator: LibraryKind;
   inputs: Record<string, unknown>;
   result: Record<string, unknown>;
+  /**
+   * Idempotency key for snapshots: when set, an existing active entry of the
+   * same kind for this owner carrying the same `result.run_id` is returned
+   * instead of writing a second one. A comps cache hit replays the original
+   * run's id, so asking for the same comps twice files one snapshot, not two.
+   */
+  runId?: string;
 }
 
 /** The seam the agent saves through. Tests inject a fake; production builds one per request. */
@@ -168,6 +183,19 @@ export function createCalculationLibrary(
       const propertyName = normalizePropertyName(entry.result.property_name ?? entry.inputs.property_name);
       if (!propertyName) return null; // the runner refuses unnamed runs; belt and braces
       try {
+        if (entry.runId) {
+          const { data: existing, error: lookupError } = await supabase
+            .from('calculations')
+            .select('id, calculator, property_name')
+            .eq('owner_key', ownerKey)
+            .eq('calculator', entry.calculator)
+            .eq('result->>run_id', entry.runId)
+            .is('archived_at', null)
+            .limit(1);
+          if (lookupError) throw lookupError;
+          const found = ((existing ?? []) as unknown as SavedCalculation[])[0];
+          if (found) return found;
+        }
         const { data, error } = await supabase
           .from('calculations')
           .insert({

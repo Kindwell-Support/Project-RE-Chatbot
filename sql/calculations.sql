@@ -15,7 +15,9 @@ create table if not exists calculations (
   id uuid primary key default gen_random_uuid(),
   owner_key text not null,
   chat_id uuid,
-  calculator text not null check (calculator in ('flip', 'brrrr', 'land_purchase')),
+  -- 'comps' = a dated comps snapshot, filed by address (client ruling). An
+  -- existing table gets it from sql/calculations_add_comps.sql.
+  calculator text not null check (calculator in ('flip', 'brrrr', 'land_purchase', 'comps')),
   property_name text not null check (char_length(property_name) between 1 and 120),
   -- The arguments the calculator ran on (property_name included) — what a
   -- "run again" form is pre-filled from.

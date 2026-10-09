@@ -75,6 +75,24 @@ const DETAIL_A = {
   form: CALCULATOR_FORMS.flip,
 };
 
+const CALC_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const DETAIL_C = {
+  id: CALC_C,
+  calculator: 'comps',
+  property_name: '123 MAIN STREET, SEATTLE, WA 98101',
+  chat_id: null,
+  created_at: '2026-10-09T15:00:00.000Z',
+  inputs: { property_name: '123 MAIN STREET, SEATTLE, WA 98101', requested_address: '123 Main St, Seattle WA' },
+  result: {
+    calculator: 'comps',
+    property_name: '123 MAIN STREET, SEATTLE, WA 98101',
+    pulled_at: '2026-10-09T15:00:00.000Z',
+    run_id: 'run-1',
+    rendered_block: '### Comparable sales\n- **4520 Alder St** — sold $575,000\n- **4433 Birch Ave** — sold $548,500',
+    outputs: { comp_count: 2, median_price_per_sqft: 340 },
+  },
+};
+
 interface Call {
   method: string;
   url: string;
@@ -102,7 +120,11 @@ function boot(options: { chats?: Array<{ id: string; title: string }> } = {}) {
     }
     if (pathname.startsWith('/calculations/')) {
       const id = pathname.split('/')[2];
-      if (method === 'GET') return id === CALC_A ? json(200, DETAIL_A) : json(404, { error: 'Calculation not found.' });
+      if (method === 'GET') {
+        if (id === CALC_A) return json(200, DETAIL_A);
+        if (id === CALC_C) return json(200, DETAIL_C);
+        return json(404, { error: 'Calculation not found.' });
+      }
       if (method === 'PATCH') return json(200, { ...SUMMARY_A, property_name: body.property_name });
       if (method === 'DELETE') {
         library = library.filter((c) => c.id !== id);
@@ -387,6 +409,47 @@ describe('the Calculations view', () => {
     await tick(30);
     expect(calls.some((c) => c.method === 'DELETE' && c.url.endsWith(`/calculations/${CALC_A}`))).toBe(true);
     expect($$('.jb-lib-name').map((n) => n.textContent)).toEqual(['Oak St rental']);
+  });
+
+  it('a comps snapshot shows the block as it was pulled — and cannot run again', async () => {
+    library = [
+      {
+        id: CALC_C,
+        calculator: 'comps',
+        property_name: DETAIL_C.property_name,
+        chat_id: null,
+        created_at: DETAIL_C.created_at,
+        headline: { label: 'Median $/sq ft', value: 340, unit: 'usd' },
+      },
+    ];
+    boot();
+    await tick();
+    await openLibrary();
+    const row = $$('.jb-lib-row')[0];
+    expect(row.querySelector('.jb-lib-meta')!.textContent).toContain('Comps');
+    expect(row.querySelector('.jb-lib-fig-value')!.textContent).toBe('$340');
+    click(row);
+    await tick();
+    expect($('.jb-lib-title')!.textContent).toBe('123 MAIN STREET, SEATTLE, WA 98101');
+    expect($('.jb-lib-sub')!.textContent).toMatch(/^Comps · pulled /);
+    expect($('.jb-lib-snapshot-note')!.textContent).toMatch(/not refreshed/);
+    const snapshot = $('.jb-lib-snapshot')!;
+    expect(snapshot.querySelector('h4')!.textContent).toBe('Comparable sales');
+    expect(snapshot.textContent).toContain('4520 Alder St');
+    expect(buttonWithText('Run again'), 'a snapshot offered to re-run (a paid refresh)').toBeNull();
+    expect($('.jb-lib-icon[aria-label="Delete"]')).not.toBeNull();
+  });
+
+  it('the receipt names a comps snapshot as such', async () => {
+    chatReplies.push({
+      output: 'Here are the comps.',
+      saved_calculations: [{ id: CALC_C, calculator: 'comps', property_name: '123 MAIN STREET, SEATTLE, WA 98101' }],
+    });
+    boot();
+    await sendChat('run comps on 123 Main St, Seattle WA');
+    expect($('.jb-saved')!.textContent).toContain(
+      'Comps snapshot saved to Calculations under "123 MAIN STREET, SEATTLE, WA 98101"',
+    );
   });
 
   it('New chat and picking a chat both leave the library', async () => {
