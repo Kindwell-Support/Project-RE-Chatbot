@@ -14,7 +14,11 @@ import type { CompsResult } from './types.js';
 export interface CompsSnapshot {
   inputs: Record<string, unknown>;
   result: Record<string, unknown>;
-  /** Same lookup served twice (a cache hit) ⇒ same run id ⇒ one library entry. */
+  /**
+   * The comps run this snapshot came from. Recorded for traceability only —
+   * a cache-served repeat carries the same id and is STILL saved as its own
+   * record (client QA ruling: every run appends).
+   */
   runId: string;
 }
 

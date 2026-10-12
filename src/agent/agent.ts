@@ -612,10 +612,9 @@ async function saveToLibrary(
   calculator: LibraryKind,
   inputs: Record<string, unknown>,
   result: Record<string, unknown>,
-  runId?: string,
 ): Promise<void> {
   if (!ctx.library) return;
-  const saved = await ctx.library.save({ calculator, inputs, result, ...(runId ? { runId } : {}) });
+  const saved = await ctx.library.save({ calculator, inputs, result });
   if (saved) ctx.savedCalculations.push(saved);
   else ctx.unsavedCalculations += 1;
 }
@@ -658,7 +657,9 @@ async function executeTool(
           ? {
               onSuccess: async (outcome, rendered, requested) => {
                 const snap = buildCompsSnapshot(outcome, rendered, requested, compsNow());
-                await saveToLibrary(ctx, 'comps', snap.inputs, snap.result, snap.runId);
+                // Every run appends — no dedupe on run id (client QA ruling):
+                // a cache-served repeat is still a run the member asked for.
+                await saveToLibrary(ctx, 'comps', snap.inputs, snap.result);
               },
             }
           : {}),

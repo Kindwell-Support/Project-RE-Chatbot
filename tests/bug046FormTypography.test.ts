@@ -220,6 +220,7 @@ describe('BUG-046 — text buttons defend their padding', () => {
     '.jb-chat-open',
     '.jb-side-toggle',
     '.jb-adv-toggle',
+    '.jb-lib-folder-head',
   ];
   // A rule may continue across JS string literals ('...;',\n    '...;}'),
   // so the body may cross a `',\s*'` join but never a closing brace.
@@ -254,7 +255,7 @@ describe('BUG-046 — every button defends its colours', () => {
     '.jb-btn', '.jb-gate-btn', '.jb-send', '.jb-calc-cancel', '.jb-retry', '.jb-gate-retry',
     '.jb-side-retry', '.jb-chat-confirm-no', '.jb-chat-confirm-yes', '.jb-lib-icon', '.jb-new',
     '.jb-chat-open', '.jb-adv-toggle', '.jb-lib-row', '.jb-saved-open', '.jb-side-toggle',
-    '.jb-lib-back', '.jb-chat-act',
+    '.jb-lib-back', '.jb-chat-act', '.jb-lib-folder-head',
   ];
   /** The body of the (0,2,0) rule whose selector list names `.jb-root <sel>`. */
   const pinnedBody = (sel: string): string | null => {
